@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "call-reminder": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/call-reminder/SKILL.md",
+      "computedHash": "ed25dcaea057cbf8f2e81a5b934e3988ad63c3ac62f43a55724c6ceb140ef645"
+    },
+    "calle": {
+      "source": "CALLE-AI/call-e-integrations",
+      "sourceType": "github",
+      "skillPath": "skills/calle/SKILL.md",
+      "computedHash": "7905dc4b12ede4e88769fa83d6e5b28cb4fb6fdd98697e5cb8e5ffdf964882d1"
+    },
+    "deployment-approval-call": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/deployment-approval-call/SKILL.md",
+      "computedHash": "2b8ef29941870f72fe0b6cb7c26e4f3ec75efae91a50709d96faa59965b930cb"
+    },
+    "dollar-consent-first-callback": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/dollar-consent-first-callback/SKILL.md",
+      "computedHash": "049e1d49db1866c7fdcdbae20428316a3cf08edb21d6ef5881a8724f3d6f4b70"
+    },
+    "google-form-callback": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/google-form-callback/SKILL.md",
+      "computedHash": "6e38ae24f20deba18732bdffba34de84b85a6174b3bb21ea7f7077fd9e052267"
+    },
+    "invoice-exception-manager-briefing": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/invoice-exception-manager-briefing/SKILL.md",
+      "computedHash": "12443d334efcab80393bb71e7db7f14d9a4d711d621288ab0464ad34fd174606"
+    },
+    "outbound-call-skill-creator": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/outbound-call-skill-creator/SKILL.md",
+      "computedHash": "f8675e3e2a30d292b63a36db20212bb731596b72a60ad0ebcf6f6226e7ec1bbc"
+    },
+    "verify-contact-claim": {
+      "source": "CALLE-AI/awesome-phone-call-agents",
+      "sourceType": "github",
+      "skillPath": "skills/verify-contact-claim/SKILL.md",
+      "computedHash": "3c32a2ce8b6d41b672f59e1552945f40d77d347dd2ca2fb57445255260760760"
+    }
+  }
+}

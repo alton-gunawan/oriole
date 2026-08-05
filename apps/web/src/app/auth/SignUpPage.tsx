@@ -1,0 +1,169 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { Trans, useTranslation } from 'react-i18next';
+import { Link, Navigate, useNavigate } from 'react-router';
+import { Button } from '@astryxdesign/core';
+
+import { AuthField, AuthLayout, GitHubIcon, GoogleIcon } from './AuthLayout';
+import { isAuthConfigured } from '../../lib/auth';
+import { signInWithGithub, signInWithGoogle, signUpWithEmail, type SocialProvider } from '../../lib/auth-actions';
+import { errorMessage } from '../../lib/errors';
+import { useSessionStore } from '../../stores/session';
+import { signUpSchema, type SignUpInput } from '../../lib/validations';
+
+export function SignUpPage() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const status = useSessionStore((s) => s.status);
+  const [error, setError] = useState<string | null>(null);
+  const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
+
+  const schema = useMemo(() => signUpSchema(t), [t]);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignUpInput>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: '', email: '', password: '', confirmPassword: '' },
+  });
+
+  // Form TIDAK diblokir saat status 'loading' (pengecekan sesi masih
+  // berjalan) — langsung dirender; redirect `Navigate` di bawah menangani
+  // sesi yang ternyata valid. Mencegah spinner abadi saat /me lambat/down.
+  if (status === 'authenticated') {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+
+  if (!isAuthConfigured) {
+    return (
+      <AuthLayout>
+        <div className="space-y-3 text-center">
+          <p className="text-sm font-medium text-zinc-800">{t('auth.authNotConfiguredTitle')}</p>
+          <p className="text-sm text-zinc-500 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs">
+            <Trans i18nKey="auth.authNotConfiguredBodyUp">
+              Fill in <code>VITE_NEON_AUTH_URL</code> then restart Vite.
+            </Trans>
+          </p>
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  const onSubmit = async (values: SignUpInput) => {
+    setError(null);
+    try {
+      await signUpWithEmail(values);
+      navigate('/app/dashboard', { replace: true });
+    } catch (err) {
+      setError(errorMessage(err, t, 'errors.generic'));
+    }
+  };
+
+  const onSocial = (provider: SocialProvider) => {
+    setError(null);
+    setSocialBusy(provider);
+    try {
+      if (provider === 'github') signInWithGithub();
+      else signInWithGoogle();
+      // halaman akan redirect; jika gagal, kembalikan state tombol
+      setTimeout(() => setSocialBusy(null), 10_000);
+    } catch (err) {
+      setSocialBusy(null);
+      setError(errorMessage(err, t, 'errors.signInStart'));
+    }
+  };
+
+  return (
+    <AuthLayout>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <div className="text-center">
+          <h2 className="text-lg font-semibold tracking-tight">{t('auth.signUpTitle')}</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">{t('auth.signUpSubtitle')}</p>
+        </div>
+
+        <Button
+          label={socialBusy === 'google' ? t('auth.openingGoogle') : t('auth.signUpGoogle')}
+          variant="secondary"
+          icon={<GoogleIcon className="size-4" />}
+          isDisabled={socialBusy !== null}
+          onClick={() => onSocial('google')}
+          width="100%"
+        />
+        <Button
+          label={socialBusy === 'github' ? t('auth.openingGithub') : t('auth.signUpGithub')}
+          variant="secondary"
+          icon={<GitHubIcon className="size-4" />}
+          isDisabled={socialBusy !== null}
+          onClick={() => onSocial('github')}
+          width="100%"
+        />
+
+        <div className="flex items-center gap-3 text-xs text-zinc-400">
+          <span className="h-px flex-1 bg-zinc-200" />
+          {t('auth.or')}
+          <span className="h-px flex-1 bg-zinc-200" />
+        </div>
+
+        <AuthField
+          label={t('auth.nameLabel')}
+          type="text"
+          autoComplete="name"
+          placeholder={t('auth.namePlaceholder')}
+          error={errors.name?.message}
+          {...register('name')}
+        />
+        <AuthField
+          label={t('common.email')}
+          type="email"
+          autoComplete="email"
+          placeholder={t('auth.emailPlaceholder')}
+          error={errors.email?.message}
+          {...register('email')}
+        />
+        <AuthField
+          label={t('common.password')}
+          type="password"
+          autoComplete="new-password"
+          placeholder={t('auth.passwordPlaceholder')}
+          error={errors.password?.message}
+          {...register('password')}
+        />
+        <AuthField
+          label={t('auth.confirmPassword')}
+          type="password"
+          autoComplete="new-password"
+          placeholder={t('auth.confirmPasswordPlaceholder')}
+          error={errors.confirmPassword?.message}
+          {...register('confirmPassword')}
+        />
+
+        {error && (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            {error}
+          </div>
+        )}
+
+        <Button
+          label={t('auth.signUpCta')}
+          variant="primary"
+          isLoading={isSubmitting}
+          isDisabled={isSubmitting}
+          type="submit"
+          width="100%"
+        />
+
+        <p className="pt-1 text-center text-sm text-zinc-500">
+          {t('auth.haveAccount')}{' '}
+          <Link to="/auth/sign-in" className="font-medium text-amber-600 hover:text-amber-700 hover:underline">
+            {t('auth.signInCta')}
+          </Link>
+        </p>
+      </form>
+    </AuthLayout>
+  );
+}

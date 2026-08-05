@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ADD CONSTRAINT "workspaces_template_category_check" CHECK ("workspaces"."template_category" in ('beauty-wellness', 'healthcare-clinics', 'fitness', 'professional-services', 'home-services', 'automotive', 'education-coaching', 'photography-creative', 'hospitality-events', 'real-estate', 'pet-care', 'space-rental'));

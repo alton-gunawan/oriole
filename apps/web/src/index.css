@@ -1,0 +1,458 @@
+/* ── Tremor (khusus chart) ────────────────────────────────────
+ * @source WAJIB berada di baris paling atas — sebelum @layer statement
+ * dan @import (direktif dikumpulkan kompiler lebih dulu).
+ */
+
+/* Sumber tambahan: kelas Tailwind yang dipakai komponen Tremor di
+   node_modules — ikut di-scan agar utilitasnya tergenerate. */
+
+/* Safelist untuk kelas warna dinamis chart (dibangun runtime oleh Tremor,
+   jadi tidak ter-scan — pastikan kelas amber tergenerate).
+   PENTING: saat menambah komponen Tremor baru, tambahkan kelas Tailwind
+   yang direndernya di sini (satu string, dipisah spasi — jangan pakai koma,
+   dan direktif @source ini WAJIB tetap di baris paling atas file). */
+@source inline("w-full stroke-1 stroke-tremor-border text-tremor-label fill-tremor-content fill-tremor-content-emphasis rounded-tremor-default text-tremor-default border bg-tremor-background shadow-tremor-dropdown border-tremor-border border-tremor-background shadow-tremor-card rounded-tremor-full border-2 h-3 w-3 text-right whitespace-nowrap text-tremor-content font-medium tabular-nums text-tremor-content-emphasis border-b px-4 py-2 space-y-1 space-x-8 space-x-2 shrink-0 mt-4 fill-amber-500 bg-amber-500");
+
+/* ─────────────────────────────────────────────────────────────
+ * Tailwind CSS 4 + Astryx (design system) via cascade layers.
+ * Urutan layer menentukan prioritas spesifisitas.
+ * Referensi: https://astryx.atmeta.com/docs/getting-started
+ * ───────────────────────────────────────────────────────────── */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400..800;1,400..800&display=swap');
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';
+@import '@astryxdesign/core/tailwind-theme.css';
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* ── Token tema Tremor ────────────────────────────────────────
+ * Nilai = tema resmi tremor.so (light mode). @theme boleh setelah
+ * import; utility baru tergenerate saat kelasnya ter-scan. */
+@theme {
+  --color-tremor-brand-faint: #eff6ff;
+  --color-tremor-brand-muted: #bfdbfe;
+  --color-tremor-brand-subtle: #60a5fa;
+  --color-tremor-brand: #3b82f6;
+  --color-tremor-brand-emphasis: #1d4ed8;
+  --color-tremor-brand-inverted: #ffffff;
+
+  --color-tremor-background-muted: #f9fafb;
+  --color-tremor-background-subtle: #f3f4f6;
+  --color-tremor-background: #ffffff;
+  --color-tremor-background-emphasis: #374151;
+
+  --color-tremor-border: #e5e7eb;
+  --color-tremor-ring: #e5e7eb;
+
+  --color-tremor-content-subtle: #9ca3af;
+  --color-tremor-content: #6b7280;
+  --color-tremor-content-emphasis: #374151;
+  --color-tremor-content-strong: #111827;
+  --color-tremor-content-inverted: #ffffff;
+
+  --shadow-tremor-input: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-tremor-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-tremor-dropdown: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  --radius-tremor-small: 0.375rem;
+  --radius-tremor-default: 0.5rem;
+  --radius-tremor-full: 9999px;
+
+  --text-tremor-label: 0.75rem;
+  --text-tremor-label--line-height: 1rem;
+  --text-tremor-default: 0.875rem;
+  --text-tremor-default--line-height: 1.25rem;
+  --text-tremor-title: 1.125rem;
+  --text-tremor-title--line-height: 1.75rem;
+  --text-tremor-metric: 1.875rem;
+  --text-tremor-metric--line-height: 2.25rem;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Figtree — clean sans-serif typography for the public experience.
+ * Maple Mono remains available for product surfaces that use the code style.
+ * ───────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 100;
+  src: url('/fonts/maple-mono-latin-100-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 100;
+  src: url('/fonts/maple-mono-latin-100-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 200;
+  src: url('/fonts/maple-mono-latin-200-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 200;
+  src: url('/fonts/maple-mono-latin-200-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 300;
+  src: url('/fonts/maple-mono-latin-300-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 300;
+  src: url('/fonts/maple-mono-latin-300-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/fonts/maple-mono-latin-400-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 400;
+  src: url('/fonts/maple-mono-latin-400-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 500;
+  src: url('/fonts/maple-mono-latin-500-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 500;
+  src: url('/fonts/maple-mono-latin-500-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 600;
+  src: url('/fonts/maple-mono-latin-600-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 600;
+  src: url('/fonts/maple-mono-latin-600-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 700;
+  src: url('/fonts/maple-mono-latin-700-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 700;
+  src: url('/fonts/maple-mono-latin-700-italic.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: normal;
+  font-weight: 800;
+  src: url('/fonts/maple-mono-latin-800-normal.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Maple Mono';
+  font-style: italic;
+  font-weight: 800;
+  src: url('/fonts/maple-mono-latin-800-italic.woff2') format('woff2');
+  font-display: swap;
+}
+
+/* Tanpa layer → menang atas seluruh layer (reset/theme/astryx) sehingga
+   Maple Mono dipakai di SEMUA elemen. */
+html {
+  font-family: 'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  font-family: inherit;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Scrollbar tipis yang senada dengan tema. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(212 212 216 / 0.8) transparent;
+}
+
+/* ── Dialog & AlertDialog ─────────────────────────────────────
+ * Preflight Tailwind me-reset margin elemen jadi 0, yang merusak
+ * centering native <dialog> (UA stylesheet pakai margin:auto +
+ * inset:0). Paksa centering penuh (vertikal & horizontal) untuk
+ * SEMUA dialog modal — berlaku untuk Dialog & AlertDialog astryx. */
+dialog[open] {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+}
+
+/* ── Public landing page ───────────────────────────────────── */
+.landing-container {
+  width: min(100% - 2.5rem, 1180px);
+  margin-inline: auto;
+}
+
+.landing-page {
+  --landing-blue: #0064e0;
+  font-family: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  background-image: radial-gradient(circle at 50% -10%, rgb(218 235 255 / 0.52), transparent 32rem);
+}
+
+.landing-header {
+  border-bottom: 1px solid rgb(228 233 236 / 0.78);
+  background: rgb(248 250 251 / 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.landing-nav-link,
+.landing-footer-link {
+  color: #71808a;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: color 160ms ease;
+}
+
+.landing-nav-link:hover,
+.landing-footer-link:hover {
+  color: #0a1317;
+}
+
+.landing-footer {
+  background: linear-gradient(135deg, #173ec7 0%, #2459ed 46%, #4c8dff 100%);
+}
+
+.landing-footer-cta {
+  min-height: 360px;
+  justify-content: center;
+  padding: 5rem 0 4.5rem;
+}
+
+.landing-section-label-light {
+  color: rgb(255 255 255 / 0.78);
+}
+
+.landing-footer-cta-button {
+  color: #173ec7;
+  border-color: transparent;
+  box-shadow: 0 12px 28px rgb(4 24 104 / 0.22);
+}
+
+.landing-footer-cta-button:hover {
+  color: #173ec7;
+}
+
+.landing-footer-details {
+  position: relative;
+}
+
+.landing-footer-link-light {
+  width: fit-content;
+  color: rgb(255 255 255 / 0.78);
+  font-size: 0.875rem;
+  transition: color 160ms ease, transform 160ms ease;
+}
+
+.landing-footer-link-light:hover {
+  color: white;
+  transform: translateX(2px);
+}
+
+.landing-footer-wordmark {
+  position: relative;
+  margin-inline: -0.06em;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.96);
+  font-size: clamp(7rem, 25vw, 22rem);
+  font-weight: 700;
+  letter-spacing: -0.105em;
+  line-height: 0.72;
+  white-space: nowrap;
+  transform: translateY(0.08em);
+}
+
+.landing-footer-orb {
+  position: absolute;
+  border: 1px solid rgb(255 255 255 / 0.13);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.landing-footer-orb-one {
+  top: -8rem;
+  right: 8%;
+  width: 32rem;
+  height: 32rem;
+}
+
+.landing-footer-orb-two {
+  bottom: -15rem;
+  left: -8rem;
+  width: 36rem;
+  height: 36rem;
+  border-color: rgb(255 255 255 / 0.08);
+}
+
+.landing-kicker,
+.landing-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #0064e0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landing-hero-title {
+  position: relative;
+  z-index: 1;
+  color: #0a1317;
+  font-size: clamp(2.8rem, 7vw, 5.75rem);
+  font-weight: 600;
+  letter-spacing: -0.085em;
+  line-height: 0.99;
+}
+
+.landing-section-title {
+  max-width: 520px;
+  color: #0a1317;
+  font-size: clamp(1.8rem, 3.5vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.065em;
+  line-height: 1.08;
+}
+
+.landing-ambient {
+  position: absolute;
+  border: 1px solid rgb(0 100 224 / 0.12);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.landing-ambient-one {
+  top: 5rem;
+  left: 4%;
+  width: 15rem;
+  height: 15rem;
+}
+
+.landing-ambient-two {
+  top: 12rem;
+  right: 2%;
+  width: 25rem;
+  height: 25rem;
+  border-color: rgb(185 201 209 / 0.42);
+}
+
+.landing-preview-glow {
+  position: absolute;
+  inset: 13% 8% -8%;
+  background: rgb(0 100 224 / 0.13);
+  border-radius: 50%;
+  filter: blur(50px);
+  pointer-events: none;
+}
+
+.landing-dashboard {
+  box-shadow: 0 26px 65px rgb(10 19 23 / 0.11);
+  transform: perspective(1200px) rotateX(1deg);
+  transition: transform 300ms ease, box-shadow 300ms ease;
+}
+
+.landing-dashboard:hover {
+  box-shadow: 0 32px 80px rgb(10 19 23 / 0.15);
+  transform: perspective(1200px) rotateX(0deg) translateY(-4px);
+}
+
+.landing-bar {
+  transform-origin: bottom;
+  animation: landing-bar-in 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-bar:nth-child(2) { animation-delay: 60ms; }
+.landing-bar:nth-child(3) { animation-delay: 120ms; }
+.landing-bar:nth-child(4) { animation-delay: 180ms; }
+.landing-bar:nth-child(5) { animation-delay: 240ms; }
+.landing-bar:nth-child(6) { animation-delay: 300ms; }
+.landing-bar:nth-child(7) { animation-delay: 360ms; }
+.landing-bar:nth-child(8) { animation-delay: 420ms; }
+.landing-bar:nth-child(9) { animation-delay: 480ms; }
+.landing-bar:nth-child(10) { animation-delay: 540ms; }
+
+@keyframes landing-bar-in {
+  from { opacity: 0; transform: scaleY(0); }
+  to { opacity: 1; transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-bar,
+  .landing-dashboard {
+    animation: none;
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-container {
+    width: min(100% - 2rem, 1180px);
+  }
+
+  .landing-ambient-one {
+    top: 8rem;
+    left: -8rem;
+  }
+
+  .landing-ambient-two {
+    top: 24rem;
+    right: -12rem;
+  }
+
+  .landing-footer-cta {
+    min-height: 320px;
+    padding: 4.5rem 0 4rem;
+  }
+
+  .landing-footer-wordmark {
+    font-size: 31vw;
+  }
+}

@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 10: paket yang diizinkan menjalankan postinstall build scripts.
+onlyBuiltDependencies:
+  - esbuild
+  - "@tailwindcss/oxide"
+  - "@astryxdesign/core"
+  - protobufjs

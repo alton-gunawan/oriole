@@ -1,0 +1,25 @@
+{
+  "name": "oriole",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "pnpm --filter @oriole/web dev",
+    "dev:api": "pnpm --filter @oriole/api dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @oriole/database db:generate",
+    "db:migrate": "pnpm --filter @oriole/database db:migrate",
+    "db:studio": "pnpm --filter @oriole/database db:studio",
+    "db:pull": "pnpm --filter @oriole/database db:pull"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.8"
+  }
+}

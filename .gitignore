@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.turbo/
+.vite/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Tests
+coverage/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Freebuff desktop — state lokal (SQLite)
+.freebuff/
+
+# Artefak build/preview sementara (web)
+apps/web/.tmp-*-dist/

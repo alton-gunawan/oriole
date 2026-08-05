@@ -1,0 +1,75 @@
+/* ─────────────────────────────────────────────────────────────
+ * PhoneInput (react-phone-number-input + Selector Astryx) —
+ * disesuaikan dengan desain Oriole (Astryx neutral + aksen amber).
+ *
+ * Dropdown negara memakai komponen `Selector` Astryx (styling-nya
+ * sudah dari design system); file ini hanya menata field nomor,
+ * ukuran bendera, dan penyelarasan kedua kontrol.
+ * ───────────────────────────────────────────────────────────── */
+
+.PhoneInput {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+/* Field nomor — meniru TextInput Astryx (h-8, rounded-lg, zinc-300). */
+.PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+  height: 2rem;
+  border: 1px solid #d4d4d8; /* zinc-300 */
+  border-radius: 0.5rem;     /* rounded-lg */
+  background: #ffffff;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: #18181b;            /* zinc-900 */
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.PhoneInputInput::placeholder {
+  color: #a1a1aa;            /* zinc-400 */
+}
+
+.PhoneInputInput:hover {
+  border-color: #a1a1aa;     /* zinc-400 */
+}
+
+.PhoneInputInput:focus {
+  outline: none;
+  border-color: #f59e0b;     /* amber-500 */
+  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22);
+}
+
+/* Trigger Selector tidak menyusut di dalam baris flex. */
+.phone-input-country {
+  flex-shrink: 0;
+}
+
+/* ── Bendera negara ─────────────────────────────────────────── */
+
+.phone-country-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 14px;
+  border-radius: 0.125rem;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgb(24 24 27 / 0.12); /* garis tipis antar bendera terang */
+}
+
+.phone-country-flag svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Kode area di kanan tiap opsi dropdown (renderOption endContent). */
+.phone-country-code {
+  color: #a1a1aa;            /* zinc-400 */
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}

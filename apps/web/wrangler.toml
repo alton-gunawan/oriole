@@ -1,0 +1,7 @@
+# Cloudflare Pages — static output dari Vite.
+# Build command (dashboard / CI):  pnpm install && pnpm --filter @oriole/web build
+# Env vars (set di dashboard Pages → Settings → Environment variables):
+#   VITE_API_URL  → URL production API, contoh https://oriole-api.up.railway.app
+name = "oriole-web"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-01"
