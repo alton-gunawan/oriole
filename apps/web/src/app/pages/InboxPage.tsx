@@ -25,7 +25,7 @@ const CHANNEL_STYLE: Record<string, string> = {
 
 function ChannelBadge({ channelType }: { channelType: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CHANNEL_STYLE[channelType] ?? 'bg-zinc-500/10 text-zinc-500'}`}>
+    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold ${CHANNEL_STYLE[channelType] ?? 'bg-zinc-500/10 text-zinc-500'}`}>
       {channelLabel(channelType)}
     </span>
   );
@@ -156,23 +156,34 @@ export function InboxPage() {
       )
     : conversations;
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title={t('inbox.title')}
-        description={t('inbox.description')}
-      >
-        {unreadTotal > 0 && (
-          <Badge variant="success" label={t('inbox.unread', { count: unreadTotal })} />
-        )}
-        {attentionCount > 0 && (
-          <Badge variant="warning" label={t('inbox.attention', { count: attentionCount })} />
-        )}
-      </PageHeader>
+  // Header dipakai dua kali: mobile di atas daftar, desktop di kolom kanan.
+  const pageHeader = (
+    <PageHeader
+      title={t('inbox.title')}
+      description={t('inbox.description')}
+    >
+      {unreadTotal > 0 && (
+        <Badge variant="success" label={t('inbox.unread', { count: unreadTotal })} />
+      )}
+      {attentionCount > 0 && (
+        <Badge variant="warning" label={t('inbox.attention', { count: attentionCount })} />
+      )}
+    </PageHeader>
+  );
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[340px_1fr]">
-        {/* ── Daftar percakapan ── */}
-        <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden">
+  return (
+    <div className="space-y-6 lg:space-y-0">
+      {/* Header — mobile saja (desktop: judul pindah ke kolom kanan). */}
+      <div className="lg:hidden">{pageHeader}</div>
+
+      {/* ── Daftar percakapan — desktop: kolom FIXED penuh tinggi tepat di
+          sebelah sidebar aplikasi (left-60 = lebar sidebar; inset-y-0 = tinggi
+          penuh viewport), border hanya di kanan, background putih. Di bawah
+          lg kembali menjadi kartu biasa dalam alur halaman. ── */}
+      <aside
+        aria-label={t('inbox.title')}
+        className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-60 lg:z-30 lg:w-[340px] lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-l-0 lg:border-r lg:border-zinc-200"
+      >
           <div className="border-b border-zinc-100 px-4 py-3">
             <div className="relative">
               <input
@@ -212,7 +223,7 @@ export function InboxPage() {
                         selected ? 'bg-amber-500/5' : 'hover:bg-zinc-50'
                       }`}
                     >
-                      <span className="relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xs font-bold text-amber-400">
+                      <span className="relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
                         {(conversation.customerName ?? conversation.externalId ?? '?').slice(0, 1).toUpperCase()}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -221,7 +232,7 @@ export function InboxPage() {
                             {conversation.customerName ?? conversation.externalId}
                           </span>
                           {conversation.lastMessageAt && (
-                            <span className="shrink-0 text-[10px] text-zinc-400">
+                            <span className="shrink-0 text-xs text-zinc-400">
                               {formatMessageTime(conversation.lastMessageAt)}
                             </span>
                           )}
@@ -229,7 +240,7 @@ export function InboxPage() {
                         <span className="mt-0.5 flex items-center gap-1.5">
                           <ChannelBadge channelType={conversation.channelType} />
                           {conversation.bookingTitle && (
-                            <span className="truncate text-[11px] text-zinc-400">
+                            <span className="truncate text-xs text-zinc-400">
                               {conversation.bookingTitle}
                             </span>
                           )}
@@ -242,12 +253,12 @@ export function InboxPage() {
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-1">
                         {conversation.needsAttention && (
-                          <span className="flex items-center gap-1 rounded-md bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600">
+                          <span className="flex items-center gap-1 rounded-md bg-orange-50 px-1.5 py-0.5 text-xs font-semibold text-orange-600">
                             <IconAlertTriangle className="size-3" /> {t('inbox.attentionBadge')}
                           </span>
                         )}
                         {conversation.unreadCount > 0 && (
-                          <span className="flex size-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-zinc-950">
+                          <span className="flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-zinc-950">
                             {conversation.unreadCount}
                           </span>
                         )}
@@ -264,7 +275,14 @@ export function InboxPage() {
               </div>
             )}
           </div>
-        </Card>
+      </aside>
+
+      {/* ── Kolom kanan: judul (desktop) + thread. pl-[308px] memberi ruang
+          untuk kolom fixed di kiri (left-60 240px + w-[340px] = 580px; dikurangi
+          padding kiri main 32px → 308px): pas di viewport sempit, aman (tidak
+          tertutup) di viewport lebar. ── */}
+      <div className="min-w-0 space-y-6 lg:pl-[308px]">
+        <div className="hidden lg:block">{pageHeader}</div>
 
         {/* ── Thread ── */}
         <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden">
@@ -302,11 +320,11 @@ export function InboxPage() {
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <ChannelBadge channelType={thread.conversation.channelType} />
-                      <span className="text-[11px] text-zinc-400">{thread.conversation.externalId}</span>
+                      <span className="text-xs text-zinc-400">{thread.conversation.externalId}</span>
                     </div>
                   </div>
                   {thread.conversation.needsAttention && (
-                    <span className="flex items-center gap-1 rounded-md bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-600">
+                    <span className="flex items-center gap-1 rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-600">
                       <IconAlertTriangle className="size-3.5" /> {t('inbox.attentionBadge')}
                     </span>
                   )}
@@ -317,11 +335,11 @@ export function InboxPage() {
                     <span className="text-xs font-medium text-zinc-700">
                       📅 {thread.booking.title}
                     </span>
-                    <span className="text-[11px] text-zinc-500">
+                    <span className="text-xs text-zinc-500">
                       {formatDateTimeFull(thread.booking.scheduledAt, thread.booking.timezone)}
                     </span>
                     <span
-                      className={`ml-auto rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      className={`ml-auto rounded-md px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${
                         thread.booking.status === 'confirmed'
                           ? 'bg-emerald-50 text-emerald-600'
                           : thread.booking.status === 'cancelled'
@@ -381,7 +399,7 @@ export function InboxPage() {
                     type="button"
                     onClick={() => void sendReminder()}
                     disabled={sendingReminder}
-                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 transition hover:text-amber-500 disabled:opacity-50"
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-600 transition hover:text-amber-500 disabled:opacity-50"
                   >
                     <IconArrowRight className="size-3.5" />
                     {sendingReminder ? t('inbox.sending') : t('inbox.sendReminder')}
@@ -416,7 +434,7 @@ function MessageBubble({ message }: { message: InboxMessage }) {
         }`}
       >
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        <p className={`mt-1 text-right text-[10px] ${inbound ? 'text-zinc-400' : 'text-zinc-900/60'}`}>
+        <p className={`mt-1 text-right text-xs ${inbound ? 'text-zinc-400' : 'text-zinc-900/60'}`}>
           {formatMessageTime(message.createdAt)}
         </p>
       </div>

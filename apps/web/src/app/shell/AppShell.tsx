@@ -1,13 +1,20 @@
-import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
-import { DropdownMenu, DropdownMenuItem, IconButton } from '@astryxdesign/core';
+import { useQuery } from '@tanstack/react-query';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
+import { ApiError, apiFetch } from '../../lib/api';
+import type { UnreadSummaryResponse } from '../../lib/messaging';
 import { signOut } from '../../lib/session';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
-import { LocaleSwitcher } from './LocaleSwitcher';
+import { LanguageMenuItems, useActiveLanguageOption } from './LocaleSwitcher';
+import { BillingDialog } from './BillingDialog';
+import { SettingsDialog } from './SettingsDialog';
+import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
+import { AppLogo } from '../components/AppLogo';
 import {
   IconCalendar,
   IconChart,
@@ -16,10 +23,13 @@ import {
   IconChevronDown,
   IconCreditCard,
   IconDashboard,
+  IconDotsHorizontal,
   IconHelp,
   IconLogout,
   IconPlus,
   IconMenu,
+  IconPanelLeftClose,
+  IconPanelLeftOpen,
   IconPhone,
   IconPlug,
   IconSettings,
@@ -33,6 +43,8 @@ interface NavItem {
   /** Kunci i18n label navigasi. */
   labelKey: TranslationKey;
   icon: ComponentType<IconProps>;
+  /** true = item membuka dialog (bukan link halaman) — dipakai Settings. */
+  dialog?: boolean;
 }
 
 const NAV: NavItem[] = [
@@ -40,53 +52,74 @@ const NAV: NavItem[] = [
   { to: '/app/bookings', labelKey: 'nav.bookings', icon: IconCalendar },
   { to: '/app/contacts', labelKey: 'nav.contacts', icon: IconUsers },
   { to: '/app/inbox', labelKey: 'nav.inbox', icon: IconChat },
-  { to: '/app/channels', labelKey: 'nav.channels', icon: IconPlug },
+  { to: '/app/integrations', labelKey: 'nav.integrations', icon: IconPlug },
   { to: '/app/calls', labelKey: 'nav.calls', icon: IconPhone },
   { to: '/app/analytics', labelKey: 'nav.analytics', icon: IconChart },
-  { to: '/app/billing', labelKey: 'nav.billing', icon: IconCreditCard },
-  { to: '/app/settings', labelKey: 'nav.settings', icon: IconSettings },
-  { to: '/app/help', labelKey: 'nav.help', icon: IconHelp },
+  // Settings kini dialog (pengganti halaman /app/settings) — dibuka dari menu
+  // sidebar; URL lama dialihkan ke dashboard di router.
+  { to: '/app/settings', labelKey: 'nav.settings', icon: IconSettings, dialog: true },
+  // Help dipindah ke footer sidebar (ikon kecil) — bukan item nav lagi.
 ];
 
-function Logo() {
+function Logo({ collapsed = false }: { collapsed?: boolean }) {
+  // Hanya ikon — tanpa nama brand. pb-4 memberi jarak dari switcher project
+  // di bawahnya; px-4 menyelaraskan dengan avatar di dalam trigger.
   return (
-    <div className="flex h-16 items-center gap-2.5 px-5">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-amber-500 text-sm font-extrabold text-zinc-950">
-        O
+    <div className={`flex items-center pb-4 pt-4 ${collapsed ? 'justify-center px-0' : 'px-4'}`}>
+      <span className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-amber-500">
+        <AppLogo />
       </span>
-      <span className="text-sm font-bold tracking-tight text-zinc-100">Oriole</span>
     </div>
   );
 }
 
 // Perkuat hover trigger akun: token astryx default hanya ~5% overlay —
-// nyaris tak terlihat di atas zinc-950. Dipasang di TOMBOL (bukan container)
+// nyaris tak terlihat di atas bg-muted. Dipasang di TOMBOL (bukan container)
 // karena popover menu dirender inline sebagai sibling — kalau di container,
 // item hover di popover terang ikut ke-override jadi tak terlihat.
 const userMenuTriggerStyle = {
   height: 'auto',
-  minHeight: 36,
-  padding: 8,
+  minHeight: 32,
+  padding: 6,
   justifyContent: 'space-between',
   gap: 8,
-  '--color-overlay-hover': 'rgba(255,255,255,0.14)',
+  '--color-overlay-hover': 'rgba(0,0,0,0.08)',
 };
 
-// Hover merah untuk aksi logout: token yang sama dipakai astryx untuk hover
-// item menu, di-override jadi merah (scoped ke item ini saja).
-const logoutItemHoverStyle = {
-  '--color-overlay-hover': 'rgba(239,68,68,0.18)',
-} as CSSProperties;
-
-// Trigger switcher project di sidebar gelap — sama seperti trigger akun.
+// Trigger switcher project di sidebar terang — sama seperti trigger akun.
 const projectTriggerStyle = {
   height: 'auto',
-  minHeight: 40,
-  padding: 8,
+  minHeight: 30,
+  padding: 5,
   justifyContent: 'space-between',
   gap: 8,
-  '--color-overlay-hover': 'rgba(255,255,255,0.14)',
+  '--color-overlay-hover': 'rgba(0,0,0,0.08)',
 };
+
+/**
+ * Badge unread amber (pill) — dipakai di project switcher & item nav Inbox.
+ * Sembunyi saat count <= 0; tampilkan "99+" saat overflow.
+ */
+function UnreadBadge({ count, label, className }: { count: number; label: string; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className={`flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500 px-1 text-[11px] font-bold leading-none text-zinc-950 ${className ?? ''}`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+/** Inisial user untuk avatar footer: huruf pertama kata pertama + terakhir. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
+  return (first + last).toUpperCase();
+}
 
 /** "Last opened" relatif terhadap sekarang, mengikuti bahasa aktif. */
 function formatLastOpened(iso: string, language: string): string {
@@ -111,10 +144,59 @@ function formatLastOpened(iso: string, language: string): string {
 
 export function AppShell() {
   const { t, i18n } = useTranslation();
+  const activeLanguage = useActiveLanguageOption();
   const [menuOpen, setMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBillingOpen, setIsBillingOpen] = useState(false);
+  // Sidebar desktop bisa diciutkan jadi rail ikon (toggle di footer sidebar).
+  // Preferensi disimpan per-perangkat (localStorage) — pola sama seperti
+  // lokalisasi & integrasi Obsidian.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('oriole.sidebarCollapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
   const navigate = useNavigate();
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed((collapsed) => {
+      try {
+        localStorage.setItem('oriole.sidebarCollapsed', collapsed ? '0' : '1');
+      } catch {
+        // localStorage tidak tersedia — abaikan, toggle tetap berfungsi untuk sesi ini.
+      }
+      return !collapsed;
+    });
+  };
+
+  // Layar ≥ lg (1024px, breakpoint Tailwind `lg:`) → sidebar desktop. Di layar
+  // kecil sidebar desktop TIDAK ikut di-render: kalau dua sidebar (desktop
+  // `hidden` + drawer) mount bersamaan, project switcher di keduanya berbagi
+  // state `projectMenuOpen` yang sama — kedua popover native `popover="auto"`
+  // saling menutup (spec: show() satu auto-popover menutup yang lain) sehingga
+  // menu drawer langsung tertutup setelah dibuka.
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsDesktop(event.matches);
+      // Naik ke desktop: tutup drawer + dropdown agar tidak "tersangkut"
+      // terbuka dan muncul lagi diam-diam saat resize balik ke mobile.
+      if (event.matches) {
+        setMenuOpen(false);
+        setProjectMenuOpen(false);
+        setUserMenuOpen(false);
+      }
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Tutup drawer mobile dengan tombol Escape.
   useEffect(() => {
@@ -126,85 +208,126 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   const user = useSessionStore((s) => s.user);
+  // Total unread per project — badge di project switcher + badge item nav
+  // Inbox. Di-poll tiap menit + direfetch tiap dropdown dibuka agar tidak
+  // basi saat pesan masuk.
+  const { data: unreadSummary, refetch: refetchUnread } = useQuery({
+    queryKey: ['unread-summary'],
+    queryFn: () => apiFetch<UnreadSummaryResponse>('/me/unread-summary'),
+    refetchInterval: 60_000,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const isSwitching = useWorkspaceStore((s) => s.isSwitching);
+  const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
   const lastOpenedAt = useWorkspaceStore((s) => s.lastOpenedAt);
   const workspaceSwitcher = (workspaceId: string) => {
-    setActiveWorkspace(workspaceId);
+    void switchWorkspace(workspaceId);
   };
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  // Total unread inbox workspace aktif — badge di item nav Inbox.
+  const inboxUnread = activeWorkspaceId
+    ? (unreadSummary?.unreadByWorkspace[activeWorkspaceId] ?? 0)
+    : 0;
 
   const onLogout = async () => {
     await signOut();
     navigate('/auth/sign-in', { replace: true });
   };
 
-  const sidebar = (onNavigate?: () => void) => (
-    <aside className="flex h-full w-64 flex-col bg-zinc-950">
-      <Logo />
+  const sidebar = (
+    onNavigate?: () => void,
+    options: { collapsed?: boolean; showCollapse?: boolean } = {},
+  ) => {
+    const { collapsed = false, showCollapse = false } = options;
+    return (
+    <aside
+      id="app-sidebar"
+      className={`flex h-full flex-col border-r border-zinc-200 bg-zinc-50 transition-[width] duration-200 ${
+        collapsed ? 'w-16' : 'w-60'
+      }`}
+    >
+      <Logo collapsed={collapsed} />
 
-      <div className="px-3 pb-3">
+      <div className="px-2.5 pb-2">
         <DropdownMenu
           placement="below"
           hasChevron={false}
           menuWidth={300}
           isMenuOpen={projectMenuOpen}
-          onOpenChange={setProjectMenuOpen}
+          onOpenChange={(open) => {
+            setProjectMenuOpen(open);
+            // Segarkan badge unread setiap dropdown project dibuka.
+            if (open) void refetchUnread();
+          }}
           button={{
               label: activeWorkspace?.name ?? t('nav.selectProject'),
               variant: 'ghost',
               width: '100%',
-              style: projectTriggerStyle,
+              style: collapsed
+                ? { ...projectTriggerStyle, justifyContent: 'center' }
+                : projectTriggerStyle,
               children: (
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-[11px] font-bold text-amber-400">
-                    {(activeWorkspace?.name ?? '?').slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-zinc-200">
-                    {activeWorkspace?.name ?? t('nav.selectProject')}
-                  </span>
+                <span className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
+                  <WorkspaceAvatar workspace={activeWorkspace ?? { name: '?' }} size={24} />
+                  {!collapsed && (
+                    <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-zinc-800">
+                      {activeWorkspace?.name ?? t('nav.selectProject')}
+                    </span>
+                  )}
                 </span>
               ),
-              endContent: (
+              endContent: collapsed ? undefined : (
                 <IconChevronDown
-                  className={`size-3.5 shrink-0 text-zinc-500 transition-transform duration-200 ${
+                  className={`size-3.5 shrink-0 text-zinc-400 transition-transform duration-200 ${
                     projectMenuOpen ? 'rotate-180' : ''
                   }`}
                 />
               ),
             }}
           >
+            {/* Hanya daftar project yang scroll (max ~4 item, 192px); footer
+                "Kelola project" di bawah TETAP terlihat. Keyboard nav aman:
+                astryx mencari item via [role="menuitem"] descendant dari
+                [role="menu"], jadi wrapper div tidak memutusnya. pr-1 memberi
+                ruang scrollbar agar tidak menimpa teks item. */}
+            <div className="max-h-48 overflow-y-auto overscroll-contain pr-1">
             {workspaces.map((workspace) => {
               const isActive = workspace.id === activeWorkspaceId;
               const lastOpened = lastOpenedAt[workspace.id];
+              const unread = unreadSummary?.unreadByWorkspace[workspace.id] ?? 0;
               return (
                 <DropdownMenuItem
                   key={workspace.id}
-                  icon={
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-[11px] font-bold text-amber-700">
-                      {workspace.name.slice(0, 1).toUpperCase()}
+                  icon={<WorkspaceAvatar workspace={workspace} size={24} />}
+                  label={
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="block truncate text-sm font-semibold">{workspace.name}</span>
+                      <UnreadBadge count={unread} label={t('inbox.unread', { count: unread })} />
                     </span>
                   }
-                  label={
-                    <span className="block truncate text-xs font-semibold">{workspace.name}</span>
-                  }
-                  description={
-                    lastOpened
-                      ? t('nav.lastOpened', {
-                          time: formatLastOpened(lastOpened, i18n.resolvedLanguage ?? 'en'),
-                        })
-                      : t('nav.lastOpenedNever')
-                  }
-                  endContent={
-                    isActive ? <IconCheck className="size-4 shrink-0 text-amber-500" /> : undefined
-                  }
-                  onClick={() => workspaceSwitcher(workspace.id)}
-                />
-              );
-            })}
+                    description={
+                      <span className="block text-xs">
+                        {lastOpened
+                          ? t('nav.lastOpened', {
+                              time: formatLastOpened(lastOpened, i18n.resolvedLanguage ?? 'en'),
+                            })
+                          : t('nav.lastOpenedNever')}
+                      </span>
+                    }
+                    endContent={
+                      isActive ? <IconCheck className="size-3.5 shrink-0 text-amber-500" /> : undefined
+                    }
+                    onClick={() => workspaceSwitcher(workspace.id)}
+                  />
+                );
+              })}
+            </div>
 
-            <div className="border-t border-zinc-200/70 p-1.5 dark:border-zinc-700/60">
+            {/* Tanpa p-1.5: popover astryx sudah punya padding sendiri (--_dropdown-menu-padding),
+                jadi wrapper tanpa padding membuat tombol selebar item menu di atasnya. */}
+            <div className="border-t border-zinc-200/70 dark:border-zinc-700/60">
               <NavLink
                 to="/app/workspaces"
                 onClick={() => {
@@ -214,7 +337,7 @@ export function AppShell() {
                   setProjectMenuOpen(false);
                   onNavigate?.();
                 }}
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-amber-600 transition hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-amber-600 transition hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
               >
                 <IconPlus className="size-3.5" /> {t('nav.manageProjects')}
               </NavLink>
@@ -222,43 +345,73 @@ export function AppShell() {
           </DropdownMenu>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
-        <p className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-          {t('nav.menu')}
-        </p>
-        {NAV.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/app/dashboard'}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                isActive
-                  ? 'bg-amber-500/10 text-amber-400'
-                  : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-100'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <item.icon
-                  className={`size-[18px] shrink-0 transition ${isActive ? 'text-amber-400' : 'text-zinc-500 group-hover:text-zinc-300'}`}
-                />
-                {t(item.labelKey)}
-              </>
-            )}
-          </NavLink>
-        ))}
+      <nav className={`flex-1 overflow-y-auto py-1 ${collapsed ? 'px-1.5' : 'px-2.5'}`}>
+        {!collapsed && (
+          <p className="px-2.5 pb-1 pt-0.5 text-xs font-normal uppercase tracking-widest text-zinc-500">
+            {t('nav.menu')}
+          </p>
+        )}
+        {NAV.map((item) =>
+          item.dialog ? (
+            // Item dialog (Settings) — tombol yang membuka dialog, bukan link.
+            <button
+              key={item.to}
+              type="button"
+              onClick={() => {
+                // Tutup drawer mobile dulu (sama seperti NavLink lain) agar
+                // dialog tidak terbuka di atas drawer yang masih terbuka.
+                onNavigate?.();
+                setIsSettingsOpen(true);
+              }}
+              title={collapsed ? t(item.labelKey) : undefined}
+              aria-label={collapsed ? t(item.labelKey) : undefined}
+              className={`group flex w-full items-center rounded-lg text-left text-base font-normal text-zinc-600 transition hover:bg-zinc-200/70 hover:text-zinc-900 ${
+                collapsed ? 'justify-center px-1.5 py-2' : 'gap-2.5 px-2.5 py-1.5'
+              }`}
+            >
+              <item.icon className="size-4 shrink-0 text-zinc-400 transition group-hover:text-zinc-600" />
+              {!collapsed && t(item.labelKey)}
+            </button>
+          ) : (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/app/dashboard'}
+              onClick={onNavigate}
+              title={collapsed ? t(item.labelKey) : undefined}
+              aria-label={collapsed ? t(item.labelKey) : undefined}
+              className={({ isActive }) =>
+                `group flex items-center rounded-lg text-base font-normal transition ${
+                  collapsed ? 'justify-center px-1.5 py-2' : 'gap-2.5 px-2.5 py-1.5'
+                } ${
+                  isActive
+                    ? 'bg-amber-500/10 text-amber-600'
+                    : 'text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <item.icon
+                    className={`size-4 shrink-0 transition ${isActive ? 'text-amber-600' : 'text-zinc-400 group-hover:text-zinc-600'}`}
+                  />
+                  {!collapsed && t(item.labelKey)}
+                  {/* Badge unread khusus item Inbox (workspace aktif). */}
+                  {!collapsed && item.to === '/app/inbox' && (
+                    <UnreadBadge
+                      count={inboxUnread}
+                      label={t('inbox.unread', { count: inboxUnread })}
+                      className="ml-auto"
+                    />
+                  )}
+                </>
+              )}
+            </NavLink>
+          ),
+        )}
       </nav>
 
-      <div className="border-t border-zinc-800/80 p-3">
-        <div className="mb-2 flex items-center justify-between px-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-            {t('nav.language')}
-          </span>
-          <LocaleSwitcher dark placement="above" />
-        </div>
+      <div className={`border-t border-zinc-200/80 ${collapsed ? 'p-1.5' : 'p-2.5'}`}>
         <DropdownMenu
           placement="above"
           hasChevron={false}
@@ -268,55 +421,134 @@ export function AppShell() {
             label: user?.name ?? t('nav.user'),
             variant: 'ghost',
             width: '100%',
-            style: userMenuTriggerStyle,
+            style: collapsed
+              ? { ...userMenuTriggerStyle, justifyContent: 'center', padding: 4 }
+              : userMenuTriggerStyle,
             children: (
-              <span className="flex min-w-0 items-center gap-3">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs font-bold text-amber-400">
-                  {(user?.name ?? user?.email ?? 'U').slice(0, 1).toUpperCase()}
+              <span className={`flex min-w-0 items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`}>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-[11px] font-bold text-amber-700">
+                  {initialsOf(user?.name ?? user?.email ?? 'U')}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-left text-xs font-semibold text-zinc-200">
-                    {user?.name ?? t('nav.user')}
+                {!collapsed && (
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-left text-sm font-normal text-zinc-800">
+                      {user?.name ?? t('nav.user')}
+                    </span>
+                    <span className="block truncate text-left text-sm text-zinc-500">
+                      {user?.email ?? ''}
+                    </span>
                   </span>
-                  <span className="block truncate text-left text-[11px] text-zinc-500">
-                    {user?.email ?? ''}
-                  </span>
-                </span>
+                )}
               </span>
             ),
-            endContent: (
-              <IconChevronDown
-                className={`size-4 shrink-0 text-zinc-600 transition-transform duration-200 ${
-                  userMenuOpen ? 'rotate-180' : ''
-                }`}
-              />
+            endContent: collapsed ? undefined : (
+              <IconDotsHorizontal className="size-4 shrink-0 text-zinc-400" />
             ),
           }}
         >
+          {/* Settings — dialog identitas akun, notifikasi, & keamanan (dipindah
+              dari halaman /app/settings & dialog profil lama). */}
+          <DropdownMenuItem
+            label={t('nav.settings')}
+            icon={<IconSettings className="size-4" />}
+            onClick={() => setIsSettingsOpen(true)}
+          />
+          {/* Billing — dialog langganan & kuota (dipindah dari halaman /app/billing) */}
+          <DropdownMenuItem
+            label={t('nav.billing')}
+            icon={<IconCreditCard className="size-4" />}
+            onClick={() => setIsBillingOpen(true)}
+          />
+          {/* Pemilihan bahasa — submenu (flyout) di dalam dropdown akun */}
+          <DropdownMenuSubMenu
+            icon={<span className="text-sm leading-none">{activeLanguage.flag}</span>}
+            label={t('nav.language')}
+            menuWidth={160}
+          >
+            <LanguageMenuItems />
+          </DropdownMenuSubMenu>
           <DropdownMenuItem
             label={t('common.logout')}
             icon={<IconLogout className="size-4" />}
             onClick={onLogout}
-            style={logoutItemHoverStyle}
           />
         </DropdownMenu>
+
+        {/* Aksi footer — baris ikon kecil: Help (paling kiri) + toggle
+            ciutkan sidebar (paling kanan). Toggle hanya untuk sidebar desktop
+            (showCollapse; drawer mobile punya tombol tutup sendiri). Ukuran
+            ikon menyusut saat rail ciut agar dua tombol muat di lebar w-16. */}
+        <div
+          className={`flex items-center border-t border-zinc-200/70 ${
+            collapsed ? 'mt-1.5 justify-between gap-0 pt-1.5' : 'mt-2 justify-between gap-1 pt-2'
+          }`}
+        >
+          <NavLink
+            to="/app/help"
+            onClick={onNavigate}
+            title={t('nav.help')}
+            aria-label={t('nav.help')}
+            className={({ isActive }) =>
+              `flex shrink-0 items-center justify-center rounded-lg transition ${
+                collapsed ? 'size-6' : 'size-7'
+              } ${
+                isActive
+                  ? 'bg-amber-500/10 text-amber-600'
+                  : 'text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600'
+              }`
+            }
+          >
+            <IconHelp className={collapsed ? 'size-3.5' : 'size-4'} />
+          </NavLink>
+
+          {showCollapse && (
+            <button
+              type="button"
+              onClick={toggleSidebarCollapsed}
+              aria-controls="app-sidebar"
+              title={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+              aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+              aria-expanded={!collapsed}
+              className={`flex shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-200/70 hover:text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                collapsed ? 'size-6' : 'size-7'
+              }`}
+            >
+              {collapsed ? (
+                <IconPanelLeftOpen className="size-3.5" />
+              ) : (
+                <IconPanelLeftClose className="size-4" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </aside>
-  );
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      {/* Sidebar — desktop */}
-      <div className="fixed inset-y-0 left-0 z-40 hidden w-64 lg:block">{sidebar()}</div>
+    <div className="min-h-screen bg-surface">
+      {/* Sidebar — desktop. Hanya di-mount saat viewport ≥ lg supaya tidak
+          ada dua salinan sidebar (desktop + drawer) yang popover switchernya
+          saling menutup di layar kecil. */}
+      {isDesktop && (
+        <div
+          className={`fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 lg:block ${
+            isSidebarCollapsed ? 'w-16' : 'w-60'
+          }`}
+        >
+          {sidebar(undefined, { collapsed: isSidebarCollapsed, showCollapse: true })}
+        </div>
+      )}
 
       {/* Sidebar — mobile (drawer) */}
-      {menuOpen && (
+      {menuOpen && !isDesktop && (
         <div className="fixed inset-0 z-50 lg:hidden" id="app-menu-drawer">
           <div
             className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute inset-y-0 left-0 w-64 shadow-2xl">
+          <div className="absolute inset-y-0 left-0 w-60 shadow-2xl">
             <IconButton
               icon={<IconX className="size-4" />}
               label={t('nav.closeMenu')}
@@ -330,7 +562,26 @@ export function AppShell() {
         </div>
       )}
 
-      <div className="lg:pl-64">
+      {/* Loader saat pindah project — menutupi layar sampai data workspace
+          baru selesai dimuat (isSwitching di-reset oleh store). */}
+      {isSwitching && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-surface/70 backdrop-blur-[2px]"
+        >
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-8 py-6 shadow-lg">
+            <Spinner size="xl" />
+            <p className="text-sm font-semibold text-zinc-700">{t('nav.switchingProject')}</p>
+          </div>
+        </div>
+      )}
+
+      <div
+        className={`transition-[padding] duration-200 ${
+          isSidebarCollapsed ? 'lg:pl-16' : 'lg:pl-60'
+        }`}
+      >
         {/* Hamburger mobile — header breadcrumb dihapus. */}
         <IconButton
           icon={<IconMenu className="size-4" />}
@@ -345,6 +596,12 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      {/* Dialog settings — satu instance untuk seluruh shell (sidebar desktop
+          & drawer mobile sama-sama memakai state isSettingsOpen). */}
+      <SettingsDialog isOpen={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      {/* Dialog billing — dibuka dari dropdown akun di footer sidebar. */}
+      <BillingDialog isOpen={isBillingOpen} onOpenChange={setIsBillingOpen} />
     </div>
   );
 }

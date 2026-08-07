@@ -23,6 +23,22 @@ const paddleConfigured =
   !isPlaceholder(env.PADDLE_API_KEY) && !isPlaceholder(env.PADDLE_CLIENT_TOKEN);
 
 /**
+ * Ekstrak pesan kesalahan asli dari error SDK Paddle (mis. detail kaya
+ * "Transaction balance is less than what we can charge. ...") supaya
+ * kegagalan checkout tidak berubah menjadi pesan generik yang membingungkan.
+ */
+function paddleErrorDetail(err: unknown): string | null {
+  if (err && typeof err === 'object') {
+    // SDK Paddle: ApiError mengekspos `detail` langsung (dan sebagai message).
+    const direct = (err as { detail?: unknown }).detail;
+    if (typeof direct === 'string' && direct) return direct;
+    const apiError = (err as { error?: { detail?: string } }).error;
+    if (apiError?.detail) return apiError.detail;
+  }
+  return err instanceof Error ? err.message : null;
+}
+
+/**
  * Billing — status langganan & kuota (GET), serta aksi Paddle
  * (POST /checkout → URL checkout paket Pro, POST /portal → portal billing).
  */
@@ -96,8 +112,14 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       }
       return c.json({ url: transaction.checkout.url });
     } catch (err) {
-      console.error('[billing] checkout gagal:', err);
-      return c.json({ error: 'Gagal membuat checkout di Paddle' }, 502);
+      const detail = paddleErrorDetail(err);
+      console.error('[billing] checkout gagal:', detail ?? err);
+      // Sertakan detail asli (jika ada) agar user & log bisa melihat penyebab
+      // sebenarnya (mis. harga di bawah batas minimum charge Paddle).
+      return c.json(
+        { error: 'Gagal membuat checkout di Paddle', detail: detail ?? undefined },
+        502,
+      );
     }
   })
 
@@ -124,7 +146,11 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       );
       return c.json({ url: session.urls.general.overview });
     } catch (err) {
-      console.error('[billing] portal gagal:', err);
-      return c.json({ error: 'Gagal membuka portal billing' }, 502);
+      const detail = paddleErrorDetail(err);
+      console.error('[billing] portal gagal:', detail ?? err);
+      return c.json(
+        { error: 'Gagal membuka portal billing', detail: detail ?? undefined },
+        502,
+      );
     }
   });

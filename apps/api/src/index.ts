@@ -21,6 +21,7 @@ import { meRoutes } from './routes/me.ts';
 import { triggerRoutes } from './routes/triggers.ts';
 import { bookingTriggersRoutes } from './routes/booking-triggers.ts';
 import { channelsRoutes } from './routes/channels.ts';
+import { integrationsRoutes } from './routes/integrations.ts';
 import { inboxRoutes } from './routes/inbox.ts';
 import { calleWebhookRoutes } from './routes/webhooks/calle.ts';
 import { paddleWebhookRoutes } from './routes/webhooks/paddle.ts';
@@ -65,7 +66,7 @@ app.use(
 
 // ── Batas ukuran body — webhook boleh lebih besar (transkrip panggilan). ──
 const bodyTooLarge = (c: Context) => c.json({ error: 'Body terlalu besar' }, 413);
-for (const path of ['/api/bookings/*', '/api/calls/*', '/api/me/*', '/api/billing/*', '/api/triggers/*']) {
+for (const path of ['/api/bookings/*', '/api/calls/*', '/api/me/*', '/api/billing/*', '/api/triggers/*', '/api/integrations/*']) {
   app.use(path, bodyLimit({ maxSize: 1024 * 1024, onError: bodyTooLarge }));
 }
 app.use('/api/webhooks/*', bodyLimit({ maxSize: 10 * 1024 * 1024, onError: bodyTooLarge }));
@@ -90,6 +91,7 @@ app.route('/api/me', meRoutes);
 app.route('/api/bookings', bookingsRoutes);
 app.route('/api/bookings', bookingTriggersRoutes);
 app.route('/api/channels', channelsRoutes);
+app.route('/api/integrations', integrationsRoutes);
 app.route('/api/inbox', inboxRoutes);
 app.route('/api/contacts', contactsRoutes);
 app.route('/api/analytics', analyticsRoutes);

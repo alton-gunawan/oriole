@@ -2,13 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Skeleton, type BadgeVariant } from '@astryxdesign/core';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 import { ApiError, apiFetch } from '../../lib/api';
-import { Card, EmptyState, PageHeader, SessionExpiredCard, StatCard } from '../shell/ui';
+import { Card, EmptyState, PageHeader, ReloadMenuButton, SessionExpiredCard, StatCard } from '../shell/ui';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { callStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
-import { IconAlertTriangle, IconClock, IconPhone, IconRefreshCw } from '../shell/icons';
+import { IconAlertTriangle, IconClock, IconPhone } from '../shell/icons';
 
 /* ── Types (mirror dari GET /api/calls) ────────────────────── */
 
@@ -78,6 +79,7 @@ function resultSnippet(result: Record<string, unknown> | null, t: TFunction): st
 
 export function CallsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['calls', activeWorkspaceId],
@@ -102,14 +104,7 @@ export function CallsPage() {
         title={t('calls.title')}
         description={t('calls.description')}
       >
-        <Button
-          label={t('common.reload')}
-          variant="secondary"
-          icon={<IconRefreshCw className="size-4" />}
-          isLoading={isFetching}
-          isDisabled={isFetching}
-          onClick={() => void refetch()}
-        />
+        <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
       </PageHeader>
 
       {/* Stat cards */}
@@ -192,7 +187,7 @@ export function CallsPage() {
               icon={IconPhone}
               title={t('calls.noCallsTitle')}
               description={t('calls.noCallsDesc')}
-              action={{ label: t('calls.createCall'), disabled: true }}
+              action={{ label: t('calls.goToBookings'), onClick: () => navigate('/app/bookings') }}
             />
           ) : (
             <Card className="divide-y divide-zinc-100">
@@ -217,7 +212,7 @@ export function CallsPage() {
 
                   <div className="shrink-0 text-right">
                     <p className="text-xs font-medium text-zinc-700">{formatDateTime(call.createdAt)}</p>
-                    {call.task && <p className="mt-0.5 text-[11px] text-zinc-400">{call.task}</p>}
+                    {call.task && <p className="mt-0.5 text-xs text-zinc-400">{call.task}</p>}
                   </div>
                 </div>
               ))}

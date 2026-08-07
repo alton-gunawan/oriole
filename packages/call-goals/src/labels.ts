@@ -7,6 +7,15 @@ export const INDUSTRY_LABELS: Record<Industry, string> = {
   medical_clinic: 'Medical Clinic',
   restaurant: 'Restaurant',
   wellness: 'Wellness / Therapy',
+  fitness: 'Fitness & Gym',
+  professional_services: 'Professional Services',
+  home_services: 'Home Services',
+  automotive: 'Automotive',
+  education_coaching: 'Education & Coaching',
+  photography_creative: 'Photography & Creative',
+  real_estate: 'Real Estate',
+  pet_care: 'Pet Care',
+  space_rental: 'Space Rental',
   other: 'Other',
 };
 

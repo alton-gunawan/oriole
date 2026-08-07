@@ -134,6 +134,7 @@ describe('GET /api/analytics/overview', () => {
       callsTotal: 0,
       callsThisMonth: 0,
       messagesTotal: 0,
+      contactsTotal: 0,
       needsAttention: 0,
     });
     expect(body.bookingsByMonth).toHaveLength(12);

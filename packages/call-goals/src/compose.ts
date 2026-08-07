@@ -31,6 +31,10 @@ export function composeCallGoal(
     prompt += `\n\nExtra instruction from the business:\n${customInstruction}`;
   }
 
+  // Bahasa panggilan mengikuti setting workspace (default 'en'). Template
+  // tetap membawa bahasa bawaan; business.language menang bila diisi.
+  const language = input.business.language ?? template.language;
+
   return {
     goalType,
     title: template.title,
@@ -38,7 +42,7 @@ export function composeCallGoal(
     prompt,
     resultSchema: template.resultSchema,
     tone: template.tone,
-    language: template.language,
+    language,
     voicemailBehavior: template.voicemailBehavior,
   };
 }

@@ -45,7 +45,54 @@ describe('getGoalTemplate', () => {
     for (const industry of INDUSTRIES) {
       expect(INDUSTRY_PROFILES[industry].appointmentNoun).toBeTruthy();
       expect(INDUSTRY_PROFILES[industry].businessNoun).toBeTruthy();
+      expect(INDUSTRY_PROFILES[industry].confirmFlow.length).toBeGreaterThan(0);
+      expect(INDUSTRY_PROFILES[industry].rescheduleFlow.length).toBeGreaterThan(0);
     }
+  });
+
+  it('alur panggilan benar-benar berbeda antar industri (bukan sekadar kata benda)', () => {
+    const ctx = {
+      id: 'x',
+      title: 'Booking',
+      status: 'pending' as const,
+      scheduledAt: new Date().toISOString(),
+      changeRequested: false,
+      noShowCount: 0,
+      previousCallAttempts: 0,
+      failedCallAttempts: 0,
+    };
+    const restaurant = getGoalTemplate('restaurant', 'confirm-attendance').buildPrompt(ctx, {
+      name: 'Business',
+    });
+    const automotive = getGoalTemplate('automotive', 'confirm-attendance').buildPrompt(ctx, {
+      name: 'Business',
+    });
+    const petCare = getGoalTemplate('pet_care', 'reminder-reconfirm').buildPrompt(ctx, {
+      name: 'Business',
+    });
+    const realEstate = getGoalTemplate('real_estate', 'confirm-attendance').buildPrompt(ctx, {
+      name: 'Business',
+    });
+    // Skenario bisnis yang berbeda muncul di prompt: jumlah tamu, model
+    // kendaraan, vaksinasi hewan, alamat properti.
+    expect(restaurant).toContain('number of guests');
+    expect(automotive).toContain('vehicle make, model, and year');
+    expect(petCare).toContain('vaccination records');
+    expect(realEstate).toContain('property address');
+    // Prompt lintas industri tidak boleh identik.
+    expect(new Set([restaurant, automotive, petCare, realEstate]).size).toBe(4);
+  });
+
+  it('resultSchema menyertakan field khusus industri (restaurant: party size)', () => {
+    const restaurant = getGoalTemplate('restaurant', 'confirm-attendance');
+    const properties = restaurant.resultSchema.properties as Record<string, unknown>;
+    expect(properties.partySize).toMatchObject({ type: 'integer' });
+    // Field industri tidak wajib — AI boleh kosongkan bila tidak terjawab.
+    expect(restaurant.resultSchema.required).not.toContain('partySize');
+
+    const generic = getGoalTemplate('other', 'confirm-attendance');
+    const genericProperties = generic.resultSchema.properties as Record<string, unknown>;
+    expect(genericProperties.partySize).toBeUndefined();
   });
 });
 

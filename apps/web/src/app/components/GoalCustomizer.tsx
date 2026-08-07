@@ -91,7 +91,7 @@ export function GoalCustomizer({
               {isCustomized ? active.title : autoConfig.title}
             </p>
             {isCustomized && (
-              <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+              <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-400">
                 Customized
               </span>
             )}
@@ -132,7 +132,7 @@ export function GoalCustomizer({
                   </option>
                 ))}
               </select>
-              <span className="mt-1 block text-[11px] text-zinc-500">
+              <span className="mt-1 block text-xs text-zinc-500">
                 Override pilihan otomatis bila diperlukan.
               </span>
             </label>
@@ -149,7 +149,7 @@ export function GoalCustomizer({
                 placeholder="e.g. Mention the first-visit discount"
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-500/10"
               />
-              <span className="mt-1 block text-[11px] text-zinc-500">
+              <span className="mt-1 block text-xs text-zinc-500">
                 Instruksi singkat disisipkan ke prompt CALL-E.
               </span>
             </label>
@@ -158,16 +158,16 @@ export function GoalCustomizer({
           {/* Preview goal final */}
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-600">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600">
                 {GOAL_TYPE_LABELS[active.goalType]}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-600 capitalize">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600 capitalize">
                 tone · {active.tone}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-600 uppercase">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600 uppercase">
                 {active.language}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-600">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600">
                 voicemail · {active.voicemailBehavior.replace('-', ' ')}
               </span>
             </div>

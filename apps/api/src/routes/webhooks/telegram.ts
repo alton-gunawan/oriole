@@ -8,6 +8,7 @@ import { inngest } from '../../inngest/client.ts';
 import { env } from '../../lib/env.ts';
 import { resolveTelegramChannel } from '../../lib/telegram-handler.ts';
 import { markWebhookProcessed, recordWebhookEvent } from '../../lib/webhooks.ts';
+import { isWorkspaceActive } from '../../lib/workspace-lifecycle.ts';
 
 /** Validasi longgar — Update Telegram dibiarkan .passthrough(). */
 const telegramUpdateSchema = z
@@ -29,6 +30,12 @@ export const telegramWebhookRoutes = new Hono().post(
   async (c) => {
     const workspaceId = c.req.param('workspaceId');
     const body = c.req.valid('json') as TelegramUpdate;
+
+    // Project soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
+    // Telegram tidak me-retry; pesan tidak akan pernah diproses).
+    if (!(await isWorkspaceActive(workspaceId))) {
+      return c.json({ received: true, disabled: true });
+    }
 
     const channel = await resolveTelegramChannel(workspaceId);
     if (!channel) {

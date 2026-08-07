@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router';
 import { Button, TextInput } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
+import { AppLogo } from '../components/AppLogo';
+import { AvatarPicker } from '../components/AvatarPicker';
 import { apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import { RECOMMENDED_TEMPLATE_CATEGORIES, type Workspace } from '../../lib/workspace';
@@ -16,6 +18,7 @@ export function OnboardingPage() {
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,7 +30,11 @@ export function OnboardingPage() {
     try {
       const response = await apiFetch<{ workspace: Workspace }>('/me/workspaces', {
         method: 'POST',
-        body: JSON.stringify({ name, templateCategory: category }),
+        body: JSON.stringify({
+          name,
+          templateCategory: category,
+          ...(avatarUrl !== null ? { avatarUrl } : {}),
+        }),
       });
       addWorkspace(response.workspace);
       navigate('/app/dashboard', { replace: true });
@@ -39,11 +46,11 @@ export function OnboardingPage() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-4 py-10 sm:px-6">
+    <main className="min-h-screen bg-surface px-4 py-10 sm:px-6">
       <div className="mx-auto max-w-3xl">
         <div className="mb-8 text-center">
-          <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-amber-500 text-xl font-bold text-zinc-950 shadow-sm">
-            O
+          <span className="inline-flex size-12 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-sm">
+            <AppLogo />
           </span>
           <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-amber-600">{t('onboarding.kicker')}</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950">{t('onboarding.title')}</h1>
@@ -63,6 +70,8 @@ export function OnboardingPage() {
               width="100%"
               hasAutoFocus
             />
+
+            <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} name={name || '?'} />
 
             <fieldset>
               <legend className="text-sm font-semibold text-zinc-800">{t('onboarding.businessQuestion')}</legend>

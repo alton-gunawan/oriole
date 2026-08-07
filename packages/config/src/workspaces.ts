@@ -28,16 +28,16 @@ export type WorkspaceTemplateCategory = (typeof WORKSPACE_TEMPLATE_CATEGORY_IDS)
 export const WORKSPACE_TEMPLATE_CATEGORY_INDUSTRY: Record<WorkspaceTemplateCategory, Industry> = {
   'beauty-wellness': 'wellness',
   'healthcare-clinics': 'medical_clinic',
-  fitness: 'wellness',
-  'professional-services': 'other',
-  'home-services': 'other',
-  automotive: 'other',
-  'education-coaching': 'other',
-  'photography-creative': 'other',
+  fitness: 'fitness',
+  'professional-services': 'professional_services',
+  'home-services': 'home_services',
+  automotive: 'automotive',
+  'education-coaching': 'education_coaching',
+  'photography-creative': 'photography_creative',
   'hospitality-events': 'restaurant',
-  'real-estate': 'other',
-  'pet-care': 'other',
-  'space-rental': 'other',
+  'real-estate': 'real_estate',
+  'pet-care': 'pet_care',
+  'space-rental': 'space_rental',
 };
 
 /** Industri default untuk sebuah kategori — dipakai API saat industry tidak dikirim. */

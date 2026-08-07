@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, lte, max, or, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
@@ -19,8 +19,18 @@ import { db } from '../db/index.ts';
 import { env } from '../lib/env.ts';
 import { calle } from '../services/calle.ts';
 import { countCallAttempts } from '../lib/booking-goal.ts';
-import { emitBookingCancelled, emitBookingCompleted, emitBookingCreated } from '../lib/reminders.ts';
+import {
+  DEFAULT_AUTO_CALL_LEAD_HOURS,
+  emitAutoCallCancelled,
+  emitAutoCallScheduled,
+  emitBookingCancelled,
+  emitBookingCompleted,
+  emitBookingCreated,
+  resolveAutoCallSettings,
+} from '../lib/reminders.ts';
 import { phoneField } from '../lib/phone.ts';
+import { syncBookingContact } from '../lib/contact-sync.ts';
+import { emitCalendarBookingEvent, emitOutgoingWebhookEvent } from '../lib/integration-events.ts';
 import { checkCallQuota } from '../lib/quota.ts';
 import { dispatchTelegramReminder, TelegramDispatchError } from '../lib/telegram-handler.ts';
 import { requireAuth } from '../middleware/auth.ts';
@@ -46,15 +56,27 @@ const createBookingSchema = z.object({
 
 const bookingIdParamSchema = z.object({ id: z.string().uuid() });
 
-/** Filter daftar booking: status + rentang jadwal (ISO datetime ber-offset). */
+/** Ukuran halaman default untuk pagination offset (UI useTablePagination). */
+const DEFAULT_PAGE_SIZE = 10;
+
+/** Filter daftar booking: judul + status + rentang jadwal + customer (ISO datetime ber-offset). */
 const listQuerySchema = z
   .object({
     status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
+    // Filter judul (kolom Booking): substring case-insensitive.
+    title: z.string().trim().max(200).optional(),
+    // Filter customer: substring case-insensitive pada nama ATAU nomor telepon
+    // (saran dropdown dari GET /api/bookings/customers).
+    customer: z.string().trim().max(200).optional(),
     from: z.iso.datetime({ offset: true }).optional(),
     to: z.iso.datetime({ offset: true }).optional(),
     // Pagination kursor: posisi setelah baris terakhir halaman sebelumnya.
     cursor: z.string().max(400).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
+    // Pagination offset (halaman): dipakai UI untuk nomor halaman + total.
+    // Bila `page` ada, mode offset dipakai (cursor diabaikan).
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(200).optional(),
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {
     message: 'Rentang tanggal tidak valid: from harus sebelum to',
@@ -63,6 +85,12 @@ const listQuerySchema = z
 const cursorPayloadSchema = z.object({
   at: z.iso.datetime({ offset: true }),
   id: z.string().uuid(),
+});
+
+/** Query saran customer untuk dropdown filter (GET /api/bookings/customers). */
+const customersQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
 /** Decode kursor pagination ({ at, id } base64url) → kondisi keyset, atau null bila tidak ada. */
@@ -110,6 +138,25 @@ function toPersistedGoal(
 
 type BookingRow = typeof bookings.$inferSelect;
 
+/** Snapshot JSON booking untuk payload webhook keluar. */
+function bookingWebhookPayload(row: BookingRow) {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    scheduledAt: row.scheduledAt.toISOString(),
+    timezone: row.timezone,
+    customerName: row.customerName,
+    phone: row.phone,
+    contactId: row.contactId ?? null,
+    industry: row.industry,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 function serializeBooking(
   row: BookingRow,
   attempts: { total: number; failed: number },
@@ -124,6 +171,7 @@ function serializeBooking(
     status: row.status,
     customerName: row.customerName,
     phone: row.phone,
+    contactId: row.contactId ?? null,
     industry: row.industry,
     goalType: row.goalType,
     customInstruction: row.customInstruction,
@@ -163,10 +211,38 @@ async function findBooking(workspaceId: string, bookingId: string): Promise<Book
 }
 
 export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
+  /* ── Saran nama customer untuk filter (dropdown) ──────────── */
+  .get('/customers', requireAuth, requireWorkspace, zValidator('query', customersQuerySchema), async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const { q, limit } = c.req.valid('query');
+
+    const conditions: (SQL | undefined)[] = [
+      eq(bookings.workspaceId, workspaceId),
+      isNotNull(bookings.customerName),
+    ];
+    if (q) {
+      const pattern = `%${q}%`;
+      conditions.push(
+        or(ilike(bookings.customerName, pattern), ilike(bookings.phone, pattern)),
+      );
+    }
+
+    // Nama customer unik, diurutkan dari booking paling baru (recency menang).
+    const rows = await db
+      .select({ name: bookings.customerName, latestAt: max(bookings.scheduledAt) })
+      .from(bookings)
+      .where(and(...conditions))
+      .groupBy(bookings.customerName)
+      .orderBy(desc(max(bookings.scheduledAt)))
+      .limit(limit);
+
+    return c.json({ customers: rows.map((row) => ({ name: row.name })) });
+  })
+
   /* ── List bookings workspace ─────────────────────────────── */
   .get('/', requireAuth, requireWorkspace, zValidator('query', listQuerySchema), async (c) => {
     const workspaceId = c.get('workspaceId');
-    const { status, from, to, limit, cursor: rawCursor } = c.req.valid('query');
+    const { status, title, customer, from, to, limit, cursor: rawCursor, page, pageSize } = c.req.valid('query');
 
     const cursor = decodeCursor(rawCursor);
     if (rawCursor && !cursor) {
@@ -175,6 +251,13 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
     const conditions: (SQL | undefined)[] = [eq(bookings.workspaceId, workspaceId)];
     if (status) conditions.push(eq(bookings.status, status));
+    if (title) conditions.push(ilike(bookings.title, `%${title}%`));
+    if (customer) {
+      const pattern = `%${customer}%`;
+      conditions.push(
+        or(ilike(bookings.customerName, pattern), ilike(bookings.phone, pattern)),
+      );
+    }
     if (from) conditions.push(gte(bookings.scheduledAt, new Date(from)));
     if (to) conditions.push(lte(bookings.scheduledAt, new Date(to)));
     // Keyset pagination: urut desc(scheduledAt), desc(id) — ambil baris setelah kursor.
@@ -187,38 +270,86 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       );
     }
 
-    // Ambil limit+1 untuk mendeteksi adanya halaman berikutnya.
-    const rows = await db
-      .select()
-      .from(bookings)
-      .where(and(...conditions))
-      .orderBy(desc(bookings.scheduledAt), desc(bookings.id))
-      .limit(limit + 1);
+    const where = and(...conditions);
 
+    // Window reminder workspace dipakai mesin keputusan goal (default 24 jam).
+    const loadLeadHours = () =>
+      db
+        .select({ leadHours: workspaces.autoCallLeadHours })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
+        .limit(1)
+        .then((rows) => rows[0]?.leadHours ?? null);
+    const resolveLeadHours = (raw: number | null): number =>
+      Number.isFinite(raw) && (raw ?? 0) > 0 ? (raw as number) : DEFAULT_AUTO_CALL_LEAD_HOURS;
+
+    /** Serialisasi baris + hitung attempt CALL-E per booking (dipakai kedua mode). */
+    const serializeRows = async (rows: BookingRow[], leadHours: number) => {
+      const counts = new Map<string, { total: number; failed: number }>();
+      if (rows.length > 0) {
+        const calls = await db
+          .select({ bookingId: calleCalls.bookingId, status: calleCalls.status })
+          .from(calleCalls)
+          .where(inArray(calleCalls.bookingId, rows.map((row) => row.id)));
+        for (const row of rows) {
+          counts.set(
+            row.id,
+            countCallAttempts(calls.filter((call) => call.bookingId === row.id)),
+          );
+        }
+      }
+      return rows.map((row) => {
+        const attempts = counts.get(row.id) ?? { total: 0, failed: 0 };
+        return serializeBooking(
+          row,
+          attempts,
+          determineCallGoal(toGoalContext(row, attempts), {
+            reminderWindowHours: leadHours,
+          }),
+        );
+      });
+    };
+
+    // Mode offset (halaman) — dipakai UI dengan useTablePagination; butuh total
+    // untuk menghitung jumlah halaman. Kursor tetap didukung (backward compat).
+    // Query count + rows + workspace dijalankan paralel (Promise.all) — di
+    // serverless setiap query = satu round-trip; paralel memangkas latensi.
+    if (page !== undefined) {
+      const size = pageSize ?? DEFAULT_PAGE_SIZE;
+      const [countRow, rows, rawLeadHours] = await Promise.all([
+        db.select({ total: count() }).from(bookings).where(where),
+        db
+          .select()
+          .from(bookings)
+          .where(where)
+          .orderBy(desc(bookings.scheduledAt), desc(bookings.id))
+          .limit(size)
+          .offset((page - 1) * size),
+        loadLeadHours(),
+      ]);
+      return c.json({
+        bookings: await serializeRows(rows, resolveLeadHours(rawLeadHours)),
+        total: countRow[0]?.total ?? 0,
+        page,
+        pageSize: size,
+      });
+    }
+
+    // Mode kursor (lama): ambil limit+1 untuk mendeteksi halaman berikutnya.
+    const [rows, rawLeadHours] = await Promise.all([
+      db
+        .select()
+        .from(bookings)
+        .where(where)
+        .orderBy(desc(bookings.scheduledAt), desc(bookings.id))
+        .limit(limit + 1),
+      loadLeadHours(),
+    ]);
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
-    const counts = new Map<string, { total: number; failed: number }>();
-    if (pageRows.length > 0) {
-      const calls = await db
-        .select({ bookingId: calleCalls.bookingId, status: calleCalls.status })
-        .from(calleCalls)
-        .where(inArray(calleCalls.bookingId, pageRows.map((row) => row.id)));
-      for (const row of pageRows) {
-        counts.set(
-          row.id,
-          countCallAttempts(calls.filter((call) => call.bookingId === row.id)),
-        );
-      }
-    }
-
-    const bookingsPayload = pageRows.map((row) => {
-      const attempts = counts.get(row.id) ?? { total: 0, failed: 0 };
-      return serializeBooking(row, attempts, determineCallGoal(toGoalContext(row, attempts)));
-    });
-
     return c.json({
-      bookings: bookingsPayload,
+      bookings: await serializeRows(pageRows, resolveLeadHours(rawLeadHours)),
       nextCursor: hasMore && pageRows.length > 0 ? encodeCursor(pageRows[pageRows.length - 1]) : null,
       hasMore,
     });
@@ -249,6 +380,17 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       })
       .returning();
 
+    // Integrasi Kontak: temukan kontak dengan nomor customer, buat bila belum
+    // ada (kontak tanpa nama tidak dibuat). Mutasi `row` agar respons berisi
+    // contactId yang baru disinkronkan.
+    row.contactId = await syncBookingContact({
+      userId: c.get('userId'),
+      workspaceId: c.get('workspaceId'),
+      bookingId: row.id,
+      customerName: row.customerName,
+      phone: row.phone,
+    });
+
     const attempts = { total: 0, failed: 0 };
 
     // Jadwalkan reminder otomatis (Inngest tidur sampai reminderAt).
@@ -258,6 +400,22 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       scheduledAt: row.scheduledAt,
       timezone: row.timezone,
     });
+
+    // Jadwalkan auto-call CALL-E bila workspace mengaktifkannya (perlu nomor
+    // telepon — booking tanpa phone diskip di sini, bukan di dalam run).
+    if (row.phone) {
+      await emitAutoCallScheduled({
+        workspaceId: c.get('workspaceId'),
+        bookingId: row.id,
+        scheduledAt: row.scheduledAt,
+        timezone: row.timezone,
+      });
+    }
+
+    // Integrasi eksternal: webhook keluar (booking.created) + mirror
+    // ke Google Calendar (bila terhubung & aktif).
+    await emitOutgoingWebhookEvent(c.get('workspaceId'), 'booking.created', bookingWebhookPayload(row));
+    await emitCalendarBookingEvent(c.get('workspaceId'), row.id, 'upsert');
 
     return c.json({ booking: serializeBooking(row, attempts, determineCallGoal(toGoalContext(row, attempts))) }, 201);
   })
@@ -269,9 +427,9 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     if (!row) return c.json({ error: 'Booking tidak ditemukan' }, 404);
 
     const [workspace] = await db
-      .select({ name: workspaces.name, industry: workspaces.industry })
+      .select({ name: workspaces.name, industry: workspaces.industry, callGoalLanguage: workspaces.callGoalLanguage })
       .from(workspaces)
-      .where(eq(workspaces.id, c.get('workspaceId')))
+      .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
 
     const calls = await db
@@ -282,11 +440,14 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
     const attempts = countCallAttempts(calls);
     const context = toGoalContext(row, attempts);
-    const decision = determineCallGoal(context);
+    const decision = determineCallGoal(context, {
+      reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
+    });
     const business: BusinessGoalContext = {
       id: c.get('workspaceId'),
       name: workspace?.name ?? null,
       industry: row.industry ?? workspace?.industry ?? null,
+      language: workspace?.callGoalLanguage === 'id' ? 'id' : 'en',
     };
 
     return c.json({
@@ -345,6 +506,19 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .where(eq(bookings.id, existing.id))
         .returning();
 
+      // Integrasi Kontak: nomor/nama customer berubah → tautkan ulang (atau
+      // buat kontak baru bila nomor belum ada). Mutasi `updated` agar respons
+      // memuat contactId terkini.
+      if (fields.phone !== undefined || fields.customerName !== undefined) {
+        updated.contactId = await syncBookingContact({
+          userId: c.get('userId'),
+          workspaceId: c.get('workspaceId'),
+          bookingId: updated.id,
+          customerName: updated.customerName,
+          phone: updated.phone,
+        });
+      }
+
       const calls = await db
         .select({ status: calleCalls.status })
         .from(calleCalls)
@@ -360,18 +534,49 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
       if (newStatus === 'completed' && prevStatus !== 'completed') {
         await emitBookingCompleted(workspaceId, updated.id);
+        await emitAutoCallCancelled(workspaceId, updated.id);
       } else if (newStatus === 'cancelled' && prevStatus !== 'cancelled') {
         await emitBookingCancelled(workspaceId, updated.id);
+        await emitAutoCallCancelled(workspaceId, updated.id);
       } else if (newStatus !== 'completed') {
-        // Dijadwal ulang / diaktifkan kembali dari terminal → reminder baru.
-        if (prevStatus === 'cancelled' || prevStatus === 'completed' || newAt.getTime() !== prevAt.getTime()) {
+        // Dijadwal ulang / diaktifkan kembali dari terminal / nomor baru ditambahkan
+        // → reminder & auto-call baru. HANYA emit create (tanpa cancel dulu): run
+        // lama membatalkan dirinya sendiri via guard status/schedule di dalam
+        // fungsi, sehingga tidak ada race cancel-vs-create yang mematikan run baru.
+        const phoneAdded = !existing.phone && Boolean(updated.phone);
+        if (
+          prevStatus === 'cancelled' ||
+          prevStatus === 'completed' ||
+          newAt.getTime() !== prevAt.getTime() ||
+          phoneAdded
+        ) {
           await emitBookingCreated({
             workspaceId,
             bookingId: updated.id,
             scheduledAt: newAt,
             timezone: updated.timezone,
           });
+          if (updated.phone) {
+            await emitAutoCallScheduled({
+              workspaceId,
+              bookingId: updated.id,
+              scheduledAt: newAt,
+              timezone: updated.timezone,
+            });
+          }
         }
+      }
+
+      // Integrasi eksternal: webhook + kalender mengikuti status baru.
+      if (newStatus === 'completed' && prevStatus !== 'completed') {
+        await emitOutgoingWebhookEvent(workspaceId, 'booking.completed', bookingWebhookPayload(updated));
+      } else if (newStatus === 'cancelled' && prevStatus !== 'cancelled') {
+        await emitOutgoingWebhookEvent(workspaceId, 'booking.cancelled', bookingWebhookPayload(updated));
+        // Booking dibatalkan → hapus event kalender.
+        await emitCalendarBookingEvent(workspaceId, updated.id, 'delete');
+      } else {
+        await emitOutgoingWebhookEvent(workspaceId, 'booking.updated', bookingWebhookPayload(updated));
+        await emitCalendarBookingEvent(workspaceId, updated.id, 'upsert');
       }
 
       return c.json({
@@ -396,8 +601,15 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       if (!deleted) {
         return c.json({ error: 'Booking tidak ditemukan' }, 404);
       }
-      // Batalkan reminder terjadwal bila ada.
+      // Batalkan reminder & auto-call terjadwal bila ada.
       await emitBookingCancelled(c.get('workspaceId'), deleted.id);
+      await emitAutoCallCancelled(c.get('workspaceId'), deleted.id);
+      // Integrasi eksternal: webhook booking.deleted + hapus event kalender.
+      await emitOutgoingWebhookEvent(c.get('workspaceId'), 'booking.deleted', {
+        id: deleted.id,
+        workspaceId: c.get('workspaceId'),
+      });
+      await emitCalendarBookingEvent(c.get('workspaceId'), deleted.id, 'delete');
       return c.json({ ok: true, id: deleted.id });
     },
   )
@@ -409,9 +621,9 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     if (!row) return c.json({ error: 'Booking tidak ditemukan' }, 404);
 
     const [workspace] = await db
-      .select({ name: workspaces.name, industry: workspaces.industry })
+      .select({ name: workspaces.name, industry: workspaces.industry, callGoalLanguage: workspaces.callGoalLanguage })
       .from(workspaces)
-      .where(eq(workspaces.id, c.get('workspaceId')))
+      .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
 
     const calls = await db
@@ -420,11 +632,14 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       .where(eq(calleCalls.bookingId, row.id));
     const attempts = countCallAttempts(calls);
     const context = toGoalContext(row, attempts);
-    const decision = determineCallGoal(context);
+    const decision = determineCallGoal(context, {
+      reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
+    });
     const business: BusinessGoalContext = {
       id: c.get('workspaceId'),
       name: workspace?.name ?? null,
       industry: row.industry ?? workspace?.industry ?? null,
+      language: workspace?.callGoalLanguage === 'id' ? 'id' : 'en',
     };
 
     // Prioritas kustomisasi: override dari request > tersimpan di booking > auto.
@@ -457,7 +672,7 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
     const createdCall = await calle.calls.create({
       task: config.prompt,
-      recipient: { phone: context.phone },
+      recipient: { phone: context.phone, locale: config.language === 'id' ? 'id-ID' : 'en-US' },
       resultSchema: config.resultSchema,
       metadata: {
         bookingId: row.id,
@@ -498,7 +713,7 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     const [workspace] = await db
       .select({ name: workspaces.name, industry: workspaces.industry })
       .from(workspaces)
-      .where(eq(workspaces.id, c.get('workspaceId')))
+      .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
 
     // Mesin goal yang sama dengan CALL-E — keputusan channel-agnostic.

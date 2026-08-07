@@ -7,6 +7,7 @@ import { env } from '../../lib/env.ts';
 import { verifyWebhookSignature } from '../../lib/webhook-signature.ts';
 import { resolveWhatsAppChannel } from '../../services/whatsapp.ts';
 import { markWebhookProcessed, recordWebhookEvent } from '../../lib/webhooks.ts';
+import { isWorkspaceActive } from '../../lib/workspace-lifecycle.ts';
 
 /**
  * Webhook WhatsApp — payload Meta Cloud API yang diteruskan 360dialog.
@@ -21,6 +22,12 @@ import { markWebhookProcessed, recordWebhookEvent } from '../../lib/webhooks.ts'
  */
 export const whatsappWebhookRoutes = new Hono().post('/:workspaceId', async (c) => {
   const workspaceId = c.req.param('workspaceId');
+
+  // Project soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
+  // Meta tidak me-retry; pesan tidak akan pernah diproses).
+  if (!(await isWorkspaceActive(workspaceId))) {
+    return c.json({ received: true, disabled: true });
+  }
 
   const channel = await resolveWhatsAppChannel(workspaceId);
   if (!channel) {

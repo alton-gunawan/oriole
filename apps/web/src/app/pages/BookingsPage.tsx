@@ -1,34 +1,55 @@
 import { useEffect, useMemo, useState } from 'react';
-import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import type { TFunction } from 'i18next';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
   DateInput,
+  DropdownMenu,
+  DropdownMenuItem,
   EmptyState,
+  Pagination,
   Selector,
   Skeleton,
   Table,
+  TextInput,
+  Typeahead,
   pixel,
   proportional,
+  useTablePagination,
   useTableSelection,
   useTableSelectionState,
   type BadgeVariant,
   type ButtonVariant,
   type ISODateString,
+  type SearchableItem,
+  type SearchSource,
   type TableColumn,
 } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
-import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
+import type {
+  BookingRecord,
+  BookingsListResponse,
+  CustomersResponse,
+} from '../../lib/bookings';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { bookingStatusKey, goalTypeKey } from '../../i18n/enums';
+import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
-import { IconAlertTriangle, IconCalendar, IconPhone, IconPlus, IconRefreshCw } from '../shell/icons';
-import { Card, PageHeader } from '../shell/ui';
+import {
+  IconAlertTriangle,
+  IconCalendar,
+  IconCheck,
+  IconDotsHorizontal,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+  IconUsers,
+} from '../shell/icons';
+import { Card, PageHeader, ReloadMenuButton } from '../shell/ui';
 
 /** Warna status → variant Badge Astryx (theme-neutral). */
 const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
@@ -40,6 +61,9 @@ const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
 
 /** Baris tabel: BookingRecord + index signature (Table butuh Record<string, unknown>). */
 type BookingTableRow = BookingRecord & Record<string, unknown>;
+
+/** Item dropdown filter customer (Astryx Typeahead). */
+type CustomerItem = SearchableItem;
 
 /** Param URL tanggal valid (YYYY-MM-DD & tanggal kalender nyata) — selain itu diabaikan. */
 function isValidDateParam(value: string): boolean {
@@ -59,9 +83,74 @@ function statusLabel(status: string | null, t: TFunction): string {
 }
 
 /** Aksi status cepat yang tampil di kartu booking, sesuai status saat ini. */
+type QuickAction = { to: BookingRecord['status']; labelKey: TranslationKey; variant: ButtonVariant };
+
+/** Dropdown aksi per baris booking — tombol ⋯ polos (tanpa border/padding) di kolom Aksi. */
+function BookingActionsMenu({
+  bookingId,
+  actions,
+  isMutating,
+  isMutatingThis,
+  onAction,
+}: {
+  bookingId: string;
+  actions: QuickAction[];
+  isMutating: boolean;
+  isMutatingThis: boolean;
+  onAction: (bookingId: string, status: BookingRecord['status']) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu
+      placement="below"
+      menuWidth={180}
+      isMenuOpen={open}
+      onOpenChange={setOpen}
+      button={{
+        label: t('common.moreActions'),
+        isIconOnly: true,
+        icon: <IconDotsHorizontal className="size-4" />,
+        variant: 'ghost',
+        size: 'sm',
+        isLoading: isMutatingThis,
+        isDisabled: isMutating,
+        style: { padding: 0 },
+      }}
+    >
+      {actions.map((action) => (
+        <DropdownMenuItem
+          key={action.to}
+          icon={
+            action.to === 'cancelled' ? (
+              <IconTrash className="size-4 text-red-500" />
+            ) : (
+              <IconCheck className="size-4 text-emerald-600" />
+            )
+          }
+          label={
+            <span
+              className={
+                action.to === 'cancelled'
+                  ? 'font-medium text-red-600'
+                  : 'font-medium text-emerald-700'
+              }
+            >
+              {t(action.labelKey)}
+            </span>
+          }
+          isDisabled={isMutating}
+          onClick={() => onAction(bookingId, action.to)}
+        />
+      ))}
+    </DropdownMenu>
+  );
+}
+
 const QUICK_ACTIONS: Record<
   BookingRecord['status'],
-  { to: BookingRecord['status']; labelKey: TranslationKey; variant: ButtonVariant }[]
+  QuickAction[]
 > = {
   pending: [
     { to: 'confirmed', labelKey: 'bookings.confirm', variant: 'primary' },
@@ -88,30 +177,72 @@ export function BookingsPage() {
     rawStatus && (VALID_STATUSES as readonly string[]).includes(rawStatus)
       ? (rawStatus as BookingRecord['status'])
       : '';
+  // Judul dibaca MENTAH (tanpa trim) — TextInput dikontrol oleh nilai ini;
+  // trim hanya saat query & hasFilters agar spasi antar-kata tidak hilang
+  // saat mengetik (mis. "teeth whitening" → jangan jadi "teethwhitening").
+  const titleFilter = searchParams.get('title') ?? '';
+  const titleHasValue = titleFilter.trim().length > 0;
+  const customerFilter = (searchParams.get('customer') ?? '').trim();
   const fromRaw = searchParams.get('from') ?? '';
   const toRaw = searchParams.get('to') ?? '';
   const fromFilter = isValidDateParam(fromRaw) ? fromRaw : '';
   const toFilter = isValidDateParam(toRaw) ? toRaw : '';
-  const hasFilters = Boolean(statusFilter || fromFilter || toFilter);
+  const hasFilters = Boolean(statusFilter || titleHasValue || customerFilter || fromFilter || toFilter);
 
-  /** Tulis satu param filter ke URL tanpa menghapus param lain. */
-  const setFilter = (key: 'status' | 'from' | 'to', value: string) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value) next.set(key, value);
-      else next.delete(key);
-      return next;
-    });
+  // Salinan filter yang baru dipakai query setelah input berhenti berubah
+  // (debounce 300ms) — mengetik tanggal tidak lagi memicu fetch per huruf.
+  // URL & input tetap responsif secara instan (sumber kebenaran = searchParams).
+  // Reset halaman & seleksi ikut di-commit di sini: filter baru + page 1
+  // tiba dalam satu render → tepat satu fetch (tanpa fetch ganda filter lama
+  // saat user berada di halaman > 1).
+  const [debouncedStatus, setDebouncedStatus] = useState(statusFilter);
+  const [debouncedTitle, setDebouncedTitle] = useState(titleFilter);
+  const [debouncedCustomer, setDebouncedCustomer] = useState(customerFilter);
+  const [debouncedFrom, setDebouncedFrom] = useState(fromFilter);
+  const [debouncedTo, setDebouncedTo] = useState(toFilter);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedStatus(statusFilter);
+      setDebouncedTitle(titleFilter);
+      setDebouncedCustomer(customerFilter);
+      setDebouncedFrom(fromFilter);
+      setDebouncedTo(toFilter);
+      setPage(1);
+      setSelectedKeys(new Set());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [statusFilter, titleFilter, customerFilter, fromFilter, toFilter]);
+
+  /** Tulis satu param filter ke URL tanpa menghapus param lain (replace: tak menumpuk riwayat browser). */
+  const setFilter = (key: 'status' | 'title' | 'customer' | 'from' | 'to', value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        return next;
+      },
+      { replace: true },
+    );
   };
   const resetFilters = () => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('status');
-      next.delete('from');
-      next.delete('to');
-      return next;
-    });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('status');
+        next.delete('title');
+        next.delete('customer');
+        next.delete('from');
+        next.delete('to');
+        return next;
+      },
+      { replace: true },
+    );
   };
+
+  // Pagination offset (server-side) — dipakai useTablePagination di bawah.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const {
     data,
@@ -121,24 +252,22 @@ export function BookingsPage() {
     refetch,
     isFetching,
     isPlaceholderData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ['bookings', activeWorkspaceId, statusFilter, fromFilter, toFilter],
-    queryFn: ({ pageParam }) => {
+  } = useQuery({
+    queryKey: ['bookings', activeWorkspaceId, debouncedStatus, debouncedTitle.trim(), debouncedCustomer, debouncedFrom, debouncedTo, page, pageSize],
+    queryFn: () => {
       const params = new URLSearchParams();
-      if (statusFilter) params.set('status', statusFilter);
+      if (debouncedStatus) params.set('status', debouncedStatus);
+      const titleQuery = debouncedTitle.trim();
+      if (titleQuery) params.set('title', titleQuery);
+      if (debouncedCustomer) params.set('customer', debouncedCustomer);
       // Input tanggal → batas hari lokal → ISO UTC (scheduled_at tersimpan ber-timezone).
-      if (fromFilter) params.set('from', new Date(`${fromFilter}T00:00:00`).toISOString());
-      if (toFilter) params.set('to', new Date(`${toFilter}T23:59:59.999`).toISOString());
-      if (pageParam) params.set('cursor', pageParam);
-      const qs = params.toString();
-      return apiFetch<BookingsListResponse>(`/bookings${qs ? `?${qs}` : ''}`);
+      if (debouncedFrom) params.set('from', new Date(`${debouncedFrom}T00:00:00`).toISOString());
+      if (debouncedTo) params.set('to', new Date(`${debouncedTo}T23:59:59.999`).toISOString());
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      return apiFetch<BookingsListResponse>(`/bookings?${params.toString()}`);
     },
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    // Tampilkan data lama saat filter berubah — hindari kedipan skeleton.
+    // Tampilkan data lama saat filter/halaman berubah — hindari kedipan skeleton.
     placeholderData: keepPreviousData,
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
@@ -166,30 +295,22 @@ export function BookingsPage() {
       await queryClient.cancelQueries({ queryKey: ['bookings', activeWorkspaceId] });
 
       // Snapshot semua varian filter (query key berisi filter) untuk rollback.
-      const snapshot = queryClient.getQueriesData<
-        InfiniteData<BookingsListResponse, string | null>
-      >({
+      const snapshot = queryClient.getQueriesData<BookingsListResponse>({
         queryKey: ['bookings', activeWorkspaceId],
       });
-      const previousLists = new Map<
-        string,
-        InfiniteData<BookingsListResponse, string | null> | undefined
-      >();
+      const previousLists = new Map<string, BookingsListResponse | undefined>();
       for (const [key, value] of snapshot) {
         previousLists.set(JSON.stringify(key), value);
       }
 
-      queryClient.setQueriesData<InfiniteData<BookingsListResponse, string | null>>(
+      queryClient.setQueriesData<BookingsListResponse>(
         { queryKey: ['bookings', activeWorkspaceId], type: 'active' },
         (old) =>
           old && {
             ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              bookings: page.bookings.map((booking) =>
-                ids.includes(booking.id) ? { ...booking, status } : booking,
-              ),
-            })),
+            bookings: old.bookings.map((booking) =>
+              ids.includes(booking.id) ? { ...booking, status } : booking,
+            ),
           },
       );
 
@@ -220,9 +341,9 @@ export function BookingsPage() {
   // ── Seleksi baris (useTableSelection) — untuk aksi bulk status ──
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
-  // Data visible (semua halaman) — select-all bekerja atas array ini.
+  // Baris di halaman aktif — select-all bekerja atas array ini.
   const visibleRows = useMemo<BookingTableRow[]>(
-    () => (data ? (data.pages.flatMap((page) => page.bookings) as BookingTableRow[]) : []),
+    () => (data ? (data.bookings as BookingTableRow[]) : []),
     [data],
   );
 
@@ -236,6 +357,18 @@ export function BookingsPage() {
   const selectionPlugin = useTableSelection({
     ...selectionConfig,
     getRowLabel: (booking) => booking.title,
+  });
+
+  // Pagination astryx — kanan bawah tabel; totalItems dari server (mode offset).
+  // Plugin tanpa render sendiri (position: 'none') — kontrol pagination
+  // dirender manual di bawah tabel (di luar blok berbordernya), lihat footer.
+  const paginationPlugin = useTablePagination<BookingTableRow>({
+    page,
+    onPageChange: setPage,
+    totalItems: data?.total ?? 0,
+    pageSize,
+    position: 'none',
+    align: 'end',
   });
 
   /** Aksi bulk pada semua booking terpilih. */
@@ -258,87 +391,150 @@ export function BookingsPage() {
   // Saat filter berubah, seleksi lama tidak lagi merepresentasikan data terlihat.
   const resetSelection = () => setSelectedKeys(new Set());
 
-  useEffect(() => {
+  /** Ganti ukuran halaman: reset ke halaman 1 + kosongkan seleksi (data baru). */
+  const changePageSize = (value: string) => {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0 || next === pageSize) return;
+    setPageSize(next);
+    setPage(1);
     resetSelection();
+  };
+
+  // ── Filter customer — Typeahead (input + dropdown) ─────────
+  // Sumber saran = GET /api/bookings/customers (nama customer unik di
+  // workspace, urut dari booking paling baru). Memilih item / mengosongkan
+  // langsung meng-commit filter ke URL — perilaku sama dengan filter lain.
+  // Debounce 150ms milik Typeahead untuk pencarian saran; filter daftar
+  // tetap memakai debounce 300ms bersama di atas.
+  const customerSearchSource = useMemo<SearchSource<CustomerItem>>(() => {
+    let controller: AbortController | null = null;
+    const load = async (q: string): Promise<CustomerItem[]> => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const params = new URLSearchParams();
+        if (q.trim()) params.set('q', q.trim());
+        params.set('limit', '10');
+        const res = await apiFetch<CustomersResponse>(`/bookings/customers?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        return res.customers.map((customer) => ({
+          id: customer.name,
+          label: customer.name,
+        }));
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return [];
+        // Gagal memuat saran → dropdown kosong; filter daftar tetap berfungsi.
+        return [];
+      }
+    };
+    return {
+      search: (query) => load(query),
+      bootstrap: () => load(''),
+      cancel: () => controller?.abort(),
+    };
+  }, []);
+
+  /** Nilai Typeahead saat ini — dari URL (sumber kebenaran filter). */
+  const customerValue = useMemo<CustomerItem | null>(
+    () => (customerFilter ? { id: customerFilter, label: customerFilter } : null),
+    [customerFilter],
+  );
+  const handleCustomerChange = (item: CustomerItem | null) => {
+    setFilter('customer', item?.label ?? '');
+  };
+
+
+
+  // Snap ke halaman terakhir bila dataset menyusut (mis. status berubah /
+  // booking dihapus di perangkat lain) dan halaman aktif kini melebihi jumlah
+  // halaman — hindari menampilkan empty state saat data masih ada di halaman
+  // sebelumnya.
+  const lastPage = data?.total ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+  useEffect(() => {
+    if (data && data.total !== undefined && data.total > 0 && page > lastPage) {
+      setPage(lastPage);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, fromFilter, toFilter]);
+  }, [data, page, lastPage, pageSize]);
 
   /** Kolom tabel booking — data-driven (renderCell dipakai untuk konten kaya). */
   const bookingColumns = useMemo<TableColumn<BookingTableRow>[]>(() => [
     {
       key: 'title',
       header: t('bookings.colTitle'),
-      width: proportional(2),
+      width: proportional(3),
       renderCell: (booking) => (
         <Link to={`/app/bookings/${booking.id}`} className="group block min-w-0">
-          <span className="block truncate text-sm font-semibold text-zinc-900 transition group-hover:text-amber-600">
+          <span className="block truncate text-base font-semibold text-zinc-900 transition group-hover:text-amber-600">
             {booking.title}
-          </span>
-          <span className="mt-0.5 block truncate text-xs text-zinc-500">
-            {formatDateTime(booking.scheduledAt)}
           </span>
         </Link>
       ),
     },
     {
-      key: 'customer',
-      header: t('bookings.colCustomer'),
-      width: proportional(1),
+      key: 'schedule',
+      header: t('bookings.colSchedule'),
+      width: proportional(2),
       renderCell: (booking) => (
-        <span className="block truncate text-xs text-zinc-600">
-          {booking.customerName ?? t('common.noName')} · {booking.phone ?? t('common.noPhone')}
+        <span className="block truncate text-base text-zinc-600">
+          {formatDateTime(booking.scheduledAt)}
         </span>
       ),
     },
     {
-      key: 'goal',
-      header: t('bookings.colGoal'),
+      key: 'customer',
+      header: t('bookings.colCustomer'),
       width: proportional(2),
-      renderCell: (booking) => {
-        const goalType = booking.autoGoal.goalType;
-        return (
-          <span className="flex min-w-0 items-start gap-2">
-            <IconPhone className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
-            <span className="min-w-0">
-              <span className="block truncate text-xs font-semibold text-zinc-800">
-                {goalType ? t(goalTypeKey(goalType) ?? 'common.noCall') : t('common.noCall')}
+      renderCell: (booking) => (
+        <span className="block truncate text-base text-zinc-600">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            {booking.contactId && (
+              <span
+                title={t('bookings.linkedContact')}
+                className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100"
+              >
+                <IconUsers className="size-3 text-emerald-600" aria-hidden="true" />
               </span>
-              <span className="block truncate text-[11px] text-zinc-500">{booking.autoGoal.reason}</span>
+            )}
+            <span className="truncate">
+              {booking.customerName ?? t('common.noName')} · {booking.phone ?? t('common.noPhone')}
             </span>
           </span>
-        );
-      },
+        </span>
+      ),
     },
     {
       key: 'status',
       header: t('bookings.colStatus'),
       width: pixel(120),
       renderCell: (booking) => (
-        <Badge variant={STATUS_BADGE[booking.status]} label={statusLabel(booking.status, t)} />
+        <Badge
+          variant={STATUS_BADGE[booking.status]}
+          label={statusLabel(booking.status, t)}
+          // Samakan ukuran teks chip dengan kolom lain (font-size-sm → base).
+          style={{ fontSize: '0.875rem' }}
+        />
       ),
     },
     {
       key: 'actions',
       header: t('bookings.colActions'),
-      width: pixel(240),
+      width: pixel(72),
       align: 'end',
       renderCell: (booking) => {
         const actions = QUICK_ACTIONS[booking.status] ?? [];
         const isMutatingThis = mutating?.ids.includes(booking.id) ?? false;
-        if (actions.length === 0) return <span className="text-xs text-zinc-300">—</span>;
+        if (actions.length === 0) return <span className="text-sm text-zinc-300">—</span>;
         return (
-          <span className="flex items-center justify-end gap-1.5">
-            {actions.map((action) => (
-              <Button
-                key={action.to}
-                label={t(action.labelKey)}
-                variant={action.variant}
-                size="sm"
-                isDisabled={mutating !== null}
-                isLoading={isMutatingThis && mutating?.to === action.to}
-                onClick={() => changeStatus(booking.id, action.to)}
-              />
-            ))}
+          <span className="flex items-center justify-end">
+            <BookingActionsMenu
+              bookingId={booking.id}
+              actions={actions}
+              isMutating={mutating !== null}
+              isMutatingThis={isMutatingThis}
+              onAction={changeStatus}
+            />
           </span>
         );
       },
@@ -357,14 +553,7 @@ export function BookingsPage() {
         title={t('bookings.title')}
         description={t('bookings.description')}
       >
-        <Button
-          label={t('common.reload')}
-          variant="secondary"
-          icon={<IconRefreshCw className="size-4" />}
-          isLoading={isFetching}
-          isDisabled={isFetching}
-          onClick={() => void refetch()}
-        />
+        <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
         <Link
           to="/app/bookings/new"
           className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
@@ -374,9 +563,35 @@ export function BookingsPage() {
         </Link>
       </PageHeader>
 
-      {/* Filter bar — komponen Astryx (Selector + DateInput) */}
+      {/* Filter bar — komponen Astryx (TextInput + Typeahead + Selector + DateInput) */}
       <Card className="p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="min-w-0 flex-1">
+            <TextInput
+              label={t('bookings.colTitle')}
+              placeholder={t('bookings.titlePlaceholder')}
+              value={titleFilter}
+              onChange={(value) => setFilter('title', value)}
+              startIcon={<IconSearch className="size-4" />}
+              width="100%"
+            />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <Typeahead<CustomerItem>
+              label={t('common.customer')}
+              placeholder={t('bookings.customerPlaceholder')}
+              searchSource={customerSearchSource}
+              value={customerValue}
+              onChange={handleCustomerChange}
+              emptySearchResultsText={t('bookings.noCustomerMatches')}
+              hasEntriesOnFocus
+              maxMenuItems={8}
+              startIcon={<IconSearch className="size-4" />}
+              width="100%"
+            />
+          </div>
+
           <div className="min-w-0 flex-1">
             <Selector
               label={t('common.status')}
@@ -422,16 +637,6 @@ export function BookingsPage() {
                 size="sm"
                 onClick={resetFilters}
               />
-            )}
-            {!isPending && data && (
-              <p
-                className={`text-xs text-zinc-500 transition-opacity duration-200 ${
-                  isFilterLoading ? 'opacity-40' : ''
-                }`}
-              >
-                {t('bookings.count', { count: data.pages.reduce((sum, page) => sum + page.bookings.length, 0) })}
-                {isFilterLoading && t('bookings.loadingIndicator')}
-              </p>
             )}
           </div>
         </div>
@@ -481,7 +686,7 @@ export function BookingsPage() {
 
       {!isPending && !isError && data && (
         <>
-          {data.pages[0].bookings.length === 0 ? (
+          {data.bookings.length === 0 ? (
             <EmptyState
               icon={<IconCalendar className="size-6" />}
               title={hasFilters ? t('bookings.emptyFilteredTitle') : t('bookings.emptyTitle')}
@@ -543,7 +748,18 @@ export function BookingsPage() {
                 </div>
               )}
 
-              <Card className="overflow-hidden">
+              {/* Transparan: tabel tanpa border/background pembungkus; radius 0.
+                  Border horizontal atas & bawah membingkai tabel. Pagination
+                  dirender manual di footer — DI LUAR blok berbordernya. */}
+              <Card
+                variant="transparent"
+                className="overflow-hidden"
+                style={{
+                  borderTop: '1px solid #e4e4e7',
+                  borderBottom: '1px solid #e4e4e7',
+                  '--_card-radius': '0px',
+                }}
+              >
                 <div
                   // inert: blokir interaksi mouse & keyboard saat placeholder (filter lama).
                   inert={isFilterLoading}
@@ -556,26 +772,49 @@ export function BookingsPage() {
                     columns={bookingColumns}
                     idKey="id"
                     density="balanced"
-                    dividers="rows"
+                    dividers="none"
                     hasHover
                     textOverflow="truncate"
-                    plugins={{ selection: selectionPlugin }}
+                    plugins={{ selection: selectionPlugin, pagination: paginationPlugin }}
                   />
                 </div>
               </Card>
+
+              {/* Footer: rows-per-page (kiri) + info realtime jumlah baris terlihat */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-500">
+                    {t('bookings.rowsPerPage')}
+                  </span>
+                  <Selector
+                    label={t('bookings.rowsPerPage')}
+                    isLabelHidden
+                    placement="above"
+                    width={88}
+                    options={[10, 25, 50, 100].map((n) => ({
+                      value: String(n),
+                      label: String(n),
+                    }))}
+                    value={String(pageSize)}
+                    onChange={changePageSize}
+                  />
+                </div>
+                <p className="text-sm text-zinc-400">
+                  <Trans
+                    i18nKey="bookings.showingRows"
+                    values={{ shown: visibleRows.length, total: data?.total ?? 0 }}
+                    components={{ strong: <strong className="font-bold text-black" /> }}
+                  />
+                </p>
+                {/* Pagination di ujung kanan, di luar border tabel */}
+                <Pagination
+                  page={page}
+                  onChange={setPage}
+                  totalItems={data?.total ?? 0}
+                  pageSize={pageSize}
+                />
+              </div>
             </>
-          )}
-          {hasNextPage && data.pages[0].bookings.length > 0 && (
-            <div className="flex justify-center pt-2">
-              <Button
-                label={t('common.loadMore')}
-                variant="secondary"
-                isLoading={isFetchingNextPage}
-                // isFetching juga true saat filter berubah — cegah kursor lama dipakai.
-                isDisabled={isFetchingNextPage || isFetching}
-                onClick={() => void fetchNextPage()}
-              />
-            </div>
           )}
         </>
       )}

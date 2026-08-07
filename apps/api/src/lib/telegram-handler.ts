@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   normalizePhone,
   parseSlotTime,
@@ -769,10 +769,11 @@ async function findBooking(workspaceId: string, bookingId: string) {
 }
 
 async function findBusinessName(workspaceId: string): Promise<string | null> {
+  // Workspace soft-deleted → null (caller fallback ke "kami").
   const [workspace] = await db
     .select({ name: workspaces.name })
     .from(workspaces)
-    .where(eq(workspaces.id, workspaceId))
+    .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
     .limit(1);
   return workspace?.name ?? null;
 }

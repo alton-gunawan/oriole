@@ -197,6 +197,24 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+/* Token astryx memakai light-dark() dan mengikuti preferensi OS. Desain
+   Oriole sengaja light-only (konten putih + sidebar abu-abu terang + teks
+   zinc gelap yang fixed), jadi paksa light agar tidak berubah jadi dark
+   (bg gelap + teks gelap = tak terbaca) saat OS/browser prefer dark.
+
+   Reset astryx meng-set color-scheme:light dark (via :where(html)) dan
+   provider astryx menaruhnya juga di #root + turunannya, sehingga elemen
+   app resolve ke cabang dark walau :root sudah light. `:root, #root,
+   #root *` (tanpa layer → menang atas semua layer astryx) memaksa light
+   di seluruh subtree app; cakupan sengaja tidak `*` global agar hook
+   theming astryx (html[data-theme], [data-astryx-media]) tetap bekerja
+   untuk konten di luar app bila nanti dipakai. */
+:root,
+#root,
+#root * {
+  color-scheme: light;
+}
+
 * {
   font-family: inherit;
 }
@@ -430,6 +448,44 @@ dialog[open] {
     transform: none;
     transition: none;
   }
+}
+
+/* ── Combobox judul booking — pop-in dropdown ──────────────── */
+.combobox-popover {
+  animation: combobox-pop-in 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+@keyframes combobox-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combobox-popover {
+    animation: none;
+  }
+}
+
+/* ── Dropdown header (⋯) — buka melebar ke kiri ──────────────
+ * Astryx DropdownMenu meng-hardcode alignment:'start', sehingga popover
+ * memakai position-area: self-block-end span-self-inline-end → menu melebar
+ * ke KANAN dari tepi kiri tombol. Untuk tombol ⋯ yang terletak di tepi
+ * kanan header (desktop), ini membuat menu meluber keluar layar / tidak
+ * rata di bawah tombol. Kelas penanda `menu-open-left` pada menu div
+ * (diberikan oleh ReloadMenuButton & dropdown header Channels) memaksa
+ * posisi-area membuka ke KIRI (span-self-inline-start); fallback
+ * flip-inline bawaan tetap mengembalikan ke kanan bila kiri tidak muat
+ * (mis. tombol di tepi kiri layar pada mobile). Spesifisitas lebih tinggi
+ * dari kelas stylex astryx, dan berada di luar layer → menang. */
+div[popover]:has(div.menu-open-left) {
+  position-area: self-block-end span-self-inline-start;
 }
 
 @media (max-width: 640px) {

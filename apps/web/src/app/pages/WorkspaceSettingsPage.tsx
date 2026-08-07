@@ -1,6 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { AlertDialog, Badge, Button, Dialog, DialogHeader, TextInput } from '@astryxdesign/core';
-import { useTranslation } from 'react-i18next';
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogHeader,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  TextInput,
+} from '@astryxdesign/core';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
@@ -11,8 +20,11 @@ import {
 } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { industryKey } from '../../i18n/enums';
+import { AvatarPicker } from '../components/AvatarPicker';
+import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { IconCheck, IconEdit, IconPlus, IconTrash } from '../shell/icons';
-import { Card, PageHeader } from '../shell/ui';
+import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
+import { WorkspaceCallSettings } from '../shell/WorkspaceCallSettings';
 
 /** Pilihan kategori — dipakai form buat & edit project. Industri CALL-E mengikuti kategori otomatis. */
 function CategoryPicker({
@@ -26,7 +38,7 @@ function CategoryPicker({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="grid grid-cols-2 gap-2">
       {RECOMMENDED_TEMPLATE_CATEGORIES.map((item) => {
         const selected = value === item.id;
         return (
@@ -69,6 +81,7 @@ export function WorkspaceSettingsPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -76,6 +89,7 @@ export function WorkspaceSettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+  const [editAvatar, setEditAvatar] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -91,11 +105,16 @@ export function WorkspaceSettingsPage() {
     try {
       const response = await apiFetch<{ workspace: Workspace }>('/me/workspaces', {
         method: 'POST',
-        body: JSON.stringify({ name, templateCategory: category }),
+        body: JSON.stringify({
+          name,
+          templateCategory: category,
+          ...(avatar !== null ? { avatarUrl: avatar } : {}),
+        }),
       });
       addWorkspace(response.workspace);
       setName('');
       setCategory(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+      setAvatar(null);
       setIsAdding(false);
     } catch (err) {
       setError(errorMessage(err, t, 'errors.createProject'));
@@ -111,6 +130,7 @@ export function WorkspaceSettingsPage() {
     setEditingId(workspace.id);
     setEditName(workspace.name);
     setEditCategory(workspace.templateCategory);
+    setEditAvatar(workspace.avatarUrl ?? null);
     setEditError(null);
   };
 
@@ -129,9 +149,16 @@ export function WorkspaceSettingsPage() {
     setEditError(null);
     setIsSaving(true);
     try {
+      // Avatar dikirim hanya bila berubah (null → hapus avatar, kembali ke planet nama).
+      const workspace = workspaces.find((item) => item.id === editingId);
+      const avatarChanged = editAvatar !== (workspace?.avatarUrl ?? null);
       const response = await apiFetch<{ workspace: Workspace }>(`/me/workspaces/${editingId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: editName, templateCategory: editCategory }),
+        body: JSON.stringify({
+          name: editName,
+          templateCategory: editCategory,
+          ...(avatarChanged ? { avatarUrl: editAvatar } : {}),
+        }),
       });
       updateWorkspace(response.workspace);
       setEditingId(null);
@@ -169,6 +196,7 @@ export function WorkspaceSettingsPage() {
   const openAddForm = () => {
     setEditingId(null);
     setError(null);
+    setAvatar(null);
     setIsAdding(true);
   };
 
@@ -195,74 +223,101 @@ export function WorkspaceSettingsPage() {
       <Dialog
         isOpen={isAdding}
         onOpenChange={handleDialogClose}
-        purpose="form"
+        purpose="info"
         width={560}
       >
-        <DialogHeader
-          title={t('ws.createTitle')}
-          subtitle={t('ws.createSubtitle')}
-          onOpenChange={handleDialogClose}
-          hasDivider
-        />
-        <div className="p-6">
-          <form onSubmit={createWorkspace} className="space-y-5">
-            <TextInput
-              label={t('ws.projectName')}
-              value={name}
-              onChange={setName}
-              placeholder={t('ws.projectPlaceholder')}
-              width="100%"
+        {/* Layout (fill) = header tetap, konten scroll di tengah, footer aksi
+            selalu terlihat — mencegah tombol submit terpotong di bawah fold. */}
+        <Layout
+          header={
+            <DialogHeader
+              title={t('ws.createTitle')}
+              subtitle={t('ws.createSubtitle')}
+              onOpenChange={handleDialogClose}
+              hasDivider
             />
-            <CategoryPicker value={category} onChange={setCategory} name="workspace-category" />
-            {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Button label={t('common.cancel')} variant="ghost" onClick={closeAddForm} />
-              <Button
-                label={t('ws.createProject')}
-                variant="primary"
-                isLoading={isCreating}
-                isDisabled={isCreating || name.trim().length < 2}
-                type="submit"
-              />
-            </div>
-          </form>
-        </div>
+          }
+          content={
+            <LayoutContent>
+              <form id="create-workspace-form" onSubmit={createWorkspace} className="space-y-5">
+                <TextInput
+                  label={t('ws.projectName')}
+                  value={name}
+                  onChange={setName}
+                  placeholder={t('ws.projectPlaceholder')}
+                  width="100%"
+                />
+                <AvatarPicker key="create-workspace-avatar" value={avatar} onChange={setAvatar} name={name || '?'} />
+                <CategoryPicker value={category} onChange={setCategory} name="workspace-category" />
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {error && <p role="alert" className="pb-2 text-right text-sm text-red-600">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <Button label={t('common.cancel')} variant="ghost" onClick={closeAddForm} isDisabled={isCreating} />
+                <Button
+                  label={t('ws.createProject')}
+                  variant="primary"
+                  isLoading={isCreating}
+                  isDisabled={isCreating || name.trim().length < 2}
+                  type="submit"
+                  form="create-workspace-form"
+                />
+              </div>
+            </LayoutFooter>
+          }
+        />
       </Dialog>
 
       <Dialog
         isOpen={editingId !== null}
         onOpenChange={handleEditDialogClose}
-        purpose="form"
+        purpose="info"
         width={560}
       >
-        <DialogHeader
-          title={t('ws.editProject')}
-          subtitle={t('ws.editProjectDesc')}
-          onOpenChange={handleEditDialogClose}
-          hasDivider
-        />
-        <div className="p-6">
-          <form onSubmit={saveWorkspace} className="space-y-5">
-            <TextInput
-              label={t('ws.projectName')}
-              value={editName}
-              onChange={setEditName}
-              width="100%"
+        <Layout
+          header={
+            <DialogHeader
+              title={t('ws.editProject')}
+              subtitle={t('ws.editProjectDesc')}
+              onOpenChange={handleEditDialogClose}
+              hasDivider
             />
-            <CategoryPicker value={editCategory} onChange={setEditCategory} name="edit-workspace-category" />
-            {editError && <p role="alert" className="text-sm text-red-600">{editError}</p>}
-            <div className="flex justify-end gap-2">
-              <Button label={t('common.cancel')} variant="ghost" onClick={closeEditForm} isDisabled={isSaving} />
-              <Button
-                label={t('common.save')}
-                variant="primary"
-                isLoading={isSaving}
-                isDisabled={isSaving || editName.trim().length < 2}
-                type="submit"
-              />
-            </div>
-          </form>
-        </div>
+          }
+          content={
+            <LayoutContent>
+              <form id="edit-workspace-form" onSubmit={saveWorkspace} className="space-y-5">
+                <TextInput
+                  label={t('ws.projectName')}
+                  value={editName}
+                  onChange={setEditName}
+                  width="100%"
+                />
+                {/* key=editingId → remount per project agar state picker ikut project. */}
+                <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
+                <CategoryPicker value={editCategory} onChange={setEditCategory} name="edit-workspace-category" />
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {editError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{editError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button label={t('common.cancel')} variant="ghost" onClick={closeEditForm} isDisabled={isSaving} />
+                <Button
+                  label={t('common.save')}
+                  variant="primary"
+                  isLoading={isSaving}
+                  isDisabled={isSaving || editName.trim().length < 2}
+                  type="submit"
+                  form="edit-workspace-form"
+                />
+              </div>
+            </LayoutFooter>
+          }
+        />
       </Dialog>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -270,11 +325,11 @@ export function WorkspaceSettingsPage() {
           <Card key={workspace.id} className="p-5 transition hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-950 text-lg font-bold text-amber-400">{workspace.name.slice(0, 1).toUpperCase()}</span>
+                <WorkspaceAvatar workspace={workspace} size={44} radiusClass="rounded-xl" />
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-semibold text-zinc-900">{workspace.name}</h2>
                   <p className="mt-1 text-xs text-zinc-500">{categoryLabel(workspace.templateCategory)}</p>
-                  <p className="mt-0.5 text-[11px] text-zinc-400">{t('ws.industry')} · {t(industryKey(workspace.industry))}</p>
+                  <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {t(industryKey(workspace.industry))}</p>
                 </div>
               </div>
               <Badge variant="success" label={t('ws.ready')} />
@@ -283,6 +338,7 @@ export function WorkspaceSettingsPage() {
             <p className="mt-5 text-xs leading-relaxed text-zinc-500">
               {t('ws.separateNote')}
             </p>
+            <WorkspaceCallSettings workspace={workspace} />
             <div className="mt-4 flex justify-end gap-1">
               <Button
                 label={t('common.edit')}
@@ -306,8 +362,8 @@ export function WorkspaceSettingsPage() {
         ))}
       </div>
 
-      {/* Konfirmasi hapus project */}
-      <AlertDialog
+      {/* Konfirmasi hapus project — menutup saat klik di luar dialog. */}
+      <ConfirmDialog
         isOpen={confirmDeleteId !== null}
         onOpenChange={(open) => {
           if (!open) {
@@ -316,7 +372,12 @@ export function WorkspaceSettingsPage() {
           }
         }}
         title={t('ws.deleteTitle')}
-        description={t('ws.deleteQuestion')}
+        description={
+          <Trans
+            i18nKey="ws.deleteQuestion"
+            components={{ strong: <strong className="font-bold text-black" /> }}
+          />
+        }
         cancelLabel={t('common.cancel')}
         actionLabel={t('common.delete')}
         actionVariant="destructive"
@@ -324,6 +385,11 @@ export function WorkspaceSettingsPage() {
         onAction={() => {
           if (confirmDeleteId) void deleteWorkspace(confirmDeleteId);
         }}
+        confirmText={
+          confirmDeleteId
+            ? (workspaces.find((workspace) => workspace.id === confirmDeleteId)?.name ?? '')
+            : undefined
+        }
         width={420}
       />
 

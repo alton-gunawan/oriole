@@ -15,6 +15,8 @@ export interface BookingRecord {
   status: BookingGoalContext['status'];
   customerName: string | null;
   phone: string | null;
+  /** Kontak terkait di halaman Contacts (null = belum tertaut). */
+  contactId: string | null;
   industry: Industry | null;
   goalType: string | null;
   customInstruction: string | null;
@@ -48,7 +50,18 @@ export interface BookingDetailResponse {
 
 export interface BookingsListResponse {
   bookings: BookingRecord[];
-  /** Kursor base64url untuk halaman berikutnya, null bila sudah di akhir. */
-  nextCursor: string | null;
-  hasMore: boolean;
+  /** Total item (mode pagination offset) — untuk menghitung jumlah halaman. */
+  total?: number;
+  /** Mode kursor: kursor base64url halaman berikutnya, null bila sudah di akhir. */
+  nextCursor?: string | null;
+  hasMore?: boolean;
+}
+
+/** Saran customer untuk filter dropdown (GET /api/bookings/customers). */
+export interface CustomerSuggestion {
+  name: string;
+}
+
+export interface CustomersResponse {
+  customers: CustomerSuggestion[];
 }

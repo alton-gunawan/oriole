@@ -5,6 +5,15 @@ export const INDUSTRIES = [
   'medical_clinic',
   'restaurant',
   'wellness',
+  'fitness',
+  'professional_services',
+  'home_services',
+  'automotive',
+  'education_coaching',
+  'photography_creative',
+  'real_estate',
+  'pet_care',
+  'space_rental',
   'other',
 ] as const;
 
@@ -46,11 +55,22 @@ export interface BookingGoalContext {
   failedCallAttempts: number;
 }
 
-/** Konteks bisnis (workspace) — hanya butuh industry untuk memilih template. */
+/**
+ * Konteks bisnis (workspace) — memilih template berdasarkan industry dan
+ * mengirim bahasa panggilan yang dikonfigurasi di pengaturan workspace.
+ */
 export interface BusinessGoalContext {
   id?: string | null;
   name?: string | null;
   industry?: Industry | null;
+  /** Bahasa panggilan CALL-E dari workspace (default 'en'; 'id' = extension point). */
+  language?: CallLanguage | null;
+}
+
+/** Opsi mesin keputusan — window reminder bisa dikonfigurasi per workspace. */
+export interface GoalDecisionOptions {
+  /** Jendela reminder (jam sebelum jadwal) — default 24. */
+  reminderWindowHours?: number;
 }
 
 /** Hasil mesin keputusan. `goalType === null` berarti tidak perlu panggilan. */

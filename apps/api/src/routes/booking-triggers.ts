@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
@@ -9,6 +9,7 @@ import { db } from '../db/index.ts';
 import { countCallAttempts } from '../lib/booking-goal.ts';
 import { dispatchEmailReminder, EmailDispatchError } from '../lib/email-reminder.ts';
 import { dispatchWhatsAppReminder, WhatsAppDispatchError } from '../lib/whatsapp-handler.ts';
+import { resolveAutoCallSettings } from '../lib/reminders.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 
@@ -60,7 +61,7 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
     const [workspace] = await db
       .select({ name: workspaces.name })
       .from(workspaces)
-      .where(eq(workspaces.id, c.get('workspaceId')))
+      .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
 
     const calls = await db
@@ -68,7 +69,9 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
       .from(calleCalls)
       .where(eq(calleCalls.bookingId, row.id));
     const attempts = countCallAttempts(calls);
-    const decision = determineCallGoal(toGoalContext(row, attempts));
+    const decision = determineCallGoal(toGoalContext(row, attempts), {
+      reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
+    });
 
     if (decision.goalType === null) {
       return c.json({ error: 'Tidak ada goal untuk status booking ini (dibatalkan / selesai).' }, 400);
@@ -115,7 +118,7 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
     const [workspace] = await db
       .select({ name: workspaces.name })
       .from(workspaces)
-      .where(eq(workspaces.id, c.get('workspaceId')))
+      .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
 
     const calls = await db
@@ -123,7 +126,9 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
       .from(calleCalls)
       .where(eq(calleCalls.bookingId, row.id));
     const attempts = countCallAttempts(calls);
-    const decision = determineCallGoal(toGoalContext(row, attempts));
+    const decision = determineCallGoal(toGoalContext(row, attempts), {
+      reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
+    });
     if (decision.goalType === null) {
       return c.json({ error: 'Tidak ada goal untuk status booking ini (dibatalkan / selesai).' }, 400);
     }

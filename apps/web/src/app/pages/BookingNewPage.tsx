@@ -7,6 +7,8 @@ import {
   DateTimeInput,
   Dialog,
   DialogHeader,
+  Layout,
+  LayoutContent,
   TextArea,
   TextInput,
   type ISODateTimeString,
@@ -23,6 +25,7 @@ import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { BookingTitleCombobox } from '../components/BookingTitleCombobox';
 import { PhoneInput } from '../components/PhoneInput';
 import { GoalCustomizer } from '../shell/GoalCustomizer';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
@@ -176,14 +179,12 @@ export function BookingNewPage() {
       <form onSubmit={onSubmit} className="space-y-6">
         <Card className="space-y-5 p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <TextInput
+            <BookingTitleCombobox
               className="sm:col-span-2"
-              label={t('bookingNew.bookingTitle')}
+              workspaceId={activeWorkspaceId}
               isRequired
               value={title}
               onChange={setTitle}
-              placeholder={t('bookingNew.titlePlaceholder')}
-              width="100%"
             />
 
             <TextInput
@@ -266,62 +267,70 @@ export function BookingNewPage() {
       </form>
 
       {/* Dialog pilih kontak — sumber: customer pada booking project ini */}
-      <Dialog isOpen={isPickerOpen} onOpenChange={closePicker} purpose="form" width={520}>
-        <DialogHeader
-          title={t('bookingNew.pickContactTitle')}
-          subtitle={t('bookingNew.pickContactSubtitle')}
-          onOpenChange={closePicker}
-          hasDivider
-        />
-        <div className="p-5">
-          <TextInput
-            label={t('bookingNew.searchContact')}
-            isLabelHidden
-            placeholder={t('bookingNew.searchPlaceholder')}
-            value={contactQuery}
-            onChange={setContactQuery}
-            startIcon={<IconSearch className="size-4" />}
-            width="100%"
-          />
+      <Dialog isOpen={isPickerOpen} onOpenChange={closePicker} purpose="info" width={520}>
+        <Layout
+          header={
+            <DialogHeader
+              title={t('bookingNew.pickContactTitle')}
+              subtitle={t('bookingNew.pickContactSubtitle')}
+              onOpenChange={closePicker}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              <div className="space-y-3">
+                <TextInput
+                  label={t('bookingNew.searchContact')}
+                  isLabelHidden
+                  placeholder={t('bookingNew.searchPlaceholder')}
+                  value={contactQuery}
+                  onChange={setContactQuery}
+                  startIcon={<IconSearch className="size-4" />}
+                  width="100%"
+                />
 
-          <div aria-live="polite" className="mt-3 max-h-72 overflow-y-auto">
-            {isContactsLoading ? (
-              <p className="px-1 py-8 text-center text-sm text-zinc-500">{t('bookingNew.loadingContacts')}</p>
-            ) : contactsError ? (
-              <p role="alert" className="px-1 py-8 text-center text-sm text-red-600">
-                {t('errors.loadContactsBody')}
-              </p>
-            ) : filteredContacts.length === 0 ? (
-              <p className="px-1 py-8 text-center text-sm text-zinc-500">
-                {contactQuery.trim()
-                  ? t('bookingNew.noMatch')
-                  : t('bookingNew.noContacts')}
-              </p>
-            ) : (
-              <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200">
-                {filteredContacts.map((contact) => (
-                  <li key={contact.phone}>
-                    <button
-                      type="button"
-                      onClick={() => applyContact(contact)}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-amber-50 focus-visible:bg-amber-50 focus-visible:outline-none"
-                    >
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600">
-                        {(contact.name ?? '?').slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-zinc-800">
-                          {contact.name ?? t('common.noName')}
-                        </span>
-                        <span className="block truncate text-xs text-zinc-500">{contact.phone}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+                <div aria-live="polite" className="max-h-72 overflow-y-auto">
+                  {isContactsLoading ? (
+                    <p className="px-1 py-8 text-center text-sm text-zinc-500">{t('bookingNew.loadingContacts')}</p>
+                  ) : contactsError ? (
+                    <p role="alert" className="px-1 py-8 text-center text-sm text-red-600">
+                      {t('errors.loadContactsBody')}
+                    </p>
+                  ) : filteredContacts.length === 0 ? (
+                    <p className="px-1 py-8 text-center text-sm text-zinc-500">
+                      {contactQuery.trim()
+                        ? t('bookingNew.noMatch')
+                        : t('bookingNew.noContacts')}
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200">
+                      {filteredContacts.map((contact) => (
+                        <li key={contact.phone}>
+                          <button
+                            type="button"
+                            onClick={() => applyContact(contact)}
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-amber-50 focus-visible:bg-amber-50 focus-visible:outline-none"
+                          >
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600">
+                              {(contact.name ?? '?').slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-zinc-800">
+                                {contact.name ?? t('common.noName')}
+                              </span>
+                              <span className="block truncate text-xs text-zinc-500">{contact.phone}</span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </LayoutContent>
+          }
+        />
       </Dialog>
     </div>
   );

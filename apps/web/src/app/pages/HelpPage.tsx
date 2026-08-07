@@ -58,7 +58,7 @@ export function HelpPage() {
               <IconHelp className="size-5" />
             </span>
             <h3 className="mt-4 text-sm font-semibold text-zinc-900">{t('help.needMore')}</h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[11px]">
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs">
               <Trans i18nKey="help.needMoreDesc">
                 Full architecture & deployment docs live in this repo. Start with <code>docs/architecture.md</code>.
               </Trans>

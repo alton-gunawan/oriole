@@ -45,6 +45,8 @@ Tabel baru (migrasi `0003` + `0004`):
   `needsAttention`); `unreadCount` + `lastMessageAt` untuk inbox.
 - `messages` — riwayat pesan; dedup per (conversation, provider_message_id).
 - `workspaces.reminder_lead_minutes` — lead time reminder per project (default 120 menit).
+- `workspaces.call_goal_language` — bahasa panggilan CALL-E (default `en`; `id` disiapkan).
+- `workspaces.auto_call_enabled` + `workspaces.auto_call_lead_hours` — auto-call CALL-E otomatis per project (default mati; lead default 24 jam sebelum jadwal). Migrasi: `drizzle.gen/0005_brave_vivisector.sql`.
 
 ### Apply migrasi (di mesin normal, sandbox tidak bisa menulis `drizzle/`)
 

@@ -1,7 +1,12 @@
 import { hoursUntil } from './format.ts';
-import type { BookingGoalContext, BookingStatus, GoalDecision } from './types.ts';
+import type {
+  BookingGoalContext,
+  BookingStatus,
+  GoalDecision,
+  GoalDecisionOptions,
+} from './types.ts';
 
-/** Jendela reminder: di bawah nilai ini, booking terkonfirmasi diingatkan ulang. */
+/** Jendela reminder default: di bawah nilai ini, booking terkonfirmasi diingatkan ulang. */
 export const REMINDER_WINDOW_HOURS = 24;
 
 /** Ambang percobaan gagal sebelum goal jadi final follow-up. */
@@ -22,7 +27,13 @@ const VALID_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 'cance
  * 7. belum pernah dihubungi→ confirm-attendance
  * 8. sudah dihubungi       → reminder-reconfirm (lanjutan)
  */
-export function determineCallGoal(booking: BookingGoalContext): GoalDecision {
+export function determineCallGoal(
+  booking: BookingGoalContext,
+  options: GoalDecisionOptions = {},
+): GoalDecision {
+  // Jendela reminder bisa dikonfigurasi per workspace (auto-call lead hours).
+  const reminderWindowHours = options.reminderWindowHours ?? REMINDER_WINDOW_HOURS;
+
   // Status asing dari DB di-koersi ke 'pending' — jangan pernah crash.
   const status: BookingStatus = VALID_STATUSES.includes(booking.status)
     ? booking.status
@@ -63,10 +74,10 @@ export function determineCallGoal(booking: BookingGoalContext): GoalDecision {
     };
   }
 
-  if (status === 'confirmed' && hoursUntil(booking.scheduledAt) <= REMINDER_WINDOW_HOURS) {
+  if (status === 'confirmed' && hoursUntil(booking.scheduledAt) <= reminderWindowHours) {
     return {
       goalType: 'reminder-reconfirm',
-      reason: 'Booking terkonfirmasi ≤ 24 jam sebelum jadwal — reminder + re-confirm.',
+      reason: `Booking terkonfirmasi ≤ ${reminderWindowHours} jam sebelum jadwal — reminder + re-confirm.`,
     };
   }
 

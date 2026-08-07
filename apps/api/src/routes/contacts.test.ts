@@ -232,6 +232,24 @@ describe('GET /api/contacts', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it('filter per-kolom (name/phone/email) diterima schema → 200', async () => {
+    dbState.tables.set('contacts', [baseContact()]);
+    const res = await app.request('/api/contacts?name=Budi&phone=6281&email=budi%40example.com', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.contacts).toHaveLength(1);
+  });
+
+  it('filter per-kolom terlalu panjang (> 200) → 400', async () => {
+    const longValue = 'a'.repeat(201);
+    const res = await app.request(`/api/contacts?name=${longValue}`, {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('POST /api/contacts', () => {

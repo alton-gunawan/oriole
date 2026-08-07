@@ -82,4 +82,25 @@ describe('composeCallGoal', () => {
     expect(dental.prompt).toContain('dental appointment');
     expect(salon.prompt).toContain('hair appointment');
   });
+
+  it('bahasa panggilan mengikuti setting workspace (default en)', () => {
+    const defaulted = composeCallGoal({ booking: BASE, business: BUSINESS })!;
+    expect(defaulted.language).toBe('en');
+
+    const id = composeCallGoal({
+      booking: BASE,
+      business: { ...BUSINESS, language: 'id' },
+    })!;
+    expect(id.language).toBe('id');
+  });
+
+  it('restaurant menghasilkan result schema dengan field party size', () => {
+    const restaurant = composeCallGoal({
+      booking: BASE,
+      business: { name: 'Nonna', industry: 'restaurant' },
+    })!;
+    const properties = restaurant.resultSchema.properties as Record<string, unknown>;
+    expect(properties.partySize).toMatchObject({ type: 'integer' });
+    expect(restaurant.prompt).toContain('number of guests');
+  });
 });

@@ -14,6 +14,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { WORKSPACE_TEMPLATE_CATEGORY_IDS } from '@oriole/config';
+import { INDUSTRIES } from '@oriole/call-goals';
 
 /**
  * Schema `neon_auth` dimiliki dan dikelola sepenuhnya oleh **Neon Auth**
@@ -57,15 +58,7 @@ export const subscriptionStatus = pgEnum('subscription_status', [
 ]);
 
 /** Industri bisnis (workspace) — dipilih sekali saat onboarding / business settings. */
-export const businessIndustry = pgEnum('business_industry', [
-  'dental',
-  'medspa',
-  'hair_salon',
-  'medical_clinic',
-  'restaurant',
-  'wellness',
-  'other',
-]);
+export const businessIndustry = pgEnum('business_industry', [...INDUSTRIES]);
 
 /** Profil tambahan per user aplikasi (1:1 dengan auth user). */
 export const profiles = pgTable(
@@ -98,11 +91,31 @@ export const workspaces = pgTable(
     industry: businessIndustry('industry'),
     /** Berapa menit sebelum jadwal reminder dikirim (default 120 = 2 jam). */
     reminderLeadMinutes: integer('reminder_lead_minutes').default(120).notNull(),
+    /** Bahasa panggilan CALL-E (default en; id = extension point yang belum aktif). */
+    callGoalLanguage: text('call_goal_language').default('en').notNull(),
+    /**
+     * Avatar project. null = planet DiceBear deterministik dari nama project;
+     * selain itu bisa berupa URL planet DiceBear (hasil pemilihan di picker)
+     * atau data URL gambar upload (sudah di-crop 1:1 + di-compress di client).
+     */
+    avatarUrl: text('avatar_url'),
+    /** Auto-call CALL-E aktif/mati (default mati — panggilan manual tetap tersedia). */
+    autoCallEnabled: boolean('auto_call_enabled').default(false).notNull(),
+    /** Berapa jam sebelum jadwal auto-call dipicu (default 24). */
+    autoCallLeadHours: integer('auto_call_lead_hours').default(24).notNull(),
+    /**
+     * Soft-delete: project dihapus (hilang dari UI) dengan menyetel kolom ini;
+     * baris + semua data terkait (booking, kontak, chat, ...) dihapus permanen
+     * oleh job pembersih (Inngest cron) setelah masa tenggang 3 hari.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index('workspaces_user_id_idx').on(t.userId),
+    // Job pembersih soft-delete: scan workspace yang sudah lewat masa tenggang.
+    index('workspaces_deleted_at_idx').on(t.deletedAt),
     // CHECK constraint menegakkan daftar kategori yang sama dengan
     // WORKSPACE_TEMPLATE_CATEGORY_IDS di @oriole/config — data invalid
     // ditolak di level database, bukan hanya di validasi API.
@@ -159,6 +172,12 @@ export const bookings = pgTable(
     /** Kontak customer untuk panggilan CALL-E. */
     customerName: text('customer_name'),
     phone: text('phone'),
+    /**
+     * Kontak terkait di tabel `contacts` — sinkron find-or-create saat
+     * booking dibuat/diubah (nomor telepon unik per workspace). Set null
+     * bila kontak dihapus (booking tetap ada).
+     */
+    contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
     /** Override industri per-booking (opsional); kosong = ikut industri workspace. */
     industry: businessIndustry('industry'),
     /** Override goal CALL-E (opsional); null = otomatis via determineCallGoal. */
@@ -175,6 +194,7 @@ export const bookings = pgTable(
   (t) => [
     index('bookings_user_id_idx').on(t.userId),
     index('bookings_scheduled_at_idx').on(t.scheduledAt),
+    index('bookings_contact_id_idx').on(t.contactId),
   ],
 );
 
@@ -290,6 +310,35 @@ export const workspaceChannels = pgTable(
   (t) => [
     uniqueIndex('workspace_channels_ws_type_idx').on(t.workspaceId, t.channelType),
     index('workspace_channels_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+/**
+ * Integrasi aplikasi eksternal per workspace (Notion, ...) — di luar channel
+ * komunikasi. `providerConfig` berisi kredensial privat (token) — jangan
+ * pernah di-expose ke client frontend.
+ */
+export const workspaceIntegrations = pgTable(
+  'workspace_integrations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    integrationType: text('integration_type').notNull(),
+    /** Identitas publik integrasi (nama database Notion / dsb.). */
+    identifier: text('identifier'),
+    /** Kredensial privat per provider (token Notion, databaseId, ...). */
+    providerConfig: jsonb('provider_config').$type<Record<string, unknown>>().notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    /** Kapan sinkronisasi terakhir berhasil (mis. sync kontak → Notion). */
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('workspace_integrations_ws_type_idx').on(t.workspaceId, t.integrationType),
+    index('workspace_integrations_workspace_id_idx').on(t.workspaceId),
   ],
 );
 

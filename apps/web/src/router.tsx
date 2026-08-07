@@ -3,18 +3,16 @@ import { Navigate, createBrowserRouter } from 'react-router';
 
 import { RequireAuth } from './app/auth/RequireAuth';
 import { AppShell } from './app/shell/AppShell';
-import { BillingPage } from './app/pages/BillingPage';
 import { BookingDetailPage } from './app/pages/BookingDetailPage';
 import { BookingNewPage } from './app/pages/BookingNewPage';
 import { BookingsPage } from './app/pages/BookingsPage';
 import { CallsPage } from './app/pages/CallsPage';
-import { ChannelsPage } from './app/pages/ChannelsPage';
+import { IntegrationsPage } from './app/pages/IntegrationsPage';
 import { ContactsPage } from './app/pages/ContactsPage';
 import { DashboardPage } from './app/pages/DashboardPage';
 import { HelpPage } from './app/pages/HelpPage';
 import { InboxPage } from './app/pages/InboxPage';
 import { LandingPage } from './app/pages/LandingPage';
-import { SettingsPage } from './app/pages/SettingsPage';
 import { OnboardingPage } from './app/pages/OnboardingPage';
 import { WorkspaceSettingsPage } from './app/pages/WorkspaceSettingsPage';
 
@@ -44,7 +42,7 @@ function withSuspense(Component: ComponentType) {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-zinc-50">
+        <main className="flex min-h-screen items-center justify-center bg-surface">
           <span
             aria-hidden
             className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-300 border-t-amber-500"
@@ -91,11 +89,17 @@ export const router = createBrowserRouter([
       { path: 'bookings/:id', element: <BookingDetailPage /> },
       { path: 'contacts', element: <ContactsPage /> },
       { path: 'inbox', element: <InboxPage /> },
-      { path: 'channels', element: <ChannelsPage /> },
+      { path: 'integrations', element: <IntegrationsPage /> },
+      // Backward compat: /app/channels lama → halaman Integrations.
+      { path: 'channels', element: <Navigate to="/app/integrations" replace /> },
       { path: 'calls', element: <CallsPage /> },
       { path: 'analytics', element: withSuspense(AnalyticsPage) },
-      { path: 'billing', element: <BillingPage /> },
-      { path: 'settings', element: <SettingsPage /> },
+      // Billing kini dialog dari dropdown akun (sidebar footer) — URL lama
+      // dialihkan ke dashboard agar bookmark/link lama tidak 404.
+      { path: 'billing', element: <Navigate to="/app/dashboard" replace /> },
+      // Settings kini dialog dari menu sidebar — URL lama dialihkan ke
+      // dashboard agar bookmark/link lama tidak 404.
+      { path: 'settings', element: <Navigate to="/app/dashboard" replace /> },
       { path: 'workspaces', element: <WorkspaceSettingsPage /> },
       { path: 'help', element: <HelpPage /> },
     ],

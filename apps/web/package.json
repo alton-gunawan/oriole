@@ -19,6 +19,7 @@
     "@oriole/call-goals": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "@tremor/react": "^3.18.7",
+    "boring-avatars": "^2.0.4",
     "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^8.2.1",
     "i18next-resources-to-backend": "^1.2.3",

@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 const { recordWebhookEventMock } = vi.hoisted(() => ({ recordWebhookEventMock: vi.fn() }));
 const { resolveChannelMock } = vi.hoisted(() => ({ resolveChannelMock: vi.fn() }));
+const { isWorkspaceActiveMock } = vi.hoisted(() => ({ isWorkspaceActiveMock: vi.fn() }));
 
 vi.mock('../../inngest/client.ts', () => ({
   inngest: { send: sendMock },
@@ -17,6 +18,11 @@ vi.mock('../../lib/webhooks.ts', () => ({
 
 vi.mock('../../services/whatsapp.ts', () => ({
   resolveWhatsAppChannel: resolveChannelMock,
+}));
+
+// Guard soft-delete project — default: workspace aktif.
+vi.mock('../../lib/workspace-lifecycle.ts', () => ({
+  isWorkspaceActive: isWorkspaceActiveMock,
 }));
 
 // `.env` root (milik environment) menimpa env proses — no-op agar test
@@ -57,6 +63,8 @@ beforeEach(() => {
   recordWebhookEventMock.mockResolvedValue('new');
   resolveChannelMock.mockReset();
   resolveChannelMock.mockResolvedValue({ apiKey: 'wa_test', webhookSecret: WEBHOOK_SECRET, isActive: true });
+  isWorkspaceActiveMock.mockReset();
+  isWorkspaceActiveMock.mockResolvedValue(true);
 });
 
 function validBody(): string {
@@ -86,6 +94,20 @@ function sign(body: string): string {
 }
 
 describe('POST /api/webhooks/whatsapp — keamanan', () => {
+  it('project soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
+    app = await buildApp();
+    isWorkspaceActiveMock.mockResolvedValue(false);
+    const res = await app.request('/api/webhooks/whatsapp/ws-1', {
+      method: 'POST',
+      headers: { 'x-hub-signature-256': sign(validBody()) },
+      body: validBody(),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ received: true, disabled: true });
+    expect(resolveChannelMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it('workspace tanpa channel → 404', async () => {
     resolveChannelMock.mockResolvedValue(null);
     app = await buildApp();

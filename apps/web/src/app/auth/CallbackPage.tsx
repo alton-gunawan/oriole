@@ -64,11 +64,30 @@ export function CallbackPage() {
         const store = useSessionStore.getState();
         store.setStatus('authenticated');
         store.setUser(user?.id ? { id: user.id, email: user.email, name: user.name } : null);
-        try {
-          const me = await apiFetch<{ workspaces: Workspace[] }>('/me');
+        // Retry singkat: /me yang gagal sesaat (cold-start, jaringan) tidak
+        // boleh membuat workspace terlihat kosong → user malah disuruh bikin
+        // project lagi. Bila SEMUA percobaan gagal, store sengaja dibiarkan
+        // BELUM terinisialisasi: RequireAuth tidak akan me-redirect ke
+        // onboarding (mencegah pembuatan project duplikat), shell menampilkan
+        // state kosong, dan reload berikutnya memulihkan daftar project.
+        let me: { workspaces: Workspace[]; name?: string | null } | null = null;
+        for (let attempt = 0; attempt < 3 && !me; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          }
+          try {
+            me = await apiFetch<{ workspaces: Workspace[]; name?: string | null }>('/me');
+          } catch {
+            me = null;
+          }
+        }
+        if (me) {
           useWorkspaceStore.getState().setWorkspaces(me.workspaces);
-        } catch {
-          useWorkspaceStore.getState().setWorkspaces([]);
+          // Nama tampilan profil (diubah via PATCH /me) lebih baru daripada
+          // nama OAuth dari sesi Neon — pakai itu bila sudah di-set.
+          if (me.name && store.user) {
+            store.setUser({ ...store.user, name: me.name });
+          }
         }
         // Hardening: hand-off JWT ke cookie HttpOnly (best-effort —
         // gagal berarti Bearer token tetap dipakai).

@@ -108,7 +108,7 @@ function FunnelChart({ data, t }: { data: AnalyticsOverview['funnel']; t: TFunct
               />
             </div>
             {index < FUNNEL_STEPS.length - 1 && (
-              <p className="mt-1 text-[11px] text-zinc-400">{t('analytics.funnelStepHint')}</p>
+              <p className="mt-1 text-xs text-zinc-400">{t('analytics.funnelStepHint')}</p>
             )}
           </div>
         );

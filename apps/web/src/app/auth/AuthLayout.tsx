@@ -1,6 +1,7 @@
 import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AppLogo } from '../components/AppLogo';
 import { LocaleSwitcher } from '../shell/LocaleSwitcher';
 
 /** Kerangka halaman auth — konsisten dengan boot screen (zinc + amber). */
@@ -13,8 +14,8 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-500 text-xl font-bold text-white shadow-sm">
-            O
+          <span className="flex size-12 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-sm">
+            <AppLogo />
           </span>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Oriole</h1>

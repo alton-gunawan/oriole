@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import type { TranslationKey } from '../../i18n';
+import { AppLogo } from '../components/AppLogo';
 import { LocaleSwitcher } from '../shell/LocaleSwitcher';
 import {
   IconArrowRight,
@@ -57,8 +58,8 @@ function Wordmark() {
   const { t } = useTranslation();
   return (
     <Link to="/" className="flex items-center gap-2.5" aria-label={t('landing.ariaHome')}>
-      <span className="flex size-8 items-center justify-center rounded-[10px] bg-[#0a1317] text-sm font-semibold text-white shadow-sm">
-        O
+      <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-[#0a1317] shadow-sm">
+        <AppLogo />
       </span>
       <span className="text-[15px] font-semibold tracking-[-0.03em] text-[#0a1317]">oriole</span>
     </Link>
@@ -242,7 +243,9 @@ export function LandingPage() {
           <div className="landing-footer-details grid gap-12 border-t border-white/20 py-12 md:grid-cols-[1.5fr_1fr_1fr] md:gap-16">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-white text-sm font-semibold text-[#2459ed] shadow-sm">O</span>
+                <span className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-white shadow-sm">
+                  <AppLogo />
+                </span>
                 <span className="text-lg font-semibold tracking-[-0.04em]">oriole</span>
               </div>
               <p className="mt-5 text-sm leading-6 text-white/70">{t('landing.footerBrandDesc')}</p>

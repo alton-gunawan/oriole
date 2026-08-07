@@ -47,6 +47,17 @@ export async function getNeonJwt(): Promise<string | null> {
   }
 }
 
+/**
+ * Ambil JWT sesi dengan SEMANTIK KETAT: `null` = otoritas (Neon Auth) dengan
+ * tegas menyatakan TIDAK ada sesi; error jaringan/SDK DILEMPARKAN (bukan
+ * null). Dipakai lapisan refresh 401 — hanya `null` yang boleh memicu reset
+ * sesi lokal; error adalah kondisi transien yang TIDAK boleh logout user.
+ */
+export async function getNeonJwtOrThrow(): Promise<string | null> {
+  if (!neon) return null;
+  return neon.getJWTToken();
+}
+
 export interface AuthSessionUser {
   id: string;
   email?: string;

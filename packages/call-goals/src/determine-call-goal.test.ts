@@ -85,6 +85,16 @@ describe('determineCallGoal', () => {
     expect(decision.goalType).toBe('reminder-reconfirm');
   });
 
+  it('window reminder bisa dikonfigurasi (opsi reminderWindowHours)', () => {
+    const confirmed = { ...BASE, status: 'confirmed' as const, scheduledAt: inHours(36) };
+    // Default 24 jam → 36 jam masih di luar window → confirm-attendance.
+    expect(determineCallGoal(confirmed).goalType).toBe('confirm-attendance');
+    // Window diperlebar ke 48 jam → reminder-reconfirm.
+    const decision = determineCallGoal(confirmed, { reminderWindowHours: 48 });
+    expect(decision.goalType).toBe('reminder-reconfirm');
+    expect(decision.reason).toContain('48');
+  });
+
   it('selalu menyertakan alasan', () => {
     expect(determineCallGoal(BASE).reason).toBeTruthy();
   });

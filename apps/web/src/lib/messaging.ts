@@ -9,6 +9,8 @@ export interface WorkspaceChannel {
   webhookUrl: string;
   createdAt: string;
   updatedAt: string;
+  /** true = bot bersama dari server (env TELEGRAM_BOT_TOKEN), belum terhubung ke project. */
+  isEnvShared?: boolean;
 }
 
 export interface ChannelListResponse {
@@ -34,6 +36,11 @@ export interface InboxListResponse {
   conversations: InboxConversation[];
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+/** Ringkasan unread per project — untuk badge di project switcher sidebar. */
+export interface UnreadSummaryResponse {
+  unreadByWorkspace: Record<string, number>;
 }
 
 export interface InboxMessage {

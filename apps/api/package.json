@@ -9,7 +9,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup:telegram": "tsx src/scripts/setup-telegram.ts"
+    "setup:telegram": "tsx src/scripts/setup-telegram.ts",
+    "seed:bookings": "tsx src/scripts/seed-bookings.ts",
+    "seed:unread": "tsx src/scripts/seed-unread.ts",
+    "sync:contacts": "tsx src/scripts/sync-bookings-contacts.ts"
   },
   "dependencies": {
     "@call-e/calle": "^0.6.0",

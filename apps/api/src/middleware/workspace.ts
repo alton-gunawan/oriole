@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
 import { workspaces } from '@oriole/database';
 
@@ -14,10 +14,12 @@ export const requireWorkspace: MiddlewareHandler<{ Variables: WorkspaceVariables
     return c.json({ error: 'Workspace wajib dipilih' }, 400);
   }
 
+  // Project soft-deleted diperlakukan seperti tidak ada (404) — user tidak
+  // boleh mengakses data project yang sedang dalam masa tenggang penghapusan.
   const [workspace] = await db
     .select({ id: workspaces.id })
     .from(workspaces)
-    .where(and(eq(workspaces.id, workspaceId), eq(workspaces.userId, c.get('userId'))));
+    .where(and(eq(workspaces.id, workspaceId), eq(workspaces.userId, c.get('userId')), isNull(workspaces.deletedAt)));
 
   if (!workspace) {
     return c.json({ error: 'Workspace tidak ditemukan' }, 404);

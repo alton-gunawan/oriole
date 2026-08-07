@@ -1,11 +1,11 @@
-import { and, desc, eq, ilike, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, ilike, lt, or, sql, type SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { contacts } from '@oriole/database';
 
 import { db } from '../db/index.ts';
-import { phoneField } from '../lib/phone.ts';
+import { normalizePhone, phoneField } from '../lib/phone.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 
@@ -46,9 +46,16 @@ const updateContactSchema = z.object({
 
 const contactIdParamSchema = z.object({ id: z.string().uuid() });
 
-/** Filter daftar kontak: pencarian teks + pagination kursor keyset. */
+/**
+ * Filter daftar kontak: pencarian teks global (q, legacy) atau per-kolom
+ * (name/phone/email) + pagination kursor keyset. Filter per-kolom saling
+ * AND — dipakai filter bar halaman Contacts (pola Bookings).
+ */
 const listQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
+  name: z.string().trim().max(200).optional(),
+  phone: z.string().trim().max(200).optional(),
+  email: z.string().trim().max(200).optional(),
   cursor: z.string().max(400).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -115,7 +122,7 @@ export const contactsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
   /* ── List kontak workspace (cari + pagination kursor) ─────── */
   .get('/', requireAuth, requireWorkspace, zValidator('query', listQuerySchema), async (c) => {
     const workspaceId = c.get('workspaceId');
-    const { q, limit, cursor: rawCursor } = c.req.valid('query');
+    const { q, name, phone, email, limit, cursor: rawCursor } = c.req.valid('query');
 
     const cursor = decodeCursor(rawCursor);
     if (rawCursor && !cursor) {
@@ -129,6 +136,25 @@ export const contactsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         or(ilike(contacts.name, pattern), ilike(contacts.phone, pattern), ilike(contacts.email, pattern)),
       );
     }
+    // Filter per-kolom (UI Contacts mengikuti pola filter Bookings).
+    if (name) conditions.push(ilike(contacts.name, `%${name}%`));
+    if (phone) {
+      // Cocokkan substring string asli ATAU versi digit-only — user boleh
+      // mengetik nomor tanpa format (mis. "08123456789" cocok dengan
+      // "+62 812-3456-7890").
+      const phoneMatch: SQL[] = [ilike(contacts.phone, `%${phone}%`)];
+      const phoneDigits = normalizePhone(phone);
+      if (phoneDigits) {
+        phoneMatch.push(
+          ilike(
+            sql<string>`regexp_replace(${contacts.phone}, '[^0-9]', '', 'g')`,
+            `%${phoneDigits}%`,
+          ),
+        );
+      }
+      conditions.push(or(...phoneMatch));
+    }
+    if (email) conditions.push(ilike(contacts.email, `%${email}%`));
     // Keyset pagination: urut desc(createdAt), desc(id) — ambil baris setelah kursor.
     if (cursor) {
       conditions.push(

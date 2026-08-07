@@ -1,8 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import {
   bookings as bookingsTable,
   calleCalls,
+  contacts,
   conversations,
   messages,
 } from '@oriole/database';
@@ -29,7 +30,7 @@ import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspa
  *
  * GET /api/analytics/overview → {
  *   summary: { bookingsTotal, bookingsThisMonth, callsTotal, callsThisMonth,
- *              messagesTotal, needsAttention },
+ *              messagesTotal, contactsTotal, needsAttention },
  *   bookingsByMonth: [{ month: 'YYYY-MM', count }] — 12 bulan terakhir (0 diisi),
  *   bookingStatus: [{ status, count }],
  *   callOutcomes: [{ status, count }],
@@ -46,7 +47,7 @@ export const analyticsRoutes = new Hono<{ Variables: WorkspaceVariables }>().get
   async (c) => {
     const workspaceId = c.get('workspaceId');
 
-    const [bookingRows, callRows, messageRows, conversationRows] = await Promise.all([
+    const [bookingRows, callRows, messageRows, conversationRows, contactRows] = await Promise.all([
       db
         .select({ status: bookingsTable.status, createdAt: bookingsTable.createdAt })
         .from(bookingsTable)
@@ -68,6 +69,7 @@ export const analyticsRoutes = new Hono<{ Variables: WorkspaceVariables }>().get
         .select({ state: conversations.state })
         .from(conversations)
         .where(eq(conversations.workspaceId, workspaceId)),
+      db.select({ total: count() }).from(contacts).where(eq(contacts.workspaceId, workspaceId)),
     ]);
 
     const now = new Date();
@@ -79,6 +81,7 @@ export const analyticsRoutes = new Hono<{ Variables: WorkspaceVariables }>().get
         callsTotal: callRows.length,
         callsThisMonth: countThisMonth(callRows as { createdAt: Date }[], now),
         messagesTotal: messageRows.length,
+        contactsTotal: contactRows[0]?.total ?? 0,
         needsAttention: countNeedsAttention(conversationRows as ConversationRow[]),
       },
       bookingsByMonth: aggregateBookingsByMonth(bookingRows as BookingRow[], now),

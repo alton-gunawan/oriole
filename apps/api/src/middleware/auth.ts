@@ -22,7 +22,19 @@ export type AuthVariables = {
 let jwks: ReturnType<typeof jose.createRemoteJWKSet> | undefined;
 
 function getJwks() {
-  jwks ??= jose.createRemoteJWKSet(new URL(`${env.NEON_AUTH_URL}/.well-known/jwks.json`));
+  jwks ??= jose.createRemoteJWKSet(new URL(`${env.NEON_AUTH_URL}/.well-known/jwks.json`), {
+    // Cache JWKS lebih lama dari default (10 menit) + timeout eksplisit.
+    // Dalam window cache (1 jam) tidak ada fetch sama sekali → kegagalan
+    // sesaat Neon Auth TIDAK membuat request 401 (dulu itu memicu logout
+    // massal di client yang menganggap 401 = sesi mati). Setelah cache
+    // basi, jose refresh on-demand; cooldown membatasi reload saat kunci
+    // tidak cocok (rotasi kunci). CATATAN: bila cache basi DAN Neon Auth
+    // sedang down, tiap request tetap 401 sampai Neon pulih — sisi client
+    // sekarang memperlakukan 401 transien sebagai non-fatal (tidak logout).
+    cacheMaxAge: 60 * 60_000,
+    cooldownDuration: 30_000,
+    timeoutDuration: 5_000,
+  });
   return jwks;
 }
 

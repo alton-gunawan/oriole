@@ -2,11 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertDialog,
   Button,
   Dialog,
   DialogHeader,
   IconButton,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
   Skeleton,
   TextArea,
   TextInput,
@@ -18,20 +20,36 @@ import type { ContactRecord, ContactsListResponse, CreateContactPayload } from '
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
 import { IconAlertTriangle, IconPlus, IconSearch, IconTrash, IconUsers } from '../shell/icons';
-import { Card, EmptyState, PageHeader } from '../shell/ui';
+import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
 
 export function ContactsPage() {
   const { t } = useTranslation();
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const queryClient = useQueryClient();
 
-  // ── Pencarian (server-side, debounce 300ms) ─────────────────
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  // ── Filter per-kolom (pola Bookings): Nama / Telepon / Email, debounce 300ms ──
+  const [filters, setFilters] = useState({ name: '', phone: '', email: '' });
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    const timer = setTimeout(
+      () =>
+        setDebouncedFilters({
+          name: filters.name.trim(),
+          phone: filters.phone.trim(),
+          email: filters.email.trim(),
+        }),
+      300,
+    );
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [filters]);
+
+  const setFilter = (key: 'name' | 'phone' | 'email', value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+  const resetFilters = () => setFilters({ name: '', phone: '', email: '' });
+  const hasFilters = Boolean(
+    debouncedFilters.name || debouncedFilters.phone || debouncedFilters.email,
+  );
 
   const {
     data,
@@ -45,10 +63,18 @@ export function ContactsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['contacts', activeWorkspaceId, debouncedQuery],
+    queryKey: [
+      'contacts',
+      activeWorkspaceId,
+      debouncedFilters.name,
+      debouncedFilters.phone,
+      debouncedFilters.email,
+    ],
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams();
-      if (debouncedQuery) params.set('q', debouncedQuery);
+      if (debouncedFilters.name) params.set('name', debouncedFilters.name);
+      if (debouncedFilters.phone) params.set('phone', debouncedFilters.phone);
+      if (debouncedFilters.email) params.set('email', debouncedFilters.email);
       if (pageParam) params.set('cursor', pageParam);
       const qs = params.toString();
       return apiFetch<ContactsListResponse>(`/contacts${qs ? `?${qs}` : ''}`);
@@ -62,7 +88,7 @@ export function ContactsPage() {
   const contacts = data?.pages.flatMap((page) => page.contacts) ?? [];
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
   const showError = isError && !isAuthExpiry;
-  // Redup saat query pencarian baru sedang dimuat (placeholder = data lama).
+  // Redup saat query filter baru sedang dimuat (placeholder = data lama).
   const isSearchLoading = isFetching && isPlaceholderData;
 
   // ── Dialog tambah kontak ────────────────────────────────────
@@ -141,24 +167,64 @@ export function ContactsPage() {
         title={t('contacts.title')}
         description={t('contacts.description')}
       >
-        <Button
-          label={t('contacts.new')}
-          variant="primary"
-          icon={<IconPlus className="size-4" />}
+        {/* Menu reload — sama seperti Bookings/Calls. */}
+        <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
+        {/* Styling disamakan dengan tombol "New booking" di halaman Bookings. */}
+        <button
+          type="button"
           onClick={openAddDialog}
-        />
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+        >
+          <IconPlus className="size-4" />
+          {t('contacts.new')}
+        </button>
       </PageHeader>
 
-      <Card className="p-3">
-        <TextInput
-          label={t('contacts.search')}
-          isLabelHidden
-          placeholder={t('contacts.searchPlaceholder')}
-          value={query}
-          onChange={setQuery}
-          startIcon={<IconSearch className="size-4" />}
-          width="100%"
-        />
+      {/* Filter bar — mengikuti pola Bookings: tiap filter di kolomnya sendiri (flex-1). */}
+      <Card className="p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="min-w-0 flex-1">
+            <TextInput
+              label={t('common.name')}
+              placeholder={t('contacts.filterNamePlaceholder')}
+              value={filters.name}
+              onChange={(value) => setFilter('name', value)}
+              startIcon={<IconSearch className="size-4" />}
+              width="100%"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TextInput
+              label={t('contacts.phoneLabel')}
+              placeholder={t('contacts.filterPhonePlaceholder')}
+              value={filters.phone}
+              onChange={(value) => setFilter('phone', value)}
+              startIcon={<IconSearch className="size-4" />}
+              width="100%"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TextInput
+              label={t('common.email')}
+              type="email"
+              placeholder={t('contacts.filterEmailPlaceholder')}
+              value={filters.email}
+              onChange={(value) => setFilter('email', value)}
+              startIcon={<IconSearch className="size-4" />}
+              width="100%"
+            />
+          </div>
+          <div className="flex items-center gap-3 lg:ml-auto">
+            {hasFilters && (
+              <Button
+                label={t('contacts.resetFilter')}
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+              />
+            )}
+          </div>
+        </div>
       </Card>
 
       {deleteError && (
@@ -206,9 +272,9 @@ export function ContactsPage() {
           {contacts.length === 0 ? (
             <EmptyState
               icon={IconUsers}
-              title={debouncedQuery ? t('contacts.emptySearchTitle') : t('contacts.emptyTitle')}
+              title={hasFilters ? t('contacts.emptySearchTitle') : t('contacts.emptyTitle')}
               description={
-                debouncedQuery ? t('contacts.emptySearchDesc') : t('contacts.emptyDesc')
+                hasFilters ? t('contacts.emptySearchDesc') : t('contacts.emptyDesc')
               }
               action={{ label: t('contacts.add'), onClick: openAddDialog }}
             />
@@ -233,7 +299,7 @@ export function ContactsPage() {
                         {contact.email ? ` · ${contact.email}` : ''}
                       </p>
                       {contact.notes && (
-                        <p className="mt-0.5 truncate text-[11px] text-zinc-400">{contact.notes}</p>
+                        <p className="mt-0.5 truncate text-xs text-zinc-400">{contact.notes}</p>
                       )}
                     </div>
                     <IconButton
@@ -268,74 +334,82 @@ export function ContactsPage() {
         onOpenChange={(open) => {
           if (!open) closeAddDialog();
         }}
-        purpose="form"
+        purpose="info"
         width={520}
       >
-        <DialogHeader
-          title={t('contacts.addTitle')}
-          subtitle={t('contacts.addSubtitle')}
-          onOpenChange={(open) => {
-            if (!open) closeAddDialog();
-          }}
-          hasDivider
+        <Layout
+          header={
+            <DialogHeader
+              title={t('contacts.addTitle')}
+              subtitle={t('contacts.addSubtitle')}
+              onOpenChange={(open) => {
+                if (!open) closeAddDialog();
+              }}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              <form id="add-contact-form" onSubmit={submitContact} className="space-y-5">
+                <TextInput
+                  label={t('common.name')}
+                  placeholder={t('contacts.namePlaceholder')}
+                  value={name}
+                  onChange={setName}
+                  isRequired
+                />
+                <PhoneInput
+                  label={t('contacts.phoneLabel')}
+                  value={phone}
+                  onChange={setPhone}
+                  isRequired
+                />
+                <TextInput
+                  label={t('common.email')}
+                  type="email"
+                  placeholder={t('contacts.emailPlaceholder')}
+                  value={email}
+                  onChange={setEmail}
+                  isOptional
+                />
+                <TextArea
+                  label={t('common.notes')}
+                  placeholder={t('contacts.notesPlaceholder')}
+                  value={notes}
+                  onChange={setNotes}
+                  rows={3}
+                  isOptional
+                />
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {formError && (
+                <p role="alert" className="pb-2 text-right text-sm text-red-600">{formError}</p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  label={t('common.cancel')}
+                  variant="ghost"
+                  onClick={closeAddDialog}
+                  isDisabled={addMutation.isPending}
+                />
+                <Button
+                  label={t('common.saveContact')}
+                  variant="primary"
+                  type="submit"
+                  form="add-contact-form"
+                  isLoading={addMutation.isPending}
+                />
+              </div>
+            </LayoutFooter>
+          }
         />
-        <form onSubmit={submitContact} className="space-y-5 p-6">
-          <TextInput
-            label={t('common.name')}
-            placeholder={t('contacts.namePlaceholder')}
-            value={name}
-            onChange={setName}
-            isRequired
-          />
-          <PhoneInput
-            label={t('contacts.phoneLabel')}
-            value={phone}
-            onChange={setPhone}
-            isRequired
-          />
-          <TextInput
-            label={t('common.email')}
-            type="email"
-            placeholder={t('contacts.emailPlaceholder')}
-            value={email}
-            onChange={setEmail}
-            isOptional
-          />
-          <TextArea
-            label={t('common.notes')}
-            placeholder={t('contacts.notesPlaceholder')}
-            value={notes}
-            onChange={setNotes}
-            rows={3}
-            isOptional
-          />
-          {formError && (
-            <p
-              role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
-              {formError}
-            </p>
-          )}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button
-              label={t('common.cancel')}
-              variant="ghost"
-              onClick={closeAddDialog}
-              isDisabled={addMutation.isPending}
-            />
-            <Button
-              label={t('common.saveContact')}
-              variant="primary"
-              type="submit"
-              isLoading={addMutation.isPending}
-            />
-          </div>
-        </form>
       </Dialog>
 
-      {/* Konfirmasi hapus kontak */}
-      <AlertDialog
+      {/* Konfirmasi hapus kontak — menutup saat klik di luar dialog. */}
+      <ConfirmDialog
         isOpen={deleteTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);

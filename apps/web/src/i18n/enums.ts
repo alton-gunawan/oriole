@@ -15,6 +15,15 @@ const INDUSTRY_KEYS: Record<Industry, TranslationKey> = {
   medical_clinic: 'industry.medicalClinic',
   restaurant: 'industry.restaurant',
   wellness: 'industry.wellness',
+  fitness: 'industry.fitness',
+  professional_services: 'industry.professionalServices',
+  home_services: 'industry.homeServices',
+  automotive: 'industry.automotive',
+  education_coaching: 'industry.educationCoaching',
+  photography_creative: 'industry.photographyCreative',
+  real_estate: 'industry.realEstate',
+  pet_care: 'industry.petCare',
+  space_rental: 'industry.spaceRental',
   other: 'industry.other',
 };
 

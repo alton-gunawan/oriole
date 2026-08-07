@@ -24,7 +24,7 @@ import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
 import { GoalCustomizer } from '../shell/GoalCustomizer';
-import { IconAlertTriangle, IconCalendar, IconChevronLeft, IconEdit, IconPhone, IconTrash } from '../shell/icons';
+import { IconAlertTriangle, IconCalendar, IconChevronLeft, IconEdit, IconPhone, IconTrash, IconUsers } from '../shell/icons';
 import { Card, PageHeader } from '../shell/ui';
 
 /** Warna status booking → variant Badge Astryx. */
@@ -261,6 +261,15 @@ export function BookingDetailPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.customer')}</p>
                 <p className="mt-1 text-sm font-medium text-zinc-900">{booking.customerName ?? '—'}</p>
                 <p className="mt-0.5 text-xs text-zinc-500">{booking.phone ?? t('bookingDetail.noPhoneYet')}</p>
+                {booking.contactId && (
+                  <Link
+                    to="/app/contacts"
+                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 transition hover:text-emerald-700"
+                  >
+                    <IconUsers className="size-3.5" />
+                    {t('bookingDetail.linkedContact')}
+                  </Link>
+                )}
               </div>
             </div>
             {booking.description && (
@@ -440,7 +449,7 @@ export function BookingDetailPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('bookingDetail.goalToSend')}</p>
             <p className="mt-2 text-sm font-semibold text-zinc-900">{effectiveGoal?.title ?? t('common.noCall')}</p>
             {effectiveGoal && (
-              <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-3 text-[11px] leading-relaxed text-zinc-300">
+              <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-300">
                 {effectiveGoal.prompt}
               </pre>
             )}
@@ -460,8 +469,8 @@ export function BookingDetailPage() {
                       <p className="text-xs font-semibold text-zinc-800">{formatDateTime(call.createdAt)}</p>
                       <Badge variant={callStatusBadge(call.status)} label={statusLabel(call.status, t)} />
                     </div>
-                    {call.goalType && <p className="mt-1 text-[11px] font-medium text-amber-600">{call.goalType}</p>}
-                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">{resultSnippet(call.result, t)}</p>
+                    {call.goalType && <p className="mt-1 text-xs font-medium text-amber-600">{call.goalType}</p>}
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">{resultSnippet(call.result, t)}</p>
                   </div>
                 ))}
               </div>

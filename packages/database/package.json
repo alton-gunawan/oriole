@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "@oriole/call-goals": "workspace:*",
     "@oriole/config": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },

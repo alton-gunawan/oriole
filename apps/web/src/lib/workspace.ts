@@ -7,6 +7,17 @@ export interface Workspace {
   industry?: string | null;
   /** Menit sebelum jadwal reminder otomatis dikirim (default 120). */
   reminderLeadMinutes?: number;
+  /** Bahasa panggilan CALL-E (default 'en'). */
+  callGoalLanguage?: string;
+  /** Auto-call CALL-E aktif/mati (default mati). */
+  autoCallEnabled?: boolean;
+  /** Berapa jam sebelum jadwal auto-call dipicu (default 24). */
+  autoCallLeadHours?: number;
+  /**
+   * Avatar project: URL planet DiceBear / data URL upload. null = planet
+   * deterministik dari nama (default lama).
+   */
+  avatarUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
