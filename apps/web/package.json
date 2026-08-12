@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@astryxdesign/core": "^0.2.0",
-    "@astryxdesign/theme-neutral": "^0.2.0",
+    "@astryxdesign/theme-neutral": "^0.3.0",
     "@hookform/resolvers": "^5.7.1",
     "@neondatabase/auth": "0.4.2-beta",
     "@oriole/call-goals": "workspace:*",
