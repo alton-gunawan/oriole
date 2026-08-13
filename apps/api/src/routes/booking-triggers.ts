@@ -6,6 +6,7 @@ import { determineCallGoal, type BookingGoalContext } from '@oriole/call-goals';
 import { bookings, calleCalls, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { DEFAULT_BOOKING_TITLE, loadServiceNames } from '../lib/booking-title.ts';
 import { countCallAttempts } from '../lib/booking-goal.ts';
 import { dispatchEmailReminder, EmailDispatchError } from '../lib/email-reminder.ts';
 import { dispatchWhatsAppReminder, WhatsAppDispatchError } from '../lib/whatsapp-handler.ts';
@@ -18,10 +19,11 @@ const bookingIdParamSchema = z.object({ id: z.string().uuid() });
 function toGoalContext(
   row: typeof bookings.$inferSelect,
   attempts: { total: number; failed: number },
+  title: string,
 ): BookingGoalContext {
   return {
     id: row.id,
-    title: row.title,
+    title,
     status: row.status,
     scheduledAt: row.scheduledAt.toISOString(),
     timezone: row.timezone,
@@ -59,7 +61,7 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
     if (!row) return c.json({ error: 'Booking tidak ditemukan' }, 404);
 
     const [workspace] = await db
-      .select({ name: workspaces.name })
+      .select({ name: workspaces.name, chatLanguage: workspaces.chatLanguage })
       .from(workspaces)
       .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
@@ -69,7 +71,9 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
       .from(calleCalls)
       .where(eq(calleCalls.bookingId, row.id));
     const attempts = countCallAttempts(calls);
-    const decision = determineCallGoal(toGoalContext(row, attempts), {
+    const serviceName =
+      (await loadServiceNames(c.get('workspaceId'), [row.serviceId])).get(row.serviceId ?? '') ?? null;
+    const decision = determineCallGoal(toGoalContext(row, attempts, serviceName ?? DEFAULT_BOOKING_TITLE), {
       reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
     });
 
@@ -82,13 +86,15 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
         workspaceId: c.get('workspaceId'),
         booking: {
           id: row.id,
-          title: row.title,
+          title: serviceName ?? DEFAULT_BOOKING_TITLE,
           customerName: row.customerName,
           phone: row.phone,
           scheduledAt: row.scheduledAt,
           timezone: row.timezone,
+          videoLink: row.videoLink,
         },
         businessName: workspace?.name ?? null,
+        language: workspace?.chatLanguage === 'id' ? 'id' : 'en',
       });
 
       return c.json({
@@ -116,7 +122,7 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
     if (!row) return c.json({ error: 'Booking tidak ditemukan' }, 404);
 
     const [workspace] = await db
-      .select({ name: workspaces.name })
+      .select({ name: workspaces.name, chatLanguage: workspaces.chatLanguage })
       .from(workspaces)
       .where(and(eq(workspaces.id, c.get('workspaceId')), isNull(workspaces.deletedAt)))
       .limit(1);
@@ -126,7 +132,9 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
       .from(calleCalls)
       .where(eq(calleCalls.bookingId, row.id));
     const attempts = countCallAttempts(calls);
-    const decision = determineCallGoal(toGoalContext(row, attempts), {
+    const serviceName =
+      (await loadServiceNames(c.get('workspaceId'), [row.serviceId])).get(row.serviceId ?? '') ?? null;
+    const decision = determineCallGoal(toGoalContext(row, attempts, serviceName ?? DEFAULT_BOOKING_TITLE), {
       reminderWindowHours: (await resolveAutoCallSettings(c.get('workspaceId'))).leadHours,
     });
     if (decision.goalType === null) {
@@ -138,13 +146,15 @@ export const bookingTriggersRoutes = new Hono<{ Variables: WorkspaceVariables }>
         workspaceId: c.get('workspaceId'),
         booking: {
           id: row.id,
-          title: row.title,
+          title: serviceName ?? DEFAULT_BOOKING_TITLE,
           customerName: row.customerName,
           phone: row.phone,
           scheduledAt: row.scheduledAt,
           timezone: row.timezone,
+          videoLink: row.videoLink,
         },
         businessName: workspace?.name ?? null,
+        language: workspace?.chatLanguage === 'id' ? 'id' : 'en',
       });
       return c.json({ ok: true, channel: 'email' });
     } catch (error) {

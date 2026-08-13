@@ -1,0 +1,33 @@
+# Oriole API — LOCAL DEVELOPMENT image.
+# Used by deploy/waha/docker-compose.dev.yml (full stack: WAHA gateway +
+# Oriole API + Inngest Dev Server in one `docker compose up`).
+# NOT for production — the repo is bind-mounted over /app at runtime and
+# `tsx watch` hot-reloads on every save.
+#
+# Production uses apps/api/Dockerfile instead (copied code, no bind mount).
+FROM node:24-alpine AS base
+RUN corepack enable
+WORKDIR /app
+
+# ── Install dependencies (frozen lockfile, prod-only) ─────────
+# Why --prod: the Inngest Dev Server is a separate compose service, and
+# vitest/typescript/inngest-cli live on the host — the API only needs
+# runtime deps + tsx (a dependency) to boot and hot-reload.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/call-goals/package.json packages/call-goals/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/messaging/package.json packages/messaging/package.json
+RUN pnpm install --frozen-lockfile --filter @oriole/api --prod
+
+# ── Source (fallback — the compose overlay bind-mounts the live repo) ──
+COPY apps/api apps/api
+COPY packages packages
+
+EXPOSE 3000
+
+# pnpm --filter runs the workspace script `dev` (= tsx watch src/index.ts)
+# with cwd = apps/api. The repo is bind-mounted over /app by the overlay,
+# so every edit triggers a reload.
+CMD ["pnpm", "--filter", "@oriole/api", "dev"]

@@ -1,0 +1,1 @@
+ALTER TABLE "services" ALTER COLUMN "category" SET DATA TYPE text[] USING CASE WHEN "category" IS NULL THEN NULL ELSE ARRAY["category"] END;

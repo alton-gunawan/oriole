@@ -1,29 +1,38 @@
 import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import { AppLogo } from '../components/AppLogo';
 import { LocaleSwitcher } from '../shell/LocaleSwitcher';
+import { IconArrowLeft } from '../shell/icons';
 
 /** Kerangka halaman auth — konsisten dengan boot screen (zinc + amber). */
 export function AuthLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-zinc-50 p-8 text-zinc-900">
+    <main className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-white p-8 text-zinc-900">
+      <div className="absolute left-6 top-6">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 transition hover:text-zinc-900"
+        >
+          <IconArrowLeft className="size-4" strokeWidth={2} aria-hidden="true" />
+          {t('errors.backToHome')}
+        </Link>
+      </div>
       <div className="absolute right-6 top-6">
         <LocaleSwitcher />
       </div>
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex size-12 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-sm">
-            <AppLogo />
-          </span>
-          <div>
+        <div className="rounded-2xl bg-white p-8">
+          <Link to="/" className="mb-8 flex items-center gap-3">
+            <span className="flex size-12 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-sm">
+              <AppLogo />
+            </span>
             <h1 className="text-2xl font-semibold tracking-tight">Oriole</h1>
-            <p className="mt-0.5 text-sm text-zinc-500">{t('auth.tagline')}</p>
-          </div>
+          </Link>
+          {children}
         </div>
-
-        <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">{children}</div>
       </div>
     </main>
   );

@@ -2,7 +2,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { bookings, workspaceIntegrations, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { withBookingTitle } from './booking-title.ts';
 import { GoogleApiError, googleFetch, parseServiceAccount, type GoogleServiceAccount } from './google-auth.ts';
+import { setBookingVideoLink } from './video.ts';
 
 /* ────────────────────────────────────────────────────────────
  * Google Calendar integration — booking project dicerminkan
@@ -73,6 +75,23 @@ interface CalendarEventInput {
   end: { dateTime: string; timeZone: string };
   extendedProperties: { private: Record<string, string> };
   status: string;
+  /**
+   * Google Meet — hanya dikirim saat INSERT (conferenceData tidak bisa
+   * ditambahkan lewat PATCH). Saat ada, Google membuat hangoutsMeet dan
+   * mengembalikan hangoutLink di respons.
+   */
+  conferenceData?: {
+    createRequest: {
+      requestId: string;
+      conferenceSolutionKey: { type: 'hangoutsMeet' };
+    };
+  };
+}
+
+/** Respons event dari Calendar API — termasuk hangoutLink untuk Google Meet. */
+interface CalendarEventWithConference {
+  id: string;
+  hangoutLink?: string;
 }
 
 /** Offset UTC (menit) dari sebuah timezone IANA pada instant tertentu. */
@@ -113,6 +132,7 @@ export function buildCalendarEvent(
   booking: { id: string; title: string; description: string | null; scheduledAt: Date; timezone: string; status: string },
   workspaceName: string | null,
   durationMinutes = DEFAULT_EVENT_DURATION_MINUTES,
+  options: { withConference?: boolean } = {},
 ): CalendarEventInput {
   const duration = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : DEFAULT_EVENT_DURATION_MINUTES;
   const end = new Date(booking.scheduledAt.getTime() + duration * 60_000);
@@ -131,11 +151,108 @@ export function buildCalendarEvent(
     // Event untuk booking yang dibatalkan/selesai dihapus, bukan di-cancel —
     // semua event yang tersimpan berstatus confirmed.
     status: 'confirmed',
+    // Google Meet — hanya pada INSERT (lihat doc CalendarEventInput).
+    ...(options.withConference
+      ? {
+          conferenceData: {
+            createRequest: {
+              requestId: `oriole-${booking.id}`,
+              conferenceSolutionKey: { type: 'hangoutsMeet' },
+            },
+          },
+        }
+      : {}),
   };
 }
 
-interface CalendarEvent {
+/**
+ * Item event mentah dari Calendar API — dipakai untuk membaca event
+ * EKSTERNAL (dua arah): apa pun yang ada di kalender tapi BUKAN milik
+ * Oriole (tanpa extendedProperties.private.orioleBookingId) diperlakukan
+ * sebagai waktu sibuk yang memblokir slot booking.
+ */
+export interface CalendarEventItem {
   id: string;
+  summary?: string;
+  status?: string | null;
+  start?: { dateTime?: string; date?: string } | null;
+  end?: { dateTime?: string; date?: string } | null;
+  extendedProperties?: { private?: Record<string, string> } | null;
+}
+
+/**
+ * Ambil event kalender dalam rentang [timeMin, timeMax] (events.list).
+ * Pakai singleEvents=true agar recurring event dibentangkan.
+ */
+export async function listCalendarEvents(
+  serviceAccount: GoogleServiceAccount,
+  calendarId: string,
+  timeMin: Date,
+  timeMax: Date,
+): Promise<CalendarEventItem[]> {
+  const params = new URLSearchParams({
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '2500',
+  });
+  const result = await googleFetch<{ items?: CalendarEventItem[] }>(
+    serviceAccount,
+    [GOOGLE_CALENDAR_SCOPE],
+    `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+  );
+  return result.items ?? [];
+}
+
+/**
+ * Interval sibuk dari event EKSTERNAL kalender (bukan mirror Oriole) dalam
+ * rentang [from, to] — dua arah: waktu yang dipakai di kalender tidak bisa
+ * di-book.
+ *
+ * - Event milik Oriole dikenali via extendedProperties.private.orioleBookingId
+ *   dan dilewati (itu cermin booking kita sendiri).
+ * - Event all-day (start.date) dilewati — blokir per hari penuh membutuhkan
+ *   zona waktu kalender yang tidak tersedia lewat service account.
+ * - Kegagalan Google bersifat fail-open ([] + log): kalender yang sedang
+ *   bermasalah tidak boleh mematikan pembuatan booking di DB.
+ */
+export async function getExternalCalendarBusyIntervals(
+  workspaceId: string,
+  from: Date,
+  to: Date,
+): Promise<{ start: Date; end: Date }[]> {
+  let loaded: Awaited<ReturnType<typeof loadCalendarIntegration>>;
+  try {
+    loaded = await loadCalendarIntegration(workspaceId);
+  } catch (error) {
+    console.warn('[google-calendar] gagal memuat integrasi (busy blocks):', error);
+    return [];
+  }
+  if (!loaded) return [];
+
+  const { config, serviceAccount } = loaded;
+  let items: CalendarEventItem[];
+  try {
+    items = await listCalendarEvents(serviceAccount, config.calendarId, from, to);
+  } catch (error) {
+    console.warn('[google-calendar] gagal membaca event eksternal (busy blocks):', error);
+    return [];
+  }
+
+  const busy: { start: Date; end: Date }[] = [];
+  for (const item of items) {
+    if (item.status === 'cancelled') continue;
+    // Event all-day tidak punya dateTime — lewati (lihat doc di atas).
+    if (!item.start?.dateTime || !item.end?.dateTime) continue;
+    // Cermin booking kita sendiri — bukan waktu sibuk tambahan.
+    if (item.extendedProperties?.private?.orioleBookingId) continue;
+    const start = new Date(item.start.dateTime);
+    const end = new Date(item.end.dateTime);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) continue;
+    busy.push({ start, end });
+  }
+  return busy;
 }
 
 /** Muat integrasi Google Calendar + konfigurasi workspace (nama untuk description). */
@@ -203,33 +320,42 @@ export async function upsertBookingCalendarEvent(
   const loaded = await loadCalendarIntegration(workspaceId);
   if (!loaded) return { action: 'skipped', reason: 'not-connected' };
 
-  const [booking] = await db
+  const [row] = await db
     .select()
     .from(bookings)
     .where(and(eq(bookings.id, bookingId), eq(bookings.workspaceId, workspaceId)))
     .limit(1);
-  if (!booking) return { action: 'skipped', reason: 'booking-not-found' };
-  if (booking.status !== 'pending' && booking.status !== 'confirmed') {
-    return { action: 'skipped', reason: `status-${booking.status}` };
+  if (!row) return { action: 'skipped', reason: 'booking-not-found' };
+  if (row.status !== 'pending' && row.status !== 'confirmed') {
+    return { action: 'skipped', reason: `status-${row.status}` };
   }
+  // Title booking = nama layanan katalog (kolom title sudah dihapus).
+  const booking = await withBookingTitle(workspaceId, row);
 
   const { config, serviceAccount } = loaded;
   const eventIds = config.eventIds ?? {};
   const existingEventId = eventIds[bookingId];
+  // Durasi event mengikuti durasi booking (kolom baru); fallback ke override
+  // integrasi, lalu default 60 menit.
   const payload = buildCalendarEvent(
     booking,
     loaded.workspaceName,
-    config.eventDurationMinutes ?? undefined,
+    booking.durationMinutes ?? config.eventDurationMinutes ?? DEFAULT_EVENT_DURATION_MINUTES,
   );
 
   if (existingEventId) {
     try {
-      const event = await googleFetch<CalendarEvent>(
+      const event = await googleFetch<CalendarEventWithConference>(
         serviceAccount,
         [GOOGLE_CALENDAR_SCOPE],
         `/calendar/v3/calendars/${encodeURIComponent(config.calendarId)}/events/${encodeURIComponent(existingEventId)}`,
         { method: 'PATCH', body: JSON.stringify(payload) },
       );
+      // Event sudah ada (mungkin sudah punya Meet) — sinkronkan hangoutLink
+      // ke booking bila ada.
+      if (event.hangoutLink && booking.videoLink !== event.hangoutLink) {
+        await setBookingVideoLink(bookingId, event.hangoutLink);
+      }
       return { action: 'updated', eventId: event.id };
     } catch (err) {
       // Event lama dihapus dari kalender (mis. manual di Google) → mapping
@@ -239,12 +365,17 @@ export async function upsertBookingCalendarEvent(
     }
   }
 
-  const event = await googleFetch<CalendarEvent>(
+  // INSERT dengan conferenceData → Google membuat Meet link (hanya valid
+  // saat create; conferenceData diabaikan Google pada PATCH).
+  const event = await googleFetch<CalendarEventWithConference>(
     serviceAccount,
     [GOOGLE_CALENDAR_SCOPE],
-    `/calendar/v3/calendars/${encodeURIComponent(config.calendarId)}/events`,
-    { method: 'POST', body: JSON.stringify(payload) },
+    `/calendar/v3/calendars/${encodeURIComponent(config.calendarId)}/events?conferenceDataVersion=1`,
+    { method: 'POST', body: JSON.stringify({ ...payload, conferenceData: { createRequest: { requestId: `oriole-${bookingId}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } } }) },
   );
+  if (event.hangoutLink && booking.videoLink !== event.hangoutLink) {
+    await setBookingVideoLink(bookingId, event.hangoutLink);
+  }
   await persistCalendarConfig(workspaceId, { ...config, eventIds: { ...eventIds, [bookingId]: event.id } });
   return { action: 'created', eventId: event.id };
 }

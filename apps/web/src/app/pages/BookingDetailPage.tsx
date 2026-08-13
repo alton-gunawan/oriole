@@ -18,13 +18,18 @@ import {
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import type { BookingDetailResponse, BookingRecord, CallRecord } from '../../lib/bookings';
+import type { StaffListResponse } from '../../lib/staff';
+import type { ServicesListResponse } from '../../lib/services';
+import { formatPaymentAmount, type PaymentLinkRecord, type PaymentsListResponse } from '../../lib/payments';
+import type { IntegrationListResponse } from '../../lib/integrations';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
 import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
 import { GoalCustomizer } from '../shell/GoalCustomizer';
-import { IconAlertTriangle, IconCalendar, IconChevronLeft, IconEdit, IconPhone, IconTrash, IconUsers } from '../shell/icons';
+import { PaymentsDialog } from '../shell/PaymentsDialog';
+import { IconAlertTriangle, IconCalendar, IconCheck, IconChevronLeft, IconCopy, IconCreditCard, IconEdit, IconRepeat, IconServices, IconTrash, IconUsers } from '../shell/icons';
 import { Card, PageHeader } from '../shell/ui';
 
 /** Warna status booking → variant Badge Astryx. */
@@ -79,7 +84,7 @@ export function BookingDetailPage() {
 
   // ── Form edit booking ──────────────────────────────────────
   const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
+  // Title tidak diedit manual — booking diambil dari layanan katalog.
   const [editCustomerName, setEditCustomerName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editScheduledAt, setEditScheduledAt] = useState('');
@@ -92,7 +97,6 @@ export function BookingDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const startEdit = (booking: BookingRecord) => {
-    setEditTitle(booking.title);
     setEditCustomerName(booking.customerName ?? '');
     setEditPhone(booking.phone ?? '');
     setEditScheduledAt(toDateTimeLocal(booking.scheduledAt));
@@ -106,10 +110,10 @@ export function BookingDetailPage() {
     event.preventDefault();
     if (!id) return;
     setEditError(null);
-    const trimmedTitle = editTitle.trim();
-    if (!trimmedTitle || !editScheduledAt) return;
+    if (!editScheduledAt) return;
     editBookingMutation.mutate({
-      title: trimmedTitle,
+      // Title tidak dikirim — tetap nama layanan katalog (serviceId tidak
+      // berubah saat edit).
       customerName: editCustomerName.trim() || null,
       phone: editPhone.trim() || null,
       scheduledAt: new Date(editScheduledAt).toISOString(),
@@ -120,7 +124,6 @@ export function BookingDetailPage() {
 
   const editBookingMutation = useMutation({
     mutationFn: (fields: {
-      title: string;
       customerName: string | null;
       phone: string | null;
       scheduledAt: string;
@@ -167,29 +170,64 @@ export function BookingDetailPage() {
         }
       : null;
 
-  const [triggerResult, setTriggerResult] = useState<string | null>(null);
-  const [triggerError, setTriggerError] = useState<string | null>(null);
+  // Nama staf untuk badge penugasan.
+  const { data: staffPage } = useQuery({
+    queryKey: ['staff', activeWorkspaceId],
+    queryFn: () => apiFetch<StaffListResponse>('/staff'),
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+  const staffName = staffPage?.staff.find((staff) => staff.id === data?.booking.staffId)?.name;
+
+  // Nama layanan katalog untuk badge layanan (sumber kebenaran = katalog).
+  const { data: servicesPage } = useQuery({
+    queryKey: ['services', activeWorkspaceId],
+    queryFn: () => apiFetch<{ services: ServicesListResponse['services'] }>('/services'),
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+  const serviceName = servicesPage?.services.find(
+    (service) => service.id === data?.booking.serviceId,
+  )?.name;
+
+  // ── Payments (Global Payments — Paddle) ────────────────────
+  const [paymentsDialogOpen, setPaymentsDialogOpen] = useState(false);
+  const [copiedPaymentId, setCopiedPaymentId] = useState<string | null>(null);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+
+  const { data: paymentsData } = useQuery({
+    queryKey: ['payments', activeWorkspaceId, id],
+    queryFn: async () => {
+      const [paymentsRes, integrationsRes] = await Promise.all([
+        apiFetch<PaymentsListResponse>(`/payments?bookingId=${id}`),
+        apiFetch<IntegrationListResponse>('/integrations'),
+      ]);
+      return {
+        payments: paymentsRes.payments,
+        configured: integrationsRes.integrations.some(
+          (item) => item.integrationType === 'payments' && item.isActive,
+        ),
+      };
+    },
+    enabled: Boolean(id),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+
+  const copyPaymentUrl = async (payment: PaymentLinkRecord) => {
+    if (!payment.checkoutUrl) return;
+    try {
+      await navigator.clipboard.writeText(payment.checkoutUrl);
+      setCopiedPaymentId(payment.id);
+      setTimeout(() => setCopiedPaymentId(null), 1500);
+    } catch {
+      setPaymentsError(t('channels.copyFailed'));
+    }
+  };
 
   const saveGoalMutation = useMutation({
     mutationFn: (goal: GoalCustomization | null) =>
       apiFetch(`/bookings/${id}`, { method: 'PATCH', body: JSON.stringify({ goal }) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['booking', activeWorkspaceId, id] }),
-  });
-
-  const triggerCallMutation = useMutation({
-    mutationFn: () => apiFetch<{ call: { id: string; status: string } }>(`/bookings/${id}/trigger-call`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    }),
-    onSuccess: (response) => {
-      setTriggerError(null);
-      setTriggerResult(t('bookingDetail.callCreated', { id: response.call.id, status: response.call.status }));
-      queryClient.invalidateQueries({ queryKey: ['booking', activeWorkspaceId, id] });
-    },
-    onError: (err) => {
-      setTriggerResult(null);
-      setTriggerError(errorMessage(err, t, 'errors.triggerCall'));
-    },
   });
 
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
@@ -226,6 +264,7 @@ export function BookingDetailPage() {
     <div className="space-y-8">
       <PageHeader
         title={booking.title}
+        icon={IconCalendar}
         description={t('bookingDetail.fromProject', {
           name: business.name ?? '—',
           date: formatDateTime(booking.createdAt),
@@ -256,6 +295,27 @@ export function BookingDetailPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.schedule')}</p>
                 <p className="mt-1 text-sm font-medium text-zinc-900">{formatDateTime(booking.scheduledAt)}</p>
                 <p className="mt-0.5 text-xs text-zinc-500">{t('bookingDetail.timezone', { timezone: booking.timezone })}</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {t('bookingDetail.duration', { count: booking.durationMinutes })}
+                </p>
+                {booking.serviceId && (
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600">
+                    <IconServices className="size-3.5 text-zinc-400" aria-hidden="true" />
+                    <span className="truncate">{serviceName ?? t('bookingDetail.unknownService')}</span>
+                  </p>
+                )}
+                {booking.staffId && (
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600">
+                    <IconUsers className="size-3.5 text-zinc-400" aria-hidden="true" />
+                    <span className="truncate">{staffName ?? t('bookingDetail.unknownStaff')}</span>
+                  </p>
+                )}
+                {booking.recurrenceSeriesId && (
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-600">
+                    <IconRepeat className="size-3.5" aria-hidden="true" />
+                    {t('bookingDetail.recurring')}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.customer')}</p>
@@ -283,17 +343,8 @@ export function BookingDetailPage() {
           {isEditing && (
             <Card className="border-amber-200 bg-amber-50/30 p-5">
               <form onSubmit={submitEdit} className="space-y-4">
-                <h2 className="text-sm font-semibold text-zinc-900">{t('bookingDetail.editTitle')}</h2>
+                <h2 className="text-sm font-semibold text-zinc-900">{t('bookingDetail.editHeading')}</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <TextInput
-                    className="sm:col-span-2"
-                    label={t('bookingNew.bookingTitle')}
-                    isRequired
-                    value={editTitle}
-                    onChange={setEditTitle}
-                    width="100%"
-                  />
-
                   <TextInput
                     label={t('bookingNew.customerName')}
                     value={editCustomerName}
@@ -388,7 +439,7 @@ export function BookingDetailPage() {
                       label={t('common.save')}
                       variant="primary"
                       isLoading={editBookingMutation.isPending}
-                      isDisabled={editBookingMutation.isPending || !editTitle.trim() || !editScheduledAt}
+                      isDisabled={editBookingMutation.isPending || !editScheduledAt}
                       type="submit"
                     />
                   </div>
@@ -411,35 +462,6 @@ export function BookingDetailPage() {
               disabled={booking.status === 'cancelled' || booking.status === 'completed'}
             />
 
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Button
-                label={triggerCallMutation.isPending ? t('bookingDetail.calling') : t('bookingDetail.triggerNow')}
-                variant="primary"
-                icon={<IconPhone className="size-4" />}
-                isLoading={triggerCallMutation.isPending}
-                isDisabled={
-                  triggerCallMutation.isPending ||
-                  !booking.phone ||
-                  booking.status === 'cancelled' ||
-                  booking.status === 'completed'
-                }
-                onClick={() => triggerCallMutation.mutate()}
-              />
-              {!booking.phone && (
-                <p className="text-xs text-zinc-500">{t('bookingDetail.addPhoneHint')}</p>
-              )}
-            </div>
-
-            {triggerResult && (
-              <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {triggerResult}
-              </p>
-            )}
-            {triggerError && (
-              <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {triggerError}
-              </p>
-            )}
           </div>
         </div>
 
@@ -449,7 +471,9 @@ export function BookingDetailPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('bookingDetail.goalToSend')}</p>
             <p className="mt-2 text-sm font-semibold text-zinc-900">{effectiveGoal?.title ?? t('common.noCall')}</p>
             {effectiveGoal && (
-              <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-300">
+              // `ph-no-capture`: prompt goal bisa memuat data customer —
+              // jangan pernah ter-capture analitik/session replay.
+              <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-300 ph-no-capture">
                 {effectiveGoal.prompt}
               </pre>
             )}
@@ -489,8 +513,92 @@ export function BookingDetailPage() {
               </span>
             </div>
           </Card>
+
+          {/* Payments — payment link untuk booking ini. */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <IconCreditCard className="size-4 text-emerald-600" />
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  {t('payments.bookingTitle')}
+                </p>
+              </div>
+              <Button
+                label={t('payments.bookingCreate')}
+                variant="primary"
+                size="sm"
+                isDisabled={!paymentsData?.configured}
+                onClick={() => setPaymentsDialogOpen(true)}
+              />
+            </div>
+
+            {paymentsError && (
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                {paymentsError}
+              </p>
+            )}
+
+            {paymentsData && !paymentsData.configured && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                {t('payments.bookingNotConfigured')}
+              </p>
+            )}
+
+            {!paymentsData ? (
+              <div className="mt-3 h-12 animate-pulse rounded-lg bg-zinc-100" />
+            ) : paymentsData.payments.length === 0 ? (
+              <p className="mt-3 text-sm text-zinc-500">{t('payments.bookingEmpty')}</p>
+            ) : (
+              <div className="mt-3 space-y-2.5">
+                {paymentsData.payments.map((payment) => (
+                  <div key={payment.id} className="rounded-xl border border-zinc-100 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900">{payment.title}</p>
+                        <p className="mt-0.5 text-sm font-bold text-zinc-800">
+                          {formatPaymentAmount(payment.amountMinor, payment.currency)}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={payment.status === 'paid' ? 'success' : payment.status === 'pending' ? 'warning' : 'neutral'}
+                        label={payment.status === 'paid' ? t('payments.statusPaid') : payment.status === 'pending' ? t('payments.statusPending') : t('payments.statusCanceled')}
+                      />
+                    </div>
+                    {payment.status === 'pending' && payment.checkoutUrl && (
+                      <button
+                        type="button"
+                        onClick={() => void copyPaymentUrl(payment)}
+                        className="mt-2 flex items-center gap-1 text-xs font-medium text-amber-600 transition hover:text-amber-500"
+                      >
+                        {copiedPaymentId === payment.id ? (
+                          <IconCheck className="size-3.5" />
+                        ) : (
+                          <IconCopy className="size-3.5" />
+                        )}
+                        {copiedPaymentId === payment.id ? t('channels.copied') : t('payments.openCheckout')}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
       </div>
+
+      {/* Dialog payment link — scope ke booking ini. */}
+      <PaymentsDialog
+        isOpen={paymentsDialogOpen}
+        onOpenChange={(open) => {
+          setPaymentsDialogOpen(open);
+          if (!open) {
+            queryClient.invalidateQueries({ queryKey: ['payments', activeWorkspaceId, id] });
+          }
+        }}
+        bookingId={id}
+        defaultTitle={booking.title}
+        defaultCustomerName={booking.customerName ?? ''}
+      />
     </div>
   );
 }

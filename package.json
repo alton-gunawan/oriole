@@ -8,7 +8,8 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "pnpm dev:services && turbo run dev",
+    "dev:services": "pnpm --filter @oriole/api dev:services",
     "dev:web": "pnpm --filter @oriole/web dev",
     "dev:api": "pnpm --filter @oriole/api dev",
     "build": "turbo run build",

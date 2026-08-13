@@ -72,16 +72,22 @@ export function ReloadMenuButton({
 export function PageHeader({
   title,
   description,
+  icon: Icon,
   children,
 }: {
   title: string;
   description?: string;
+  /** Ikon ditampilkan di kiri judul — wadah badge amber konsisten antar halaman. */
+  icon?: ComponentType<IconProps>;
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{title}</h1>
+        <div className="flex items-center gap-3">
+          {Icon && <Icon className="size-6 shrink-0 text-amber-600" />}
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{title}</h1>
+        </div>
         {description && <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-zinc-500">{description}</p>}
       </div>
       {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}

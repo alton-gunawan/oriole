@@ -10,6 +10,14 @@ import { isOptOutText, parseCallbackData } from '../telegram/parse.ts';
  * Format callback data tombol sama dengan Telegram (`bk:<bookingId>:<action>`)
  * agar handler channel bisa berbagi state machine. Teks `STOP`/`BERHENTI`
  * juga dikenali sebagai opt-out.
+ *
+ * Keyword intent (BYO/WAHA): WhatsApp unofficial (WAHA) mengirim tekan tombol
+ * interaktif sebagai pesan TEKS biasa dengan body = label tombol (tidak ada
+ * callback-data ala Meta — spikes/waha/README.md §mapping). Label itu (mis.
+ * '✅ Ya, hadir') maupun balasan bebas ('ya', 'batal', 'ubah jadwal') dipetakan
+ * ke intent booking confirm/cancel/reschedule agar auto-reply BYO berfungsi
+ * penuh. Event hasil mapping TIDAK membawa bookingId — handler me-resolve-nya
+ * dari percakapan (auto-link by nomor).
  */
 
 export interface WhatsAppWebhookPayload {
@@ -38,6 +46,79 @@ export interface WhatsAppWebhookPayload {
   }[];
 }
 
+/**
+ * Keyword intent balasan teks bebas / tekan-tombol-as-text (BYO/WAHA) → intent
+ * booking. Daftar ini diselaraskan dengan label tombol `renderBookingReminder`
+ * (ID: '✅ Ya, hadir' / '📅 Ubah jadwal' / '❌ Batalkan'; EN: '✅ Yes, I will
+ * attend' / '📅 Reschedule' / '❌ Cancel') dan instruksi bot ('ketik Batal' /
+ * 'type *Cancel*' saat mengubah jadwal), plus varian natural user.
+ */
+const BOOKING_KEYWORD_INTENTS: { intent: InboundIntent; patterns: RegExp[] }[] = [
+  {
+    intent: 'confirm',
+    patterns: [
+      /^(ya|hadir|saya hadir|aku hadir|ya hadir)$/,
+      /^(yes|attend|i will attend|yes i will attend|will attend)$/,
+    ],
+  },
+  {
+    intent: 'cancel',
+    patterns: [
+      /^(batal|batalkan|batalin|batal hadir|cancel|gak jadi|nggak jadi|tidak jadi)$/,
+      /^(cancel|not attending|i will not attend)$/,
+    ],
+  },
+  {
+    intent: 'reschedule',
+    patterns: [
+      /^(ubah jadwal|ganti jadwal|pindah jadwal|reschedule|jadwal ulang)$/,
+      /^(reschedule|change schedule|change appointment|move appointment|new time)$/,
+    ],
+  },
+  // Minta booking baru → bot membalas tautan form terintegrasi (Google
+  // Forms/Tally) — lihat handleBookingRequest di whatsapp-handler.
+  {
+    intent: 'booking-request',
+    patterns: [
+      /^(mau booking|minta booking|ingin booking|buat booking|booking dong|mau booking dong|booking yuk|booking)$/,
+      /^(pesan jadwal|mau pesan|mau pesan jadwal|buat janji|mau janji|janji temu|ingin janji)$/,
+      /^(book|make a booking|make booking|book an appointment|book appointment|schedule an appointment|make an appointment)$/,
+    ],
+  },
+];
+
+/**
+ * Normalisasi teks keyword: lowercase, buang emoji (label tombol WAHA),
+ * markdown, dan tanda baca; ratakan spasi. Pencocokan EXACT terhadap hasil
+ * normalisasi — kalimat bebas ('saya tidak hadir') TIDAK ikut ter-parse.
+ */
+function normalizeKeywordText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\p{Extended_Pictographic}/gu, '') // emoji label tombol, mis. '✅'
+    .replace(/[*_`~#]/g, '') // markdown (format `2026-08-15 14:00` dst.)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ') // tanda baca → spasi
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Cari intent booking dari teks keyword bebas (BYO/WAHA) — null bila teks
+ * bukan keyword (dibiarkan sebagai intent `text` untuk handoff staf/AI).
+ */
+function matchBookingKeywordIntent(
+  body: string | undefined,
+): { intent: InboundIntent; bookingId: null } | null {
+  if (!body) return null;
+  const normalized = normalizeKeywordText(body);
+  for (const rule of BOOKING_KEYWORD_INTENTS) {
+    if (rule.patterns.some((pattern) => pattern.test(normalized))) {
+      return { intent: rule.intent, bookingId: null };
+    }
+  }
+  return null;
+}
+
 function resolveIntent(
   type: string | undefined,
   body: string | undefined,
@@ -53,8 +134,13 @@ function resolveIntent(
     }
     return { intent: 'text', bookingId: null };
   }
-  if (type === 'text' && isOptOutText(body)) {
-    return { intent: 'opt-out', bookingId: null };
+  if (type === 'text') {
+    // Opt-out eksak dulu (STOP/BERHENTI) — bukan keyword booking.
+    if (isOptOutText(body)) {
+      return { intent: 'opt-out', bookingId: null };
+    }
+    const keyword = matchBookingKeywordIntent(body);
+    if (keyword) return keyword;
   }
   return { intent: 'text', bookingId: null };
 }

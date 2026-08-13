@@ -1,0 +1,136 @@
+# ════════════════════════════════════════════════════════════════════
+# WAHA gateway — production deployment for Oriole "Bring Your Own WhatsApp"
+# (unofficial channel). Runs on Docker / OrbStack.
+#
+# Quick start (OrbStack):
+#   cd deploy/waha
+#   ./scripts/init-env.sh        # creates .env with fresh random secrets
+#   docker compose up -d
+#   docker compose ps            # wait until "healthy"
+#   open http://localhost:3002/dashboard
+#
+# Then connect it in Oriole: Integrations → WhatsApp → "Bring your own number"
+#   Gateway URL: http://localhost:3002  (set WAHA_PORT in .env to change it)
+#   Gateway API key: the PLAIN key printed by init-env.sh (see .env →
+#   WAHA_API_KEY_PLAIN; the container only ever sees the sha512 hash).
+#
+# ⚠️ Unofficial WhatsApp violates Meta ToS — pair ONLY a number you are
+# willing to lose. Read README.md → "Risk & safety" before running.
+#
+# Local development? Add the dev overlay to run WAHA + Oriole API + Inngest
+# Dev Server in one command:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# ════════════════════════════════════════════════════════════════════
+
+name: oriole-waha
+
+services:
+  waha:
+    # Pin a stable release tag (not :dev) for production. WAHA tags are
+    # engine-split: noweb-arm = NOWEB (browserless) + ARM (Apple Silicon).
+    # On x86 servers use `noweb-2026.7.2` (or `latest-2026.7.2` for the
+    # default WEB engine). Bump deliberately — session data survives via
+    # the data/ volumes below.
+    image: devlikeapro/waha:${WAHA_IMAGE_TAG:-noweb-arm-2026.7.2}
+    container_name: oriole-waha
+    restart: unless-stopped
+
+    # REST API + Swagger + Dashboard. Bound to localhost by default so the
+    # admin API is never exposed to the LAN. The HOST port is configurable
+    # (default 3002) so it never collides with the Oriole API dev server
+    # (which commonly owns 3000). When the Oriole API server must reach this
+    # gateway over the network (production), either:
+    #   - set WAHA_BIND_ADDR=0.0.0.0 in .env behind a TLS reverse proxy, or
+    #   - keep 127.0.0.1 and publish via a tunnel (orb tunnel / Cloudflare).
+    # See README.md → "Making the gateway reachable".
+    ports:
+      - "${WAHA_BIND_ADDR:-127.0.0.1}:${WAHA_PORT:-3002}:3000"
+
+    environment:
+      # ── Credentials — fail fast if .env is missing or secrets unchanged ──
+      # WAHA v2026+ requires an API key for every request. init-env.sh stores
+      # ONLY the sha512 hash here (docs-recommended format); the plain key
+      # lives in .env as WAHA_API_KEY_PLAIN and is what you paste into Oriole.
+      WAHA_API_KEY: ${WAHA_API_KEY:?Set WAHA_API_KEY in deploy/waha/.env (run ./scripts/init-env.sh)}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:?Set WAHA_DASHBOARD_PASSWORD in deploy/waha/.env}
+      WAHA_DASHBOARD_ENABLED: "true"
+
+      # ── Swagger (same origin as the API) — protect it too ──
+      WHATSAPP_SWAGGER_ENABLED: "true"
+      WHATSAPP_SWAGGER_USERNAME: ${WHATSAPP_SWAGGER_USERNAME:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WHATSAPP_SWAGGER_PASSWORD:?Set WHATSAPP_SWAGGER_PASSWORD in deploy/waha/.env}
+
+      # ── Liveness endpoints without the API key (container healthcheck).
+      # NOTE the prefix: the code reads WHATSAPP_API_KEY_EXCLUDE_PATH
+      # (grep dist/config.service.js) and matches routes 'api'/'health'/'mcp'.
+      # On this WAHA version the health route is /health (no /api prefix).
+      WHATSAPP_API_KEY_EXCLUDE_PATH: "health,ping"
+
+      # ── Engine: NOWEB (browserless, lightweight) — matches Oriole payloads ──
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      # Recommended for new setups: share API keys / config across engines.
+      WAHA_NAMESPACE: "all"
+
+      # ── Pairing & presence ──
+      # Oriole fetches the QR via API (POST /{session}/auth/qr) — no console QR.
+      WAHA_PRINT_QR: "false"
+      # Keep the default device name: a custom device name breaks the
+      # "Link with phone number" (pairing-code) flow that Oriole also offers.
+      # (If you always pair via QR you may set WAHA_CLIENT_DEVICE_NAME.)
+      # WAHA_CLIENT_BROWSER_NAME: Chrome
+      # WAHA_CLIENT_DEVICE_NAME: Oriole
+      WAHA_AUTO_START_DELAY_SECONDS: "1"
+      WAHA_PRESENCE_AUTO_ONLINE: "false"
+
+      # ── Media files (Oriole is text-only today; persist anyway, cheap) ──
+      WHATSAPP_FILES_FOLDER: /app/.media
+      WHATSAPP_FILES_LIFETIME: "0"
+
+      # ── Logging — JSON so it plugs into central log pipelines ──
+      WAHA_LOG_FORMAT: JSON
+      WAHA_LOG_LEVEL: info
+      WAHA_HTTP_LOG_LEVEL: warn
+
+      # ── Misc ──
+      TZ: ${TZ:-Asia/Jakarta}
+      WAHA_DEBUG_MODE: "false"
+      WAHA_DEV_ENABLED: "false"
+
+    volumes:
+      # Session auth + config. Back these up — losing them means re-pairing.
+      - ./data/sessions:/app/.sessions
+      # Received media files (persisted; 180s default lifetime overridden above).
+      - ./data/media:/app/.media
+
+    extra_hosts:
+      # Lets WAHA (inside the container) reach a dev Oriole API on the host
+      # for webhooks (http://host.docker.internal:<port>/api/webhooks/waha/…).
+      # Native on OrbStack/Docker Desktop; host-gateway makes it work on Linux.
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      # /api/health on modern builds, /health on some versions — try both.
+      # Both are excluded from API-key auth via WAHA_API_KEY_EXCLUDE_PATH.
+      test:
+        - CMD
+        - node
+        - -e
+        - "(async()=>{const h1=await fetch('http://localhost:3000/api/health').catch(()=>null);const h2=h1&&h1.ok?h1:await fetch('http://localhost:3000/health').catch(()=>null);process.exit(h2&&h2.ok?0:1)})()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+    # Optional resource guard for shared hosts (uncomment to enforce).
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1g
+    #       cpus: "1.0"

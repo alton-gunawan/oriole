@@ -4,25 +4,30 @@ import { calleCalls, subscriptions } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { extractCallSeconds } from './calls.ts';
-import { ACTIVE_SUBSCRIPTION_STATUSES, PLANS, type PlanId } from './plans.ts';
+import { ACTIVE_SUBSCRIPTION_STATUSES, PLANS, planFromPriceId, type PlanId } from './plans.ts';
 
 /**
- * Paket dari status subscription (pure — mudah diuji):
- * subscription aktif/trialing → 'pro', selain itu (atau tanpa data) → 'free'.
+ * Paket dari status subscription + Paddle price ID (pure — mudah diuji):
+ * subscription aktif/trialing → paket sesuai price ID (Business bila price
+ * ID-nya terdaftar di env, selain itu 'pro'); tanpa subscription → 'free'.
  */
-export function planFromSubscription(status: string | null | undefined): PlanId {
-  return status && ACTIVE_SUBSCRIPTION_STATUSES.has(status) ? 'pro' : 'free';
+export function planFromSubscription(
+  status: string | null | undefined,
+  priceId?: string | null | undefined,
+): PlanId {
+  if (!status || !ACTIVE_SUBSCRIPTION_STATUSES.has(status)) return 'free';
+  return planFromPriceId(priceId) ?? 'pro';
 }
 
-/** Paket aktif user: subscription terbaru yang aktif/trialing → 'pro'. */
+/** Paket aktif user: subscription terbaru yang aktif/trialing. */
 export async function resolvePlanId(userId: string): Promise<PlanId> {
   const [latest] = await db
-    .select({ status: subscriptions.status })
+    .select({ status: subscriptions.status, planId: subscriptions.planId })
     .from(subscriptions)
     .where(eq(subscriptions.userId, userId))
     .orderBy(desc(subscriptions.createdAt))
     .limit(1);
-  return planFromSubscription(latest?.status);
+  return planFromSubscription(latest?.status, latest?.planId);
 }
 
 export interface MonthlyUsage {
@@ -58,8 +63,9 @@ export type QuotaCheck =
  * paketnya — mencegah abuse biaya CALL-E tanpa langganan aktif.
  *
  * Catatan: check-then-act tidak atomik (dua request konkuren bisa lolos
- * bersamaan); rate limiter di route trigger-call (10/menit/IP) menjadi
- * backstop. Untuk penegakan atomik perlu tabel counter + transaksi.
+ * bersamaan); pemanggil (auto-call Inngest) serial per booking lewat guard
+ * call-in-flight di placeBookingCall. Untuk penegakan atomik perlu tabel
+ * counter + transaksi.
  */
 export async function checkCallQuota(userId: string): Promise<QuotaCheck> {
   const plan = await resolvePlanId(userId);

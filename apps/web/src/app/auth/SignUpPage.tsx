@@ -4,9 +4,11 @@ import { useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate } from 'react-router';
 import { Button } from '@astryxdesign/core';
+import { useFeatureFlagPayload } from '@posthog/react';
 
 import { AuthField, AuthLayout, GitHubIcon, GoogleIcon } from './AuthLayout';
 import { isAuthConfigured } from '../../lib/auth';
+import { trackEvent } from '../../lib/analytics';
 import { signInWithGithub, signInWithGoogle, signUpWithEmail, type SocialProvider } from '../../lib/auth-actions';
 import { errorMessage } from '../../lib/errors';
 import { useSessionStore } from '../../stores/session';
@@ -18,6 +20,16 @@ export function SignUpPage() {
   const status = useSessionStore((s) => s.status);
   const [error, setError] = useState<string | null>(null);
   const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
+
+  // Eksperimen A/B (PostHog): flag multi-variant `signup-hero-variant`
+  // membawa payload JSON. Bila payload punya `cta`, dipakai sebagai label
+  // tombol daftar; tanpa flag/payload (flag belum dibuat, analitik mati,
+  // atau variant kontrol) → label default i18n. Nilai fallback selalu aman.
+  const heroPayload = useFeatureFlagPayload('signup-hero-variant') as
+    | { cta?: string }
+    | null
+    | undefined;
+  const ctaLabel = heroPayload?.cta?.trim() || t('auth.signUpCta');
 
   const schema = useMemo(() => signUpSchema(t), [t]);
   const {
@@ -53,6 +65,7 @@ export function SignUpPage() {
 
   const onSubmit = async (values: SignUpInput) => {
     setError(null);
+    void trackEvent('signup_started', { method: 'email' });
     try {
       await signUpWithEmail(values);
       navigate('/app/dashboard', { replace: true });
@@ -63,6 +76,7 @@ export function SignUpPage() {
 
   const onSocial = (provider: SocialProvider) => {
     setError(null);
+    void trackEvent('signup_started', { method: provider });
     setSocialBusy(provider);
     try {
       if (provider === 'github') signInWithGithub();
@@ -78,11 +92,6 @@ export function SignUpPage() {
   return (
     <AuthLayout>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        <div className="text-center">
-          <h2 className="text-lg font-semibold tracking-tight">{t('auth.signUpTitle')}</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">{t('auth.signUpSubtitle')}</p>
-        </div>
-
         <Button
           label={socialBusy === 'google' ? t('auth.openingGoogle') : t('auth.signUpGoogle')}
           variant="secondary"
@@ -149,7 +158,7 @@ export function SignUpPage() {
         )}
 
         <Button
-          label={t('auth.signUpCta')}
+          label={ctaLabel}
           variant="primary"
           isLoading={isSubmitting}
           isDisabled={isSubmitting}

@@ -33,6 +33,8 @@ const { dbState } = vi.hoisted(() => ({
   dbState: { tables: new Map<string, Record<string, unknown>[]>(), seq: 1 },
 }));
 
+vi.mock('./env.ts', () => ({ env: {} as any }));
+
 vi.mock('../db/index.ts', async () => {
   const tableNames = new WeakMap<object, string>();
   tableNames.set(bookings, 'bookings');
@@ -237,7 +239,7 @@ describe('upsertBookingCalendarEvent', () => {
     // googleFetch(serviceAccount, scopes, path, init) → path di index 2, init di index 3.
     const requestUrl = googleFetchMock.mock.calls[0][2] as string;
     const init = googleFetchMock.mock.calls[0][3] as { method?: string };
-    expect(requestUrl).toBe('/calendar/v3/calendars/primary/events');
+    expect(requestUrl).toBe('/calendar/v3/calendars/primary/events?conferenceDataVersion=1');
     expect(init.method).toBe('POST');
 
     const integration = (dbState.tables.get('workspaceIntegrations') ?? [])[0];

@@ -1,9 +1,15 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { contacts as contactsTable, workspaceIntegrations, workspaces } from '@oriole/database';
+import { workspaceIntegrations, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { GoogleApiError, googleFetch, parseServiceAccount, type GoogleServiceAccount } from './google-auth.ts';
 import { normalizePhone } from './phone.ts';
+import { upsertContactFromSubmission } from './contact-ingest.ts';
+import {
+  createBookingFromFormSubmission,
+  extractBookingFromGoogleResponse,
+  notifyOwnerNewBooking,
+} from './form-booking.ts';
 
 /* ────────────────────────────────────────────────────────────
  * Google Forms integration — form submission menjadi kontak
@@ -159,15 +165,12 @@ export function extractContactFromResponse(
   return { name, phone, email, notes };
 }
 
-/** Jumlah digit nomor (tanpa +) — untuk validasi minimal ala E.164. */
-function hasPlausiblePhone(phone: string): boolean {
-  return /^\d{8,15}$/.test(phone.replace('+', ''));
-}
-
 export interface FormsSyncResult {
   imported: number;
   skipped: number;
   total: number;
+  /** Booking baru yang berhasil dibuat dari submission (0 bila form bukan booking). */
+  bookingsCreated: number;
 }
 
 /** Semua integrasi Google Forms AKTIF milik workspace yang belum di-soft-delete. */
@@ -248,6 +251,7 @@ export async function syncFormResponsesToContacts(
 
   let imported = 0;
   let skipped = 0;
+  let bookingsCreated = 0;
   let cursor: string | null = cfg.lastSubmittedAt ?? null;
 
   for (const response of responses) {
@@ -258,59 +262,39 @@ export async function syncFormResponsesToContacts(
     const contact = extractContactFromResponse(metadata.questions, response);
     // Nama wajib HANYA saat membuat kontak baru — response tanpa nama tetap
     // bisa dicocokkan ke kontak yang sudah ada lewat nomor teleponnya.
-    if (!contact.phone || !hasPlausiblePhone(contact.phone)) {
-      skipped += 1;
-      continue;
-    }
+    // (Logika find-or-create oleh helper bersama contact-ingest.)
+    const outcome = await upsertContactFromSubmission(workspace.userId, workspaceId, contact);
+    if (outcome === 'imported') imported += 1;
+    else skipped += 1;
 
-    // find-or-create by nomor (unik per workspace).
-    const [existing] = await db
-      .select({ id: contactsTable.id })
-      .from(contactsTable)
-      .where(and(eq(contactsTable.workspaceId, workspaceId), eq(contactsTable.phone, contact.phone)))
-      .limit(1);
-    if (existing) {
-      // Nomor sudah dikenal — hanya perbarui email/catatan bila kosong.
-      const [contactRow] = await db
-        .select({ email: contactsTable.email, notes: contactsTable.notes })
-        .from(contactsTable)
-        .where(eq(contactsTable.id, existing.id))
-        .limit(1);
-      const needsUpdate =
-        (contact.email && !contactRow?.email) || (contact.notes && !contactRow?.notes);
-      if (needsUpdate) {
-        await db
-          .update(contactsTable)
-          .set({
-            ...(contact.email && !contactRow?.email ? { email: contact.email } : {}),
-            ...(contact.notes && !contactRow?.notes ? { notes: contact.notes } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(contactsTable.id, existing.id));
-      }
-      imported += 1;
-      continue;
-    }
-
-    // Nomor belum dikenal — nama wajib untuk membuat kontak baru.
-    if (!contact.name) {
-      skipped += 1;
-      continue;
-    }
-    await db
-      .insert(contactsTable)
-      .values({
-        userId: workspace.userId,
+    // Booking otomatis: submission yang memuat layanan + tanggal/jam menjadi
+    // booking pending (idempoten per responseId — retry aman).
+    const booking = extractBookingFromGoogleResponse(metadata.questions, response, metadata.title);
+    if (booking.title && booking.scheduledAt) {
+      const result = await createBookingFromFormSubmission({
         workspaceId,
-        name: contact.name,
+        userId: workspace.userId,
+        source: 'google-forms',
+        sourceRef: response.responseId,
+        title: booking.title,
+        scheduledAt: booking.scheduledAt,
+        timezone: booking.timezone,
+        description: booking.description ?? contact.notes,
+        customerName: contact.name,
         phone: contact.phone,
-        email: contact.email ?? null,
-        notes: contact.notes ?? null,
-      })
-      .onConflictDoNothing()
-      .returning({ id: contactsTable.id });
-    // Kalah race (nomor sama masuk bersamaan) → kontak pemenang tetap terhitung.
-    imported += 1;
+      });
+      if (result.created) {
+        bookingsCreated += 1;
+        await notifyOwnerNewBooking({
+          workspaceId,
+          title: booking.title,
+          customerName: contact.name,
+          phone: contact.phone,
+          scheduledAt: booking.scheduledAt,
+          timezone: booking.timezone,
+        });
+      }
+    }
   }
 
   await db
@@ -323,5 +307,5 @@ export async function syncFormResponsesToContacts(
       ),
     );
 
-  return { imported, skipped, total: responses.length };
+  return { imported, skipped, total: responses.length, bookingsCreated };
 }

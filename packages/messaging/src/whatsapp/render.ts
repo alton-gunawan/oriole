@@ -14,14 +14,20 @@
 export {
   formatSlotTime,
   parseSlotTime,
+  renderAiDisabledReply,
+  renderAiHandoffReply,
   renderAlreadyHandledReply,
   renderAskPhoneReply,
   renderBookingNotFoundReply,
   renderBookingReminder,
+  renderBusinessInfoReply,
   renderCancelReply,
   renderConfirmReply,
+  renderFormInvitation,
   renderGenericReply,
   renderLinkedReply,
+  renderNoBookingReply,
+  renderNoFormReply,
   renderOptOutReply,
   renderPhoneMismatchReply,
   renderRescheduleCancelled,
@@ -29,4 +35,4 @@ export {
   renderReschedulePrompt,
   renderRescheduleSuccess,
 } from '../telegram/render.ts';
-export type { BookingReminderInput } from '../telegram/render.ts';
+export type { BookingReminderInput, BusinessInfoReplyInput, FormInvitationInput } from '../telegram/render.ts';

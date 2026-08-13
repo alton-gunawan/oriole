@@ -117,7 +117,7 @@ export function WorkspaceCallSettings({ workspace }: { workspace: Workspace }) {
   })();
 
   return (
-    <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4">
+    <div className="space-y-5">
       <div className="flex items-start gap-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
           <IconPhone className="size-4" />

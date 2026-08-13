@@ -3,11 +3,16 @@ import { Navigate, createBrowserRouter } from 'react-router';
 
 import { RequireAuth } from './app/auth/RequireAuth';
 import { AppShell } from './app/shell/AppShell';
+import { RouteErrorElement } from './app/shell/RouteErrorElement';
 import { BookingDetailPage } from './app/pages/BookingDetailPage';
 import { BookingNewPage } from './app/pages/BookingNewPage';
 import { BookingsPage } from './app/pages/BookingsPage';
+import { StaffPage } from './app/pages/StaffPage';
+import { ServicesPage } from './app/pages/ServicesPage';
 import { CallsPage } from './app/pages/CallsPage';
 import { IntegrationsPage } from './app/pages/IntegrationsPage';
+import { ContactDetailPage } from './app/pages/ContactDetailPage';
+import { ContactEnsureRedirect } from './app/pages/ContactEnsureRedirect';
 import { ContactsPage } from './app/pages/ContactsPage';
 import { DashboardPage } from './app/pages/DashboardPage';
 import { HelpPage } from './app/pages/HelpPage';
@@ -61,59 +66,79 @@ function withSuspense(Component: ComponentType) {
  * - `/app/*` → app shell terproteksi (RequireAuth); halaman section sebagai child.
  * - `/auth/*` → halaman auth (lazy).
  */
+/**
+ * errorElement per halaman /app — error dirender DI DALAM shell (sidebar &
+ * navigasi tetap tampil), bukan menggantikan seluruh AppShell.
+ */
+const PAGE_ERROR = { errorElement: <RouteErrorElement /> };
+
 export const router = createBrowserRouter([
   {
-    path: '/',
-    element: <LandingPage />,
-  },
-  {
-    path: '/app/onboarding',
-    element: (
-      <RequireAuth>
-        <OnboardingPage />
-      </RequireAuth>
-    ),
-  },
-  {
-    path: '/app',
-    element: (
-      <RequireAuth>
-        <AppShell />
-      </RequireAuth>
-    ),
+    // Root pathless: errorElement level teratas menangkap error landing,
+    // auth, dan URL tak dikenal (404) — pengganti layar default React Router.
+    errorElement: <RouteErrorElement />,
     children: [
-      { index: true, element: <Navigate to="/app/dashboard" replace /> },
-      { path: 'dashboard', element: <DashboardPage /> },
-      { path: 'bookings', element: <BookingsPage /> },
-      { path: 'bookings/new', element: <BookingNewPage /> },
-      { path: 'bookings/:id', element: <BookingDetailPage /> },
-      { path: 'contacts', element: <ContactsPage /> },
-      { path: 'inbox', element: <InboxPage /> },
-      { path: 'integrations', element: <IntegrationsPage /> },
-      // Backward compat: /app/channels lama → halaman Integrations.
-      { path: 'channels', element: <Navigate to="/app/integrations" replace /> },
-      { path: 'calls', element: <CallsPage /> },
-      { path: 'analytics', element: withSuspense(AnalyticsPage) },
-      // Billing kini dialog dari dropdown akun (sidebar footer) — URL lama
-      // dialihkan ke dashboard agar bookmark/link lama tidak 404.
-      { path: 'billing', element: <Navigate to="/app/dashboard" replace /> },
-      // Settings kini dialog dari menu sidebar — URL lama dialihkan ke
-      // dashboard agar bookmark/link lama tidak 404.
-      { path: 'settings', element: <Navigate to="/app/dashboard" replace /> },
-      { path: 'workspaces', element: <WorkspaceSettingsPage /> },
-      { path: 'help', element: <HelpPage /> },
+      {
+        path: '/',
+        element: <LandingPage />,
+      },
+      {
+        path: '/app/onboarding',
+        element: (
+          <RequireAuth>
+            <OnboardingPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: '/app',
+        element: (
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        ),
+        children: [
+          { index: true, ...PAGE_ERROR, element: <Navigate to="/app/dashboard" replace /> },
+          { path: 'dashboard', ...PAGE_ERROR, element: <DashboardPage /> },
+          { path: 'bookings', ...PAGE_ERROR, element: <BookingsPage /> },
+          { path: 'bookings/new', ...PAGE_ERROR, element: <BookingNewPage /> },
+          { path: 'staff', ...PAGE_ERROR, element: <StaffPage /> },
+          { path: 'services', ...PAGE_ERROR, element: <ServicesPage /> },
+          { path: 'bookings/:id', ...PAGE_ERROR, element: <BookingDetailPage /> },
+          { path: 'contacts', ...PAGE_ERROR, element: <ContactsPage /> },
+          // Redirect one-shot dari kolom customer (booking tanpa contactId):
+          // pastikan kontak ada → buka detail-nya. Static segment menang atas
+          // 'contacts/:id' di react-router, jadi urutan tidak masalah.
+          { path: 'contacts/ensure', ...PAGE_ERROR, element: <ContactEnsureRedirect /> },
+          { path: 'contacts/:id', ...PAGE_ERROR, element: <ContactDetailPage /> },
+          { path: 'inbox', ...PAGE_ERROR, element: <InboxPage /> },
+          { path: 'integrations', ...PAGE_ERROR, element: <IntegrationsPage /> },
+          // Backward compat: /app/channels lama → halaman Integrations.
+          { path: 'channels', ...PAGE_ERROR, element: <Navigate to="/app/integrations" replace /> },
+          { path: 'calls', ...PAGE_ERROR, element: <CallsPage /> },
+          { path: 'analytics', ...PAGE_ERROR, element: withSuspense(AnalyticsPage) },
+          // Billing kini dialog dari dropdown akun (sidebar footer) — URL lama
+          // dialihkan ke dashboard agar bookmark/link lama tidak 404.
+          { path: 'billing', ...PAGE_ERROR, element: <Navigate to="/app/dashboard" replace /> },
+          // Settings kini dialog dari menu sidebar — URL lama dialihkan ke
+          // dashboard agar bookmark/link lama tidak 404.
+          { path: 'settings', ...PAGE_ERROR, element: <Navigate to="/app/dashboard" replace /> },
+          { path: 'workspaces', ...PAGE_ERROR, element: <WorkspaceSettingsPage /> },
+          { path: 'help', ...PAGE_ERROR, element: <HelpPage /> },
+        ],
+      },
+      {
+        path: '/auth/sign-in',
+        element: withSuspense(SignInPage),
+      },
+      {
+        path: '/auth/sign-up',
+        element: withSuspense(SignUpPage),
+      },
+      {
+        path: '/auth/callback',
+        element: withSuspense(CallbackPage),
+      },
     ],
-  },
-  {
-    path: '/auth/sign-in',
-    element: withSuspense(SignInPage),
-  },
-  {
-    path: '/auth/sign-up',
-    element: withSuspense(SignUpPage),
-  },
-  {
-    path: '/auth/callback',
-    element: withSuspense(CallbackPage),
   },
 ]);

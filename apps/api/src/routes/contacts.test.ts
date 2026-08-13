@@ -143,7 +143,8 @@ beforeAll(async () => {
   process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
   process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
   process.env.RESEND_API_KEY = 're_test';
-  process.env.CALLE_API_KEY = 'calle_test';
+  process.env.VAPI_API_KEY = 'vapi_test';
+  process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
 
   jwtVerifyMock.mockReset();
   jwtVerifyMock.mockResolvedValue({ payload: { sub: 'test-user-1', email: 'user@example.com' } });
@@ -249,6 +250,55 @@ describe('GET /api/contacts', () => {
       headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/contacts/:id', () => {
+  it('tanpa token → 401', async () => {
+    const res = await app.request(`/api/contacts/${EXISTING_CONTACT_ID}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('dengan token tanpa header workspace → 400', async () => {
+    const res = await app.request(`/api/contacts/${EXISTING_CONTACT_ID}`, {
+      headers: AUTH_HEADER,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('id bukan UUID → 400', async () => {
+    const res = await app.request('/api/contacts/not-a-uuid', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('kontak tidak ditemukan → 404', async () => {
+    dbState.tables.set('contacts', []);
+    const res = await app.request(`/api/contacts/${EXISTING_CONTACT_ID}`, {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('kontak ditemukan → detail terserialisasi (userId/workspaceId tidak bocor)', async () => {
+    dbState.tables.set('contacts', [baseContact()]);
+    const res = await app.request(`/api/contacts/${EXISTING_CONTACT_ID}`, {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.contact).toEqual({
+      id: EXISTING_CONTACT_ID,
+      name: 'Budi Santoso',
+      phone: '+628123456789',
+      email: 'budi@example.com',
+      notes: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(body.contact).not.toHaveProperty('userId');
+    expect(body.contact).not.toHaveProperty('workspaceId');
   });
 });
 

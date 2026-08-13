@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { loadRootEnv } from '@oriole/config';
-import { bookings, createDb, workspaces } from '@oriole/database';
+import { bookings, createDb, services, workspaces } from '@oriole/database';
 
 /**
  * CLI: buat 50 booking dummy untuk sebuah workspace (development/seed).
@@ -33,14 +33,6 @@ const LAST_NAMES = [
   'Ramadhan', 'Putra', 'Lestari', 'Anggraini', 'Firmansyah', 'Gunawan', 'Halim', 'Iskandar',
   'Jatmiko', 'Kurniawan', 'Mahendra', 'Natalia', 'Oktaviani', 'Purnama', 'Rahayu', 'Susanti',
   'Tambunan', 'Utomo', 'Vermansyah', 'Wibowo', 'Yulianto', 'Zulkarnain',
-];
-
-const SERVICES = [
-  'Teeth Whitening', 'Konsultasi Umum', 'Hair Treatment', 'Skin Care Treatment',
-  'Facial & Spa', 'Cleaning Gigi', 'Konsultasi Estetika', 'Haircut & Styling',
-  'Manicure & Pedicure', 'Body Massage', 'Gym Session', 'Konsultasi Gizi',
-  'Acupuncture', 'Fisioterapi', 'Laser Treatment', 'Check-up Berkala',
-  'Potong Rambut', 'Konsultasi Kulit', 'Perawatan Wajah', 'Fotografi Studio',
 ];
 
 const STATUSES = ['pending', 'confirmed', 'cancelled', 'completed'] as const;
@@ -106,14 +98,21 @@ async function main(): Promise<void> {
     userId = ws.userId;
   }
 
+  // Booking diambil dari layanan katalog (kolom title sudah dihapus):
+  // setiap booking dummy menautkan ke layanan workspace acak (bila ada).
+  const catalog = await db
+    .select({ id: services.id, name: services.name, durationMinutes: services.durationMinutes })
+    .from(services)
+    .where(eq(services.workspaceId, workspaceId));
+
   // Susun 50 baris booking dummy.
   const rows = Array.from({ length: 50 }, () => {
     const firstName = randomItem(FIRST_NAMES);
     const lastName = randomItem(LAST_NAMES);
+    const service = catalog.length > 0 ? randomItem(catalog) : null;
     return {
       userId,
       workspaceId,
-      title: `${randomItem(SERVICES)} — ${firstName} ${lastName}`,
       description: Math.random() < 0.4 ? 'Booking via seeding — data dummy untuk development.' : null,
       scheduledAt: randomScheduledAt(),
       timezone: 'Asia/Jakarta',
@@ -125,6 +124,8 @@ async function main(): Promise<void> {
       industry: null,
       goalType: null,
       customInstruction: null,
+      serviceId: service?.id ?? null,
+      durationMinutes: service?.durationMinutes ?? 60,
     };
   });
 

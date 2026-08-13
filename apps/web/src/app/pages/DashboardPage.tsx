@@ -6,11 +6,12 @@ import { Badge, EmptyState, Skeleton, type BadgeVariant } from '@astryxdesign/co
 
 import { ApiError, apiFetch } from '../../lib/api';
 import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
+import type { IntegrationListResponse } from '../../lib/integrations';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
-import { IconCalendar, IconChart, IconPhone, IconPlus, IconUsers } from '../shell/icons';
+import { IconCalendar, IconChart, IconDashboard, IconPhone, IconPlus, IconRefreshCw, IconUsers } from '../shell/icons';
 import { Card, PageHeader, StatCard } from '../shell/ui';
 
 const QUICK_LINKS = [
@@ -30,6 +31,22 @@ const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
 function statusLabel(status: string | null, t: TFunction): string {
   const key = bookingStatusKey(status);
   return key ? t(key) : (status ?? '');
+}
+
+/**
+ * Integrasi yang melakukan sinkronisasi data (punya lastSyncAt) — webhook
+ * keluar tidak termasuk karena bukan "data sync".
+ */
+const DATA_SYNC_TYPES = ['google-forms', 'tally', 'google-calendar', 'notion'];
+
+/** Waktu relatif ringkas untuk status sync (locale-aware via i18n). */
+function relativeSyncTime(iso: string, t: TFunction): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return t('dashboard.syncJustNow');
+  if (minutes < 60) return t('dashboard.syncMinutes', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('dashboard.syncHours', { count: hours });
+  return t('dashboard.syncDays', { count: Math.floor(hours / 24) });
 }
 
 /** Mirrors GET /api/analytics/overview — agregat per workspace aktif. */
@@ -80,12 +97,61 @@ export function DashboardPage() {
   const callsValue = summary === undefined ? '…' : String(summary.callsThisMonth);
   const attentionValue = summary === undefined ? '…' : String(summary.needsAttention);
 
+  // Status sinkronisasi data — lastSyncAt termuda di antara integrasi data.
+  // Refetch berkala agar chip ikut ter-update saat cron Google Forms / webhook
+  // Tally berjalan tanpa perlu reload halaman.
+  const { data: integrationsData } = useQuery({
+    queryKey: ['integrations', activeWorkspaceId],
+    queryFn: () => apiFetch<IntegrationListResponse>('/integrations'),
+    enabled: Boolean(activeWorkspaceId),
+    refetchInterval: 60_000,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+
+  const syncIntegrations = (integrationsData?.integrations ?? []).filter((item) =>
+    DATA_SYNC_TYPES.includes(item.integrationType),
+  );
+  const latestSyncAt =
+    syncIntegrations
+      .map((item) => item.lastSyncAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+
+  // Chip hanya tampil bila sudah ter-load (hindari flicker) DAN ada integrasi
+  // data terhubung — tanpa integrasi, status sync tidak relevan di header.
+  const syncChip =
+    integrationsData !== undefined && syncIntegrations.length > 0 ? (
+      <Link
+        to="/app/integrations"
+        title={t('integrations.title')}
+        className="group flex items-center gap-2.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 transition hover:border-amber-300 hover:bg-amber-50/50"
+      >
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-400 transition group-hover:bg-amber-500/10 group-hover:text-amber-600">
+          <IconRefreshCw className="size-3.5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+            {t('dashboard.syncLabel')}
+          </span>
+          <span className="block truncate text-xs font-semibold text-zinc-700">
+            {latestSyncAt
+              ? relativeSyncTime(latestSyncAt, t)
+              : t('dashboard.syncNever')}
+          </span>
+        </span>
+      </Link>
+    ) : null;
+
   return (
     <div className="space-y-8">
       <PageHeader
         title={t('dashboard.greeting', { name: firstName })}
         description={t('dashboard.description')}
-      />
+        icon={IconDashboard}
+      >
+        {syncChip}
+      </PageHeader>
 
       {/* Stat cards — data riil per workspace */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

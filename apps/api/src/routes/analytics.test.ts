@@ -82,7 +82,8 @@ beforeAll(async () => {
   process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
   process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
   process.env.RESEND_API_KEY = 're_test';
-  process.env.CALLE_API_KEY = 'calle_test';
+  process.env.VAPI_API_KEY = 'vapi_test';
+  process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
 
   jwtVerifyMock.mockReset();
   jwtVerifyMock.mockResolvedValue({ payload: { sub: 'test-user-1', email: 'user@example.com' } });

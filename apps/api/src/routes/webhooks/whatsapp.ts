@@ -33,6 +33,12 @@ export const whatsappWebhookRoutes = new Hono().post('/:workspaceId', async (c) 
   if (!channel) {
     return c.text('WhatsApp channel tidak dikonfigurasi untuk workspace ini', 404);
   }
+  // Route ini hanya untuk 360dialog (HMAC-SHA256 + payload Meta). Channel BYO
+  // (provider 'waha') menerima webhook di /api/webhooks/waha/:workspaceId
+  // (HMAC-SHA512) — jangan verifikasi secret 360dialog terhadapnya.
+  if (channel.provider === 'waha') {
+    return c.text('WhatsApp channel tidak dikonfigurasi untuk workspace ini', 404);
+  }
   if (!channel.isActive) {
     // Channel dijeda dari UI — ack 200 tanpa proses (hindari retry Meta).
     return c.json({ received: true, disabled: true });

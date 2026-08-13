@@ -10,6 +10,15 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
  */
 
 interface RateLimitOptions {
+  /**
+   * Nama limiter — memisahkan counter antar instance limiter.
+   * WAJIB unik per middleware; tanpa nama, nama diturunkan dari
+   * `limit:windowMs` sehingga limiter berbeda tetap tidak berbagi bucket
+   * (regresi lama: semua limiter memakai store + key yang sama, jadi
+   * trafik API biasa bisa memicu 429 palsu pada limiter khusus seperti
+   * /setup yang limitnya kecil).
+   */
+  name?: string;
   /** Panjang jendela waktu dalam milidetik. */
   windowMs: number;
   /** Maksimal request per jendela per key. */
@@ -60,6 +69,7 @@ function defaultKeyOf(c: Context): string {
 }
 
 export function createRateLimiter({
+  name,
   windowMs,
   limit,
   keyOf,
@@ -68,10 +78,13 @@ export function createRateLimiter({
 }: RateLimitOptions): MiddlewareHandler {
   const limitStatus = status as ContentfulStatusCode;
   const resolveKey = keyOf ?? defaultKeyOf;
+  // Identitas limiter di dalam key bucket — dua limiter dengan `limit`/`windowMs`
+  // berbeda TIDAK boleh berbagi counter (lihat komentar RateLimitOptions.name).
+  const limiterId = name ?? `rl:${limit}:${windowMs}`;
 
   return async (c, next) => {
     const now = Date.now();
-    const bucketKey = `${resolveKey(c)}:${Math.floor(now / windowMs)}`;
+    const bucketKey = `${limiterId}:${resolveKey(c)}:${Math.floor(now / windowMs)}`;
 
     const bucket = stores.get(bucketKey);
     if (!bucket || bucket.resetAt <= now) {

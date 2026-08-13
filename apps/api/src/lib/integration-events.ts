@@ -60,6 +60,29 @@ export async function emitOutgoingWebhookEvent(
 }
 
 /**
+ * Antrekan pembuatan link video (`video/link.required`). Integrasi video
+ * aktif + provider zoom → Inngest membuat meeting Zoom lalu menyimpan
+ * join_url ke booking.video_link. Provider meet ditangani sync kalender.
+ */
+export async function emitVideoLinkEvent(workspaceId: string, bookingId: string): Promise<void> {
+  if (!(await integrationIsActive(workspaceId, 'video'))) return;
+  await safeSend('video/link.required', { workspaceId, bookingId });
+}
+
+/**
+ * Antrekan notifikasi booking → Slack (`slack/booking.event`).
+ * Payload sama dengan webhook keluar — lib slack.ts yang memformat pesan.
+ */
+export async function emitSlackBookingEvent(
+  workspaceId: string,
+  event: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (!(await integrationIsActive(workspaceId, 'slack'))) return;
+  await safeSend('slack/booking.event', { workspaceId, event, data });
+}
+
+/**
  * Antrekan sinkronisasi booking → Google Calendar
  * (`google-calendar/booking.changed`, action: 'upsert' | 'delete').
  */

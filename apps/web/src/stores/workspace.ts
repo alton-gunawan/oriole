@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { queryClient } from '../lib/queryClient';
+import { groupAnalyticsWorkspace } from '../lib/analytics';
 import type { Workspace } from '../lib/workspace';
 
 interface WorkspaceState {
@@ -69,7 +70,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               : state.lastOpenedAt,
           };
         }),
-      addWorkspace: (workspace) =>
+      addWorkspace: (workspace) => {
+        const first = !useWorkspaceStore.getState().activeWorkspaceId;
         set((state) => ({
           workspaces: [...state.workspaces, workspace],
           activeWorkspaceId: state.activeWorkspaceId ?? workspace.id,
@@ -78,7 +80,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           lastOpenedAt: state.activeWorkspaceId
             ? state.lastOpenedAt
             : { ...state.lastOpenedAt, [workspace.id]: nowIso() },
-        })),
+        }));
+        // Analitik: workspace pertama yang dibuat = group aktif.
+        if (first) void groupAnalyticsWorkspace(workspace.id);
+      },
       updateWorkspace: (workspace) =>
         set((state) => ({
           workspaces: state.workspaces.map((item) => (item.id === workspace.id ? workspace : item)),
@@ -116,6 +121,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           activeWorkspaceId,
           lastOpenedAt: { ...state.lastOpenedAt, [activeWorkspaceId]: nowIso() },
         });
+        // Analitik: pindahkan group workspace aktif.
+        void groupAnalyticsWorkspace(activeWorkspaceId);
 
         // Tunggu data workspace baru selesai: semua query yang baru mount
         // (kunci react-query memuat activeWorkspaceId) mulai fetch setelah

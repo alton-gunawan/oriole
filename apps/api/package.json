@@ -6,16 +6,22 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node --import tsx src/index.ts",
+    "dev:inngest": "inngest-cli dev -u http://localhost:3000/api/inngest",
+    "dev:services": "tsx src/scripts/dev-services.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "setup:telegram": "tsx src/scripts/setup-telegram.ts",
+    "setup:telnyx": "tsx src/scripts/setup-telnyx.ts",
+    "telnyx:status": "tsx src/scripts/telnyx-status.ts",
     "seed:bookings": "tsx src/scripts/seed-bookings.ts",
     "seed:unread": "tsx src/scripts/seed-unread.ts",
+    "seed:staff": "tsx src/scripts/seed-staff.ts",
+    "seed:ai-kb": "tsx src/scripts/seed-ai-kb.ts",
+    "test:ai-bot": "tsx src/scripts/test-ai-bot.ts",
     "sync:contacts": "tsx src/scripts/sync-bookings-contacts.ts"
   },
   "dependencies": {
-    "@call-e/calle": "^0.6.0",
     "@hono/node-server": "^2.0.12",
     "@hono/zod-validator": "^0.9.0",
     "@neondatabase/serverless": "^1.1.0",
@@ -24,16 +30,19 @@
     "@oriole/database": "workspace:*",
     "@oriole/messaging": "workspace:*",
     "@paddle/paddle-node-sdk": "^3.8.0",
+    "@vapi-ai/server-sdk": "^1.2.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.34",
     "inngest": "^4.14.0",
     "jose": "^6.2.7",
+    "posthog-node": "^5.48.1",
     "resend": "^6.18.1",
     "tsx": "^4.23.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "inngest-cli": "^1.41.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

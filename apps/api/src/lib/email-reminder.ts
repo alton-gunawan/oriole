@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import { contacts, conversations, messages } from '@oriole/database';
+import { contacts, conversations, messages, workspaces } from '@oriole/database';
 import { brand } from '@oriole/config';
-import { normalizePhone, renderBookingReminder, formatSlotTime } from '@oriole/messaging';
+import { renderBookingReminder, formatSlotTime, samePhone, type BotLanguage } from '@oriole/messaging';
 
 import { db } from '../db/index.ts';
+import { encryptMessageContent } from './message-encryption.ts';
 import { resend } from '../services/email.ts';
 
 /** Error bisnis siap-tampil — dipetakan route → 400 (atau di-skip oleh scheduler). */
@@ -26,23 +27,26 @@ export async function dispatchEmailReminder(input: {
     phone: string | null;
     scheduledAt: Date;
     timezone: string;
+    videoLink: string | null;
   };
   businessName: string | null;
+  /** Bahasa balasan — default mengikuti preferensi workspace (callGoalLanguage). */
+  language?: BotLanguage;
 }): Promise<void> {
   const phone = input.booking.phone;
   if (!phone) {
     throw new EmailDispatchError('Booking belum memiliki nomor telepon customer.');
   }
+  const language = input.language ?? (await findWorkspaceLanguage(input.workspaceId));
 
-  // Pencocokan via normalizePhone (digit saja) — konsisten dengan seluruh
-  // sistem (findChatByPhone dll). Pencocokan raw 'eq' bisa gagal karena
-  // format nomor berbeda (+62 vs 62 vs spasi).
+  // Pencocokan kanonik (samePhone): format +62 / 62 / 0812 dianggap sama,
+  // jadi kontak cocok dengan booking walau format nomornya berbeda.
   const contactRows = await db
     .select({ email: contacts.email, name: contacts.name, phone: contacts.phone })
     .from(contacts)
     .where(eq(contacts.workspaceId, input.workspaceId))
     .limit(500);
-  const contact = contactRows.find((row) => row.email && normalizePhone(row.phone) === phone);
+  const contact = contactRows.find((row) => row.email && samePhone(row.phone, phone));
 
   const email = contact?.email;
   if (!email) {
@@ -56,9 +60,13 @@ export async function dispatchEmailReminder(input: {
       title: input.booking.title,
       scheduledAt: input.booking.scheduledAt.toISOString(),
       timezone: input.booking.timezone,
+      videoLink: input.booking.videoLink,
     },
     input.booking.id,
+    language,
   );
+  // Format subjek email mengikuti bahasa yang sama dengan isi reminder.
+  const subjectWhen = formatSlotTime(input.booking.scheduledAt.toISOString(), input.booking.timezone, language);
 
   // Siapkan percakapan + cek dedup DULU (sebelum kirim) agar retry Inngest
   // tidak mengirim email ganda.
@@ -114,7 +122,7 @@ export async function dispatchEmailReminder(input: {
       channelType: 'email',
       direction: 'outbound',
       providerMessageId: '',
-      content: reminder.text,
+      content: encryptMessageContent(input.workspaceId, reminder.text),
       status: 'queued',
       metadata: reminderMetadata,
     })
@@ -135,10 +143,7 @@ export async function dispatchEmailReminder(input: {
   const { data, error } = await resend.emails.send({
     from: brand.emailFrom,
     to: [email],
-    subject: `Pengingat booking: ${input.booking.title} — ${formatSlotTime(
-      input.booking.scheduledAt.toISOString(),
-      input.booking.timezone,
-    )}`,
+    subject: `${language === 'id' ? 'Pengingat booking' : 'Booking reminder'}: ${input.booking.title} — ${subjectWhen}`,
     html,
   });
   if (error) {
@@ -155,4 +160,14 @@ export async function dispatchEmailReminder(input: {
         eq(messages.metadata, reminderMetadata),
       ),
     );
+}
+
+/** Bahasa balasan — setting `chatLanguage` workspace (default 'en'). */
+async function findWorkspaceLanguage(workspaceId: string): Promise<BotLanguage> {
+  const [workspace] = await db
+    .select({ chatLanguage: workspaces.chatLanguage })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  return workspace?.chatLanguage === 'id' ? 'id' : 'en';
 }

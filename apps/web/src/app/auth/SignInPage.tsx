@@ -7,6 +7,7 @@ import { Button } from '@astryxdesign/core';
 
 import { AuthField, AuthLayout, GitHubIcon, GoogleIcon } from './AuthLayout';
 import { isAuthConfigured } from '../../lib/auth';
+import { trackEvent } from '../../lib/analytics';
 import { signInWithEmail, signInWithGithub, signInWithGoogle, type SocialProvider } from '../../lib/auth-actions';
 import { errorMessage } from '../../lib/errors';
 import { useSessionStore } from '../../stores/session';
@@ -55,6 +56,7 @@ export function SignInPage() {
 
   const onSubmit = async (values: SignInInput) => {
     setError(null);
+    void trackEvent('signin_started', { method: 'email' });
     try {
       await signInWithEmail(values);
       const from = (location.state as { from?: string } | null)?.from;
@@ -66,6 +68,7 @@ export function SignInPage() {
 
   const onSocial = (provider: SocialProvider) => {
     setError(null);
+    void trackEvent('signin_started', { method: provider });
     setSocialBusy(provider);
     try {
       const from = (location.state as { from?: string } | null)?.from;
@@ -82,11 +85,6 @@ export function SignInPage() {
   return (
     <AuthLayout>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        <div className="text-center">
-          <h2 className="text-lg font-semibold tracking-tight">{t('auth.signInTitle')}</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">{t('auth.signInSubtitle')}</p>
-        </div>
-
         <Button
           label={socialBusy === 'google' ? t('auth.openingGoogle') : t('auth.continueGoogle')}
           variant="secondary"

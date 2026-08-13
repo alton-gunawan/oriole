@@ -1,26 +1,94 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
 import {
   Button,
   Dialog,
   DialogHeader,
-  IconButton,
+  DropdownMenu,
+  DropdownMenuItem,
   Layout,
   LayoutContent,
   LayoutFooter,
   Skeleton,
+  Table,
   TextArea,
   TextInput,
+  pixel,
+  proportional,
+  type TableColumn,
 } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
-import type { ContactRecord, ContactsListResponse, CreateContactPayload } from '../../lib/contacts';
+import {
+  buildCreateContactPayload,
+  type ContactRecord,
+  type ContactsListResponse,
+  type CreateContactPayload,
+} from '../../lib/contacts';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { formatDateTime } from '../../i18n/format';
+import {
+  IconAlertTriangle,
+  IconArrowUpRight,
+  IconDotsHorizontal,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+  IconUsers,
+} from '../shell/icons';
 import { PhoneInput } from '../components/PhoneInput';
-import { IconAlertTriangle, IconPlus, IconSearch, IconTrash, IconUsers } from '../shell/icons';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
+
+/** Baris tabel: ContactRecord + index signature (Table butuh Record<string, unknown>). */
+type ContactTableRow = ContactRecord & Record<string, unknown>;
+
+/** Dropdown aksi per baris kontak — tombol ⋯ membuka menu (buka detail, hapus). */
+function ContactActionsMenu({
+  contact,
+  onDelete,
+}: {
+  contact: ContactRecord;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu
+      placement="below"
+      menuWidth={180}
+      isMenuOpen={open}
+      onOpenChange={setOpen}
+      button={{
+        label: t('common.moreActions'),
+        isIconOnly: true,
+        icon: <IconDotsHorizontal className="size-4" />,
+        variant: 'ghost',
+        size: 'sm',
+        style: { padding: 0 },
+      }}
+    >
+      <DropdownMenuItem
+        icon={<IconArrowUpRight className="size-4" />}
+        label={t('contacts.openDetail')}
+        onClick={() => navigate(`/app/contacts/${contact.id}`)}
+      />
+      <DropdownMenuItem
+        icon={<IconTrash className="size-4 text-red-500" />}
+        label={
+          <span className="font-medium text-red-600">
+            {t('contacts.deleteFor', { name: contact.name })}
+          </span>
+        }
+        onClick={onDelete}
+      />
+    </DropdownMenu>
+  );
+}
 
 export function ContactsPage() {
   const { t } = useTranslation();
@@ -91,24 +159,91 @@ export function ContactsPage() {
   // Redup saat query filter baru sedang dimuat (placeholder = data lama).
   const isSearchLoading = isFetching && isPlaceholderData;
 
-  // ── Dialog tambah kontak ────────────────────────────────────
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [notes, setNotes] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
+  // ── Kolom tabel kontak — data-driven, pola tabel Bookings ──
+  const contactColumns = useMemo<TableColumn<ContactTableRow>[]>(
+    () => [
+      // Kolom Contact = identitas kontak (avatar + nama) sekaligus link ke detail.
+      {
+        key: 'contact',
+        header: t('common.name'),
+        width: proportional(3),
+        renderCell: (contact) => (
+          <Link
+            to={`/app/contacts/${contact.id}`}
+            title={t('contacts.openDetail')}
+            className="group flex min-w-0 items-center gap-3"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
+              {contact.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-base font-semibold text-zinc-900 transition group-hover:text-amber-600">
+                {contact.name}
+              </span>
+              <span className="block truncate text-xs text-zinc-500">
+                {contact.phone}
+                {contact.email ? ` · ${contact.email}` : ''}
+              </span>
+            </span>
+          </Link>
+        ),
+      },
+      {
+        key: 'notes',
+        header: t('common.notes'),
+        width: proportional(2),
+        renderCell: (contact) => (
+          <span className="block truncate text-base text-zinc-600">
+            {contact.notes ?? <span className="text-zinc-300">—</span>}
+          </span>
+        ),
+      },
+      {
+        key: 'created',
+        header: t('contacts.colCreated'),
+        width: pixel(150),
+        renderCell: (contact) => (
+          <span className="block truncate text-base text-zinc-600">
+            {formatDateTime(contact.createdAt)}
+          </span>
+        ),
+      },
+      {
+        key: 'actions',
+        header: t('contacts.colActions'),
+        width: pixel(72),
+        align: 'end',
+        renderCell: (contact) => (
+          <span className="flex items-center justify-end">
+            <ContactActionsMenu contact={contact} onDelete={() => setDeleteTarget(contact)} />
+          </span>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t],
+  );
 
-  const closeAddDialog = () => {
+  // ── Dialog tambah kontak — mengikuti pola dialog tambah staf ──
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addNotes, setAddNotes] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const closeAdd = () => {
+    if (addMutation.isPending) return;
     setIsAddOpen(false);
-    setFormError(null);
+    setAddError(null);
   };
-  const openAddDialog = () => {
-    setName('');
-    setPhone('');
-    setEmail('');
-    setNotes('');
-    setFormError(null);
+
+  const openAdd = () => {
+    setAddName('');
+    setAddPhone('');
+    setAddEmail('');
+    setAddNotes('');
+    setAddError(null);
     setIsAddOpen(true);
   };
 
@@ -119,29 +254,27 @@ export function ContactsPage() {
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
-      closeAddDialog();
+      setIsAddOpen(false);
+      setAddError(null);
       queryClient.invalidateQueries({ queryKey: ['contacts', activeWorkspaceId] });
     },
-    onError: (err) => {
-      setFormError(errorMessage(err, t, 'errors.saveContact'));
-    },
+    onError: (err) => setAddError(errorMessage(err, t, 'errors.saveContact')),
   });
 
-  const submitContact = (event: FormEvent) => {
+  const submitAdd = (event: FormEvent) => {
     event.preventDefault();
-    const cleanName = name.trim();
-    const cleanPhone = phone.trim();
-    if (!cleanName || !cleanPhone) {
-      setFormError(t('errors.contactRequired'));
+    const payload = buildCreateContactPayload({
+      name: addName,
+      phone: addPhone,
+      email: addEmail,
+      notes: addNotes,
+    });
+    if (!payload) {
+      setAddError(t('errors.contactRequired'));
       return;
     }
-    setFormError(null);
-    addMutation.mutate({
-      name: cleanName,
-      phone: cleanPhone,
-      email: email.trim() || undefined,
-      notes: notes.trim() || undefined,
-    });
+    setAddError(null);
+    addMutation.mutate(payload);
   };
 
   // ── Hapus kontak (konfirmasi AlertDialog) ───────────────────
@@ -166,17 +299,17 @@ export function ContactsPage() {
       <PageHeader
         title={t('contacts.title')}
         description={t('contacts.description')}
+        icon={IconUsers}
       >
         {/* Menu reload — sama seperti Bookings/Calls. */}
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
-        {/* Styling disamakan dengan tombol "New booking" di halaman Bookings. */}
         <button
           type="button"
-          onClick={openAddDialog}
+          onClick={openAdd}
           className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
         >
           <IconPlus className="size-4" />
-          {t('contacts.new')}
+          {t('contacts.add')}
         </button>
       </PageHeader>
 
@@ -254,14 +387,16 @@ export function ContactsPage() {
       )}
 
       {isPending && (
-        <Card className="divide-y divide-zinc-100">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center gap-3 p-4">
-              <Skeleton width={40} height={40} radius={4} />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Skeleton width="40%" height={14} />
-                <Skeleton width="66%" height={12} />
-              </div>
+        <Card className="overflow-hidden">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-6 border-b border-zinc-100 px-5 py-4 last:border-b-0"
+            >
+              <Skeleton width="28%" height={14} />
+              <Skeleton width="18%" height={12} />
+              <Skeleton width="26%" height={12} />
+              <Skeleton className="ml-auto" width={90} height={22} />
             </div>
           ))}
         </Card>
@@ -276,63 +411,79 @@ export function ContactsPage() {
               description={
                 hasFilters ? t('contacts.emptySearchDesc') : t('contacts.emptyDesc')
               }
-              action={{ label: t('contacts.add'), onClick: openAddDialog }}
+              action={
+                hasFilters
+                  ? { label: t('contacts.resetFilter'), onClick: resetFilters }
+                  : { label: t('contacts.add'), onClick: openAdd }
+              }
             />
           ) : (
-            <Card>
-              <div
-                // inert: blokir interaksi saat pencarian sedang memuat data baru.
-                inert={isSearchLoading}
-                className={`divide-y divide-zinc-100 transition-opacity duration-200 ${
-                  isSearchLoading ? 'pointer-events-none opacity-40' : ''
-                }`}
+            <>
+              {/* Transparan: tabel tanpa border/background pembungkus; radius 0.
+                  Border horizontal atas & bawah membingkai tabel. Footer (jumlah
+                  & Load more) dirender manual DI LUAR blok berbordernya — pola
+                  tabel Bookings. */}
+              <Card
+                variant="transparent"
+                className="overflow-hidden"
+                style={{
+                  borderTop: '1px solid #e4e4e7',
+                  borderBottom: '1px solid #e4e4e7',
+                  '--_card-radius': '0px',
+                }}
               >
-                {contacts.map((contact) => (
-                  <div key={contact.id} className="flex items-center gap-3 p-4">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
-                      {contact.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-zinc-900">{contact.name}</p>
-                      <p className="truncate text-xs text-zinc-500">
-                        {contact.phone}
-                        {contact.email ? ` · ${contact.email}` : ''}
-                      </p>
-                      {contact.notes && (
-                        <p className="mt-0.5 truncate text-xs text-zinc-400">{contact.notes}</p>
-                      )}
-                    </div>
-                    <IconButton
-                      icon={<IconTrash className="size-4" />}
-                      label={t('contacts.deleteFor', { name: contact.name })}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDeleteTarget(contact)}
-                    />
-                  </div>
-                ))}
+                <div
+                  // inert: blokir interaksi mouse & keyboard saat placeholder (filter lama).
+                  inert={isSearchLoading}
+                  className={`transition-opacity duration-200 ${
+                    isSearchLoading ? 'pointer-events-none opacity-40' : ''
+                  }`}
+                >
+                  <Table
+                    data={contacts as ContactTableRow[]}
+                    columns={contactColumns}
+                    idKey="id"
+                    density="balanced"
+                    dividers="none"
+                    hasHover
+                    textOverflow="truncate"
+                  />
+                </div>
+              </Card>
+
+              {/* Footer: jumlah kontak terlihat (kiri) + Load more (kanan).
+                  Kontak memakai kursor pagination (tanpa total), jadi tombol
+                  memuat halaman berikutnya menggantikan Pagination numerik. */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+                <p className="text-sm text-zinc-400">
+                  <Trans
+                    i18nKey="contacts.showingCount"
+                    values={{ shown: contacts.length }}
+                    components={{ strong: <strong className="font-bold text-black" /> }}
+                  />
+                </p>
+                {hasNextPage && (
+                  <Button
+                    label={t('common.loadMore')}
+                    variant="secondary"
+                    size="sm"
+                    isLoading={isFetchingNextPage}
+                    isDisabled={isFetchingNextPage || isFetching}
+                    onClick={() => void fetchNextPage()}
+                  />
+                )}
               </div>
-            </Card>
-          )}
-          {hasNextPage && contacts.length > 0 && (
-            <div className="flex justify-center pt-2">
-              <Button
-                label={t('common.loadMore')}
-                variant="secondary"
-                isLoading={isFetchingNextPage}
-                isDisabled={isFetchingNextPage || isFetching}
-                onClick={() => void fetchNextPage()}
-              />
-            </div>
+            </>
           )}
         </>
       )}
 
-      {/* Dialog tambah kontak */}
+      {/* Dialog tambah kontak — struktur, spacing, footer, dan error placement
+          mengikuti dialog tambah staf agar semua resource forms konsisten. */}
       <Dialog
         isOpen={isAddOpen}
         onOpenChange={(open) => {
-          if (!open) closeAddDialog();
+          if (!open) closeAdd();
         }}
         purpose="info"
         width={520}
@@ -343,56 +494,60 @@ export function ContactsPage() {
               title={t('contacts.addTitle')}
               subtitle={t('contacts.addSubtitle')}
               onOpenChange={(open) => {
-                if (!open) closeAddDialog();
+                if (!open) closeAdd();
               }}
               hasDivider
             />
           }
           content={
             <LayoutContent>
-              <form id="add-contact-form" onSubmit={submitContact} className="space-y-5">
+              <form id="add-contact-form" onSubmit={submitAdd} className="space-y-5">
                 <TextInput
                   label={t('common.name')}
                   placeholder={t('contacts.namePlaceholder')}
-                  value={name}
-                  onChange={setName}
+                  value={addName}
+                  onChange={setAddName}
                   isRequired
                 />
                 <PhoneInput
-                  label={t('contacts.phoneLabel')}
-                  value={phone}
-                  onChange={setPhone}
+                  label={t('common.phone')}
+                  placeholder={t('contacts.phonePlaceholder')}
+                  value={addPhone}
+                  onChange={setAddPhone}
                   isRequired
                 />
                 <TextInput
                   label={t('common.email')}
                   type="email"
                   placeholder={t('contacts.emailPlaceholder')}
-                  value={email}
-                  onChange={setEmail}
+                  value={addEmail}
+                  onChange={setAddEmail}
                   isOptional
                 />
                 <TextArea
                   label={t('common.notes')}
                   placeholder={t('contacts.notesPlaceholder')}
-                  value={notes}
-                  onChange={setNotes}
-                  rows={3}
+                  value={addNotes}
+                  onChange={setAddNotes}
                   isOptional
+                  rows={3}
+                  width="100%"
                 />
               </form>
             </LayoutContent>
           }
           footer={
             <LayoutFooter hasDivider>
-              {formError && (
-                <p role="alert" className="pb-2 text-right text-sm text-red-600">{formError}</p>
+              {addError && (
+                <p role="alert" className="pb-2 text-right text-sm text-red-600">
+                  {addError}
+                </p>
               )}
               <div className="flex justify-end gap-2">
                 <Button
                   label={t('common.cancel')}
                   variant="ghost"
-                  onClick={closeAddDialog}
+                  onClick={closeAdd}
                   isDisabled={addMutation.isPending}
                 />
                 <Button

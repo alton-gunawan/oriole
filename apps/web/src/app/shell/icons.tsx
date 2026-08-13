@@ -1,6 +1,145 @@
 import type { SVGProps } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Battery,
+  Bell,
+  Bookmark,
+  Calendar,
+  ChartColumn,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Clock,
+  Copy,
+  CreditCard,
+  ExternalLink,
+  Filter,
+  Folder,
+  Globe,
+  House,
+  Hourglass,
+  IdCard,
+  List,
 
+  LogOut,
+  Mail,
+  Menu,
+  MessageSquare,
+  MicOff,
+  MoreHorizontal,
+  MoreVertical,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Phone,
+  Plug,
+  Plus,
+  Receipt,
+  RefreshCw,
+  Repeat,
+  RotateCcw,
+  Search,
+  SearchX,
+  Send,
+  Shield,
+  Signal,
+  SlidersVertical,
+  Tags,
+  Trash2,
+  TriangleAlert,
+  Upload,
+  User,
+  Users,
+  EyeOff,
+  Video,
+  Webhook,
+  Wifi,
+  X,
+} from 'lucide-react';
+
+/** Prop tipe ikon — tetap SVGProps agar konsumen (ui.tsx, dll.) tidak berubah. */
 export type IconProps = SVGProps<SVGSVGElement>;
+
+/*
+ * Ikon di-re-export dari lucide-react (ISC) di balik nama Icon* yang lama
+ * supaya seluruh halaman tetap berfungsi tanpa perubahan import.
+ * Nama memakai varian kanonik Lucide (bukan alias lama yang deprecated):
+ *   IconChart  → ChartColumn   (dulu BarChart3)
+ *   IconHelp   → CircleHelp    (dulu HelpCircle)
+ *   IconEdit   → Pencil        (dulu Edit)
+ *   IconAlertTriangle → TriangleAlert (dulu AlertTriangle)
+ *   IconSettings → SlidersVertical    (slider vertikal, bukan gerigi)
+ *   IconRefresh → RotateCcw           (panah refresh kiri)
+ *   IconStaff  → IdCard               (kartu + orang + baris teks)
+ */
+
+// Dashboard memakai glyph Phosphor "house-line" (bukan Lucide House) —
+// dipakai di sidebar nav dan header halaman dashboard.
+export const IconDashboard = IconHouseLine;
+export const IconHome = House;
+export const IconCalendar = Calendar;
+export const IconStaff = IdCard;
+export const IconServices = Tags;
+export const IconUsers = Users;
+export const IconChart = ChartColumn;
+export const IconSettings = SlidersVertical;
+export const IconHelp = CircleHelp;
+export const IconUser = User;
+export const IconLogout = LogOut;
+export const IconMenu = Menu;
+export const IconList = List;
+export const IconX = X;
+export const IconPhone = Phone;
+export const IconArrowLeft = ArrowLeft;
+export const IconArrowRight = ArrowRight;
+export const IconArrowUpRight = ArrowUpRight;
+export const IconCheck = Check;
+export const IconPlus = Plus;
+export const IconSearch = Search;
+export const IconFolder = Folder;
+export const IconFilter = Filter;
+export const IconBell = Bell;
+export const IconChevronDown = ChevronDown;
+export const IconChevronLeft = ChevronLeft;
+export const IconChevronRight = ChevronRight;
+export const IconMail = Mail;
+export const IconShield = Shield;
+export const IconCreditCard = CreditCard;
+export const IconClock = Clock;
+export const IconHourglass = Hourglass;
+export const IconSearchX = SearchX;
+export const IconEyeOff = EyeOff;
+export const IconAlertTriangle = TriangleAlert;
+export const IconRefreshCw = RefreshCw;
+export const IconEdit = Pencil;
+export const IconTrash = Trash2;
+export const IconChat = MessageSquare;
+export const IconSend = Send;
+export const IconCopy = Copy;
+export const IconPlug = Plug;
+export const IconRepeat = Repeat;
+export const IconRefresh = RotateCcw;
+export const IconWebhook = Webhook;
+export const IconUpload = Upload;
+export const IconDotsVertical = MoreVertical;
+export const IconDotsHorizontal = MoreHorizontal;
+export const IconPanelLeftClose = PanelLeftClose;
+export const IconPanelLeftOpen = PanelLeftOpen;
+export const IconBookmark = Bookmark;
+export const IconReceipt = Receipt;
+export const IconGlobe = Globe;
+export const IconVideo = Video;
+export const IconMicOff = MicOff;
+export const IconSignal = Signal;
+export const IconWifi = Wifi;
+export const IconBattery = Battery;
+export const IconExternalLink = ExternalLink;
+
+/* ── Ikon brand (Obsidian, Notion) — tidak ada padanan di Lucide ── */
 
 function Svg({ children, ...props }: IconProps) {
   return (
@@ -16,289 +155,6 @@ function Svg({ children, ...props }: IconProps) {
     >
       {children}
     </svg>
-  );
-}
-
-export function IconDashboard(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="3" width="7" height="9" rx="1.5" />
-      <rect x="14" y="3" width="7" height="5" rx="1.5" />
-      <rect x="14" y="12" width="7" height="9" rx="1.5" />
-      <rect x="3" y="16" width="7" height="5" rx="1.5" />
-    </Svg>
-  );
-}
-
-export function IconCalendar(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="4" width="18" height="17" rx="2" />
-      <path d="M8 2v4M16 2v4M3 9h18" />
-    </Svg>
-  );
-}
-
-export function IconUsers(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-    </Svg>
-  );
-}
-
-export function IconChart(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 3v18h18" />
-      <path d="M7 16v-5M12 16V7M17 16v-8" />
-    </Svg>
-  );
-}
-
-export function IconSettings(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
-      <path d="M1 14h6M9 8h6M17 16h6" />
-    </Svg>
-  );
-}
-
-export function IconHelp(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-      <path d="M12 17h.01" />
-    </Svg>
-  );
-}
-
-export function IconUser(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </Svg>
-  );
-}
-
-export function IconLogout(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <path d="M16 17l5-5-5-5" />
-      <path d="M21 12H9" />
-    </Svg>
-  );
-}
-
-export function IconMenu(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M4 6h16M4 12h16M4 18h16" />
-    </Svg>
-  );
-}
-
-export function IconX(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M18 6L6 18M6 6l12 12" />
-    </Svg>
-  );
-}
-
-export function IconPhone(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-    </Svg>
-  );
-}
-
-export function IconArrowRight(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M5 12h14M12 5l7 7-7 7" />
-    </Svg>
-  );
-}
-
-export function IconCheck(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M20 6L9 17l-5-5" />
-    </Svg>
-  );
-}
-
-export function IconPlus(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M12 5v14M5 12h14" />
-    </Svg>
-  );
-}
-
-export function IconSearch(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="11" cy="11" r="8" />
-      <path d="M21 21l-4.35-4.35" />
-    </Svg>
-  );
-}
-
-export function IconFolder(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </Svg>
-  );
-}
-
-export function IconBell(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </Svg>
-  );
-}
-
-export function IconChevronDown(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M6 9l6 6 6-6" />
-    </Svg>
-  );
-}
-
-export function IconChevronLeft(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M15 18l-6-6 6-6" />
-    </Svg>
-  );
-}
-
-export function IconMail(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="M22 6l-10 7L2 6" />
-    </Svg>
-  );
-}
-
-export function IconShield(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </Svg>
-  );
-}
-
-export function IconCreditCard(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="2" y="5" width="20" height="14" rx="2" />
-      <path d="M2 10h20" />
-    </Svg>
-  );
-}
-
-export function IconClock(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 6v6l4 2" />
-    </Svg>
-  );
-}
-
-export function IconAlertTriangle(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <path d="M12 9v4M12 17h.01" />
-    </Svg>
-  );
-}
-
-export function IconRefreshCw(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-      <path d="M8 16H3v5" />
-    </Svg>
-  );
-}
-
-export function IconEdit(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-    </Svg>
-  );
-}
-
-export function IconTrash(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-      <path d="M10 11v6M14 11v6" />
-    </Svg>
-  );
-}
-
-export function IconChat(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </Svg>
-  );
-}
-
-export function IconSend(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M22 2 11 13" />
-      <path d="M22 2 15 22l-4-9-9-4 20-7z" />
-    </Svg>
-  );
-}
-
-export function IconCopy(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </Svg>
-  );
-}
-
-export function IconPlug(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M12 22v-5" />
-      <path d="M9 8V2M15 8V2M5 8h14v4a7 7 0 0 1-14 0V8z" />
-    </Svg>
-  );
-}
-
-export function IconRefresh(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 12a9 9 0 1 1 2.64 6.36L3 21" />
-      <path d="M3 21v-5h5" />
-    </Svg>
   );
 }
 
@@ -321,79 +177,59 @@ export function IconNotion(props: IconProps) {
   );
 }
 
-export function IconWebhook(props: IconProps) {
+/* ── Ikon Phosphor (MIT, phosphoricons.com) — dipakai bila glyph Lucide
+   kurang pas; path resmi dari repo phosphor-icons/core (regular weight). ── */
+
+export function IconHouseLine(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2" />
-      <path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06" />
-      <path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8" />
-    </Svg>
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M240,208H224V136l2.34,2.34A8,8,0,0,0,237.66,127L139.31,28.68a16,16,0,0,0-22.62,0L18.34,127a8,8,0,0,0,11.32,11.31L32,136v72H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM48,120l80-80,80,80v88H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48Zm96,88H112V160h32Z" />
+    </svg>
   );
 }
 
-export function IconUpload(props: IconProps) {
+/* ── Ikon merek channel — SVG resmi dari svgl.app (warna merek asli). ── */
+
+export function IconTelegram(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="M17 8l-5-5-5 5" />
-      <path d="M12 3v12" />
-    </Svg>
+    <svg viewBox="0 0 256 256" preserveAspectRatio="xMidYMid" aria-hidden="true" {...props}>
+      <defs>
+        <linearGradient id="svgl-telegram-grad" x1="50%" x2="50%" y1="0%" y2="100%">
+          <stop offset="0%" stopColor="#2AABEE" />
+          <stop offset="100%" stopColor="#229ED9" />
+        </linearGradient>
+      </defs>
+      <path fill="url(#svgl-telegram-grad)" d="M128 0C94.06 0 61.48 13.494 37.5 37.49A128.038 128.038 0 0 0 0 128c0 33.934 13.5 66.514 37.5 90.51C61.48 242.506 94.06 256 128 256s66.52-13.494 90.5-37.49c24-23.996 37.5-56.576 37.5-90.51 0-33.934-13.5-66.514-37.5-90.51C194.52 13.494 161.94 0 128 0Z" />
+      <path fill="#FFF" d="M57.94 126.648c37.32-16.256 62.2-26.974 74.64-32.152 35.56-14.786 42.94-17.354 47.76-17.441 1.06-.017 3.42.245 4.96 1.49 1.28 1.05 1.64 2.47 1.82 3.467.16.996.38 3.266.2 5.038-1.92 20.24-10.26 69.356-14.5 92.026-1.78 9.592-5.32 12.808-8.74 13.122-7.44.684-13.08-4.912-20.28-9.63-11.26-7.386-17.62-11.982-28.56-19.188-12.64-8.328-4.44-12.906 2.76-20.386 1.88-1.958 34.64-31.748 35.26-34.45.08-.338.16-1.598-.6-2.262-.74-.666-1.84-.438-2.64-.258-1.14.256-19.12 12.152-54 35.686-5.1 3.508-9.72 5.218-13.88 5.128-4.56-.098-13.36-2.584-19.9-4.708-8-2.606-14.38-3.984-13.82-8.41.28-2.304 3.46-4.662 9.52-7.072Z" />
+    </svg>
   );
 }
 
-export function IconDotsVertical(props: IconProps) {
+export function IconWhatsApp(props: IconProps) {
   return (
-    <Svg {...props}>
-      <circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none" />
-    </Svg>
+    <svg viewBox="0 0 360 362" fill="none" aria-hidden="true" {...props}>
+      <path
+        fill="#25D366"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M307.546 52.566C273.709 18.684 228.706.017 180.756 0 81.951 0 1.538 80.404 1.504 179.235c-.017 31.594 8.242 62.432 23.928 89.609L0 361.736l95.024-24.925c26.179 14.285 55.659 21.805 85.655 21.814h.077c98.788 0 179.21-80.413 179.244-179.244.017-47.898-18.608-92.926-52.454-126.807v-.008Zm-126.79 275.788h-.06c-26.73-.008-52.952-7.194-75.831-20.765l-5.44-3.231-56.391 14.791 15.05-54.981-3.542-5.638c-14.912-23.721-22.793-51.139-22.776-79.286.035-82.14 66.867-148.973 149.051-148.973 39.793.017 77.198 15.53 105.328 43.695 28.131 28.157 43.61 65.596 43.593 105.398-.035 82.149-66.867 148.982-148.982 148.982v.008Zm81.719-111.577c-4.478-2.243-26.497-13.073-30.606-14.568-4.108-1.496-7.09-2.243-10.073 2.243-2.982 4.487-11.568 14.577-14.181 17.559-2.613 2.991-5.226 3.361-9.704 1.117-4.477-2.243-18.908-6.97-36.02-22.226-13.313-11.878-22.304-26.54-24.916-31.027-2.613-4.486-.275-6.91 1.959-9.136 2.011-2.011 4.478-5.234 6.721-7.847 2.244-2.613 2.983-4.486 4.478-7.469 1.496-2.991.748-5.603-.369-7.847-1.118-2.243-10.073-24.289-13.812-33.253-3.636-8.732-7.331-7.546-10.073-7.692-2.613-.13-5.595-.155-8.586-.155-2.991 0-7.839 1.118-11.947 5.604-4.108 4.486-15.677 15.324-15.677 37.361s16.047 43.344 18.29 46.335c2.243 2.991 31.585 48.225 76.51 67.632 10.684 4.615 19.029 7.374 25.535 9.437 10.727 3.412 20.49 2.931 28.208 1.779 8.604-1.289 26.498-10.838 30.228-21.298 3.73-10.46 3.73-19.433 2.613-21.298-1.117-1.865-4.108-2.991-8.586-5.234l.008-.017Z"
+      />
+    </svg>
   );
 }
 
-export function IconDotsHorizontal(props: IconProps) {
+export function IconGmail(props: IconProps) {
   return (
-    <Svg {...props}>
-      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    </Svg>
-  );
-}
-
-export function IconPanelLeftClose(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M9 3v18" />
-      <path d="m16 15-3-3 3-3" />
-    </Svg>
-  );
-}
-
-export function IconPanelLeftOpen(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M9 3v18" />
-      <path d="m14 9 3 3-3 3" />
-    </Svg>
-  );
-}
-
-export function IconBookmark(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </Svg>
-  );
-}
-
-export function IconReceipt(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5 4 2z" />
-      <path d="M8 7h8M8 11h8M8 15h5" />
-    </Svg>
+    <svg viewBox="0 49.4 512 399.42" aria-hidden="true" {...props}>
+      <g fill="none" fillRule="evenodd">
+        <g fillRule="nonzero">
+          <path fill="#4285f4" d="M34.91 448.818h81.454V251L0 163.727V413.91c0 19.287 15.622 34.91 34.91 34.91z" />
+          <path fill="#34a853" d="M395.636 448.818h81.455c19.287 0 34.909-15.622 34.909-34.909V163.727L395.636 251z" />
+          <path fill="#fbbc04" d="M395.636 99.727V251L512 163.727v-46.545c0-43.142-49.25-67.782-83.782-41.891z" />
+        </g>
+        <path fill="#ea4335" d="M116.364 251V99.727L256 204.455 395.636 99.727V251L256 355.727z" />
+        <path fill="#c5221f" fillRule="nonzero" d="M0 117.182v46.545L116.364 251V99.727L83.782 75.291C49.25 49.4 0 74.04 0 117.18z" />
+      </g>
+    </svg>
   );
 }

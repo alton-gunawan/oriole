@@ -5,7 +5,7 @@ import { calleCalls, subscriptions } from '@oriole/database';
 import { db } from '../db/index.ts';
 import { extractCallSeconds } from '../lib/calls.ts';
 import { env } from '../lib/env.ts';
-import { PLANS, type PlanId } from '../lib/plans.ts';
+import { PLAN_ORDER, PLANS, priceIdForPlan, type PlanId } from '../lib/plans.ts';
 import { planFromSubscription } from '../lib/quota.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
 import { paddle } from '../services/paddle.ts';
@@ -53,7 +53,10 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       .orderBy(desc(subscriptions.createdAt))
       .limit(1);
 
-    const plan: PlanId = planFromSubscription(latestSubscription?.status);
+    const plan: PlanId = planFromSubscription(
+      latestSubscription?.status,
+      latestSubscription?.planId ?? latestSubscription?.priceId,
+    );
 
     const calls = await db
       .select({
@@ -77,6 +80,7 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       paddleConfigured,
       plan,
       planInfo: PLANS[plan],
+      plans: PLAN_ORDER.map((id) => PLANS[id]),
       usage,
       subscription: latestSubscription
         ? {
@@ -95,9 +99,20 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'Paddle belum dikonfigurasi', configured: false }, 503);
     }
 
-    const priceId = env.PADDLE_PRO_PRICE_ID;
+    // Paket yang dibeli: 'pro' | 'business' dari body; selain itu (atau tanpa
+    // body) → 'pro' (perilaku lama dipertahankan).
+    const body = (await c.req.json().catch(() => ({}))) as { plan?: unknown };
+    const requested: PlanId = body.plan === 'business' ? 'business' : 'pro';
+
+    const priceId = priceIdForPlan(requested);
     if (!priceId) {
-      return c.json({ error: 'PADDLE_PRO_PRICE_ID belum diatur di environment' }, 400);
+      return c.json(
+        {
+          error: `PADDLE_${requested.toUpperCase()}_PRICE_ID belum diatur di environment`,
+          plan: requested,
+        },
+        400,
+      );
     }
 
     try {

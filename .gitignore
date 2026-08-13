@@ -33,3 +33,12 @@ coverage/
 
 # Artefak build/preview sementara (web)
 apps/web/.tmp-*-dist/
+
+# WAHA spike — runtime captures + linked-device auth
+spikes/waha/captured/
+spikes/waha/sessions/
+
+# WAHA production gateway (deploy/waha) — secrets + runtime data + backups
+deploy/waha/.env
+deploy/waha/data/
+deploy/waha/backups/

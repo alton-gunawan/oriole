@@ -10,15 +10,17 @@ import {
 import { bookings, calleCalls, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
-import { env } from './env.ts';
-import { calle } from '../services/calle.ts';
+import { withBookingTitle } from './booking-title.ts';
+import { placeBookingCall } from './place-call.ts';
 import { countCallAttempts } from './booking-goal.ts';
 import { checkCallQuota } from './quota.ts';
 
 /**
- * Susun goal & jalankan panggilan CALL-E untuk sebuah booking — dipakai fungsi
- * Inngest `autoCallBooking` (satu-satunya pemanggil saat ini). Idempotency key
- * berbasis (bookingId, goalType) mencegah panggilan ganda saat Inngest retry.
+ * Susun goal & jalankan panggilan Vapi untuk sebuah booking — dipakai fungsi
+ * Inngest `autoCallBooking` (satu-satunya pemanggil saat ini). Penempatan
+ * panggilan lewat `placeBookingCall` (reserve → reconcile → create → commit)
+ * agar retry Inngest tidak menggandakan panggilan dan crash di tengah tidak
+ * menghilangkan panggilan.
  */
 export interface PlaceAutoCallInput {
   workspaceId: string;
@@ -34,25 +36,26 @@ export interface PlaceAutoCallInput {
 }
 
 export type PlaceAutoCallResult =
-  | { status: 'placed'; callId: string; goalType: GoalType; calleStatus: string }
+  | { status: 'placed'; callId: string; goalType: GoalType; calleStatus: string | null }
   | { status: 'skipped'; reason: string };
 
-/** Map bahasa panggilan → locale recipient CALL-E. */
-function localeFor(language: string): string {
-  return language === 'id' ? 'id-ID' : 'en-US';
-}
 
 export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAutoCallResult> {
-  const [booking] = await db
+  const [row] = await db
     .select()
     .from(bookings)
     .where(and(eq(bookings.id, input.bookingId), eq(bookings.workspaceId, input.workspaceId)))
     .limit(1);
-  if (!booking) return { status: 'skipped', reason: 'booking-not-found' };
+  if (!row) return { status: 'skipped', reason: 'booking-not-found' };
+  // Title booking = nama layanan katalog (kolom title sudah dihapus).
+  const booking = await withBookingTitle(input.workspaceId, row);
   if (booking.status !== 'pending' && booking.status !== 'confirmed') {
     return { status: 'skipped', reason: `status-${booking.status}` };
   }
-  if (!booking.phone) return { status: 'skipped', reason: 'no-phone' };
+  // Snapshot lokal agar narrowing non-null bertahan (TS me-reset narrowing
+  // property setelah pemanggilan async lain).
+  const phone = booking.phone;
+  if (!phone) return { status: 'skipped', reason: 'no-phone' };
 
   const [workspace] = await db
     .select({
@@ -113,43 +116,25 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
     return { status: 'skipped', reason: `quota-${quota.status}` };
   }
 
-  // `booking.phone` sudah di-narrow non-null oleh guard di atas.
-  const createdCall = await calle.calls.create(
-    {
-      task: config.prompt,
-      recipient: { phone: booking.phone, locale: localeFor(config.language) },
-      resultSchema: config.resultSchema,
-      metadata: {
-        bookingId: booking.id,
-        workspaceId: input.workspaceId,
-        userId: input.userId ?? booking.userId,
-        goalType: config.goalType,
-        source: 'auto-call',
-      },
-      webhookUrl: `${env.API_URL}/api/webhooks/calle`,
-    },
-    // Idempotency: retry Inngest yang sama tidak boleh membuat panggilan baru.
-    // AutoCallAt ikut dalam key — panggilan baru dari run baru (re-schedule)
-    // tidak ter-dedupe ke panggilan run lama.
-    {
-      idempotencyKey: `booking:${booking.id}:${config.goalType}:${input.autoCallAt ?? 'manual'}`,
-    },
-  );
-
-  await db.insert(calleCalls).values({
-    calleCallId: createdCall.id,
-    userId: input.userId ?? booking.userId,
+  // `booking.phone` sudah di-narrow non-null oleh guard di atas. Nama
+  // panggilan = jejak audit + basis parse webhook (parseCallName). AutoCallAt
+  // ikut agar panggilan dari run baru (re-schedule) tidak tertukar dengan
+  // run lama (dan reservasi retry tidak saling dedupe).
+  const placed = await placeBookingCall({
     workspaceId: input.workspaceId,
     bookingId: booking.id,
-    phone: booking.phone,
-    task: config.prompt,
+    userId: input.userId ?? booking.userId,
+    phone,
+    prompt: config.prompt,
+    language: config.language,
+    businessName: workspace.name,
+    customerName: booking.customerName,
     goalType: config.goalType,
-    status: createdCall.status,
-  }).onConflictDoNothing({ target: calleCalls.calleCallId });
-  await db
-    .update(bookings)
-    .set({ calleCallId: createdCall.id, updatedAt: new Date() })
-    .where(eq(bookings.id, booking.id));
+    callName: `booking:${booking.id}:${config.goalType}:auto-call:${input.autoCallAt ?? 'now'}`,
+  });
 
-  return { status: 'placed', callId: createdCall.id, goalType: config.goalType, calleStatus: createdCall.status };
+  if (placed.status === 'skipped') {
+    return { status: 'skipped', reason: placed.reason };
+  }
+  return { status: 'placed', callId: placed.callId, goalType: placed.goalType, calleStatus: placed.calleStatus };
 }

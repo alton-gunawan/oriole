@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
+import { DropdownMenu, DropdownMenuItem, IconButton, Spinner } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import { ApiError, apiFetch } from '../../lib/api';
@@ -10,7 +10,7 @@ import { signOut } from '../../lib/session';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
-import { LanguageMenuItems, useActiveLanguageOption } from './LocaleSwitcher';
+import { LanguageSubMenu } from './LocaleSwitcher';
 import { BillingDialog } from './BillingDialog';
 import { SettingsDialog } from './SettingsDialog';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
@@ -32,7 +32,9 @@ import {
   IconPanelLeftOpen,
   IconPhone,
   IconPlug,
+  IconServices,
   IconSettings,
+  IconStaff,
   IconUsers,
   IconX,
   type IconProps,
@@ -43,21 +45,19 @@ interface NavItem {
   /** Kunci i18n label navigasi. */
   labelKey: TranslationKey;
   icon: ComponentType<IconProps>;
-  /** true = item membuka dialog (bukan link halaman) — dipakai Settings. */
-  dialog?: boolean;
 }
 
 const NAV: NavItem[] = [
   { to: '/app/dashboard', labelKey: 'nav.dashboard', icon: IconDashboard },
+  { to: '/app/analytics', labelKey: 'nav.analytics', icon: IconChart },
   { to: '/app/bookings', labelKey: 'nav.bookings', icon: IconCalendar },
   { to: '/app/contacts', labelKey: 'nav.contacts', icon: IconUsers },
+  { to: '/app/staff', labelKey: 'nav.staff', icon: IconStaff },
+  { to: '/app/services', labelKey: 'nav.services', icon: IconServices },
   { to: '/app/inbox', labelKey: 'nav.inbox', icon: IconChat },
-  { to: '/app/integrations', labelKey: 'nav.integrations', icon: IconPlug },
   { to: '/app/calls', labelKey: 'nav.calls', icon: IconPhone },
-  { to: '/app/analytics', labelKey: 'nav.analytics', icon: IconChart },
-  // Settings kini dialog (pengganti halaman /app/settings) — dibuka dari menu
-  // sidebar; URL lama dialihkan ke dashboard di router.
-  { to: '/app/settings', labelKey: 'nav.settings', icon: IconSettings, dialog: true },
+  { to: '/app/integrations', labelKey: 'nav.integrations', icon: IconPlug },
+  // Settings dibuka dari dropdown akun di footer sidebar — bukan item nav lagi.
   // Help dipindah ke footer sidebar (ikon kecil) — bukan item nav lagi.
 ];
 
@@ -144,7 +144,6 @@ function formatLastOpened(iso: string, language: string): string {
 
 export function AppShell() {
   const { t, i18n } = useTranslation();
-  const activeLanguage = useActiveLanguageOption();
   const [menuOpen, setMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -241,13 +240,12 @@ export function AppShell() {
     options: { collapsed?: boolean; showCollapse?: boolean } = {},
   ) => {
     const { collapsed = false, showCollapse = false } = options;
+    // aside w-full: lebar dianimasikan oleh wrapper fixed (transition-[width]),
+    // bukan di sini — kalau dua-duanya menganimasi width, transisinya terasa
+    // ganda/aneh. Tinggi item ikon memakai h-11 FIXED (bukan aspect-square)
+    // agar tinggi tidak ikut membesar saat lebar rail sedang bertransisi.
     return (
-    <aside
-      id="app-sidebar"
-      className={`flex h-full flex-col border-r border-zinc-200 bg-zinc-50 transition-[width] duration-200 ${
-        collapsed ? 'w-16' : 'w-60'
-      }`}
-    >
+    <aside id="app-sidebar" className="flex h-full w-full flex-col border-r border-zinc-200 bg-zinc-50">
       <Logo collapsed={collapsed} />
 
       <div className="px-2.5 pb-2">
@@ -272,7 +270,7 @@ export function AppShell() {
                 <span className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
                   <WorkspaceAvatar workspace={activeWorkspace ?? { name: '?' }} size={24} />
                   {!collapsed && (
-                    <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-zinc-800">
+                    <span className="min-w-0 flex-1 truncate text-left text-base font-semibold text-zinc-800">
                       {activeWorkspace?.name ?? t('nav.selectProject')}
                     </span>
                   )}
@@ -345,73 +343,54 @@ export function AppShell() {
           </DropdownMenu>
       </div>
 
-      <nav className={`flex-1 overflow-y-auto py-1 ${collapsed ? 'px-1.5' : 'px-2.5'}`}>
+      {/* Padding horizontal rail ciut = px-2.5 (10px), SAMA dengan margin
+          project switcher di atasnya — tombol ikon jadi 44×44 (1:1), tidak
+          selebar rail penuh. */}
+      <nav className="flex-1 overflow-y-auto px-2.5 py-1">
         {!collapsed && (
           <p className="px-2.5 pb-1 pt-0.5 text-xs font-normal uppercase tracking-widest text-zinc-500">
             {t('nav.menu')}
           </p>
         )}
-        {NAV.map((item) =>
-          item.dialog ? (
-            // Item dialog (Settings) — tombol yang membuka dialog, bukan link.
-            <button
-              key={item.to}
-              type="button"
-              onClick={() => {
-                // Tutup drawer mobile dulu (sama seperti NavLink lain) agar
-                // dialog tidak terbuka di atas drawer yang masih terbuka.
-                onNavigate?.();
-                setIsSettingsOpen(true);
-              }}
-              title={collapsed ? t(item.labelKey) : undefined}
-              aria-label={collapsed ? t(item.labelKey) : undefined}
-              className={`group flex w-full items-center rounded-lg text-left text-base font-normal text-zinc-600 transition hover:bg-zinc-200/70 hover:text-zinc-900 ${
-                collapsed ? 'justify-center px-1.5 py-2' : 'gap-2.5 px-2.5 py-1.5'
-              }`}
-            >
-              <item.icon className="size-4 shrink-0 text-zinc-400 transition group-hover:text-zinc-600" />
-              {!collapsed && t(item.labelKey)}
-            </button>
-          ) : (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/app/dashboard'}
-              onClick={onNavigate}
-              title={collapsed ? t(item.labelKey) : undefined}
-              aria-label={collapsed ? t(item.labelKey) : undefined}
-              className={({ isActive }) =>
-                `group flex items-center rounded-lg text-base font-normal transition ${
-                  collapsed ? 'justify-center px-1.5 py-2' : 'gap-2.5 px-2.5 py-1.5'
-                } ${
-                  isActive
-                    ? 'bg-amber-500/10 text-amber-600'
-                    : 'text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon
-                    className={`size-4 shrink-0 transition ${isActive ? 'text-amber-600' : 'text-zinc-400 group-hover:text-zinc-600'}`}
+        {NAV.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === '/app/dashboard'}
+            onClick={onNavigate}
+            title={collapsed ? t(item.labelKey) : undefined}
+            aria-label={collapsed ? t(item.labelKey) : undefined}
+            className={({ isActive }) =>
+              `group flex w-full items-center rounded-lg text-base font-normal transition ${
+                collapsed ? 'justify-center px-1.5 h-11' : 'gap-2.5 px-2.5 py-1.5'
+              } ${
+                isActive
+                  ? 'bg-amber-500/10 text-amber-600'
+                  : 'text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <item.icon
+                  className={`size-4 shrink-0 transition ${isActive ? 'text-amber-600' : 'text-zinc-400 group-hover:text-zinc-600'}`}
+                />
+                {!collapsed && t(item.labelKey)}
+                {/* Badge unread khusus item Inbox (workspace aktif). */}
+                {!collapsed && item.to === '/app/inbox' && (
+                  <UnreadBadge
+                    count={inboxUnread}
+                    label={t('inbox.unread', { count: inboxUnread })}
+                    className="ml-auto"
                   />
-                  {!collapsed && t(item.labelKey)}
-                  {/* Badge unread khusus item Inbox (workspace aktif). */}
-                  {!collapsed && item.to === '/app/inbox' && (
-                    <UnreadBadge
-                      count={inboxUnread}
-                      label={t('inbox.unread', { count: inboxUnread })}
-                      className="ml-auto"
-                    />
-                  )}
-                </>
-              )}
-            </NavLink>
-          ),
-        )}
+                )}
+              </>
+            )}
+          </NavLink>
+        ))}
       </nav>
 
-      <div className={`border-t border-zinc-200/80 ${collapsed ? 'p-1.5' : 'p-2.5'}`}>
+      <div className="border-t border-zinc-200/80 p-2.5">
         <DropdownMenu
           placement="above"
           hasChevron={false}
@@ -422,7 +401,7 @@ export function AppShell() {
             variant: 'ghost',
             width: '100%',
             style: collapsed
-              ? { ...userMenuTriggerStyle, justifyContent: 'center', padding: 4 }
+              ? { ...userMenuTriggerStyle, justifyContent: 'center', padding: 4, height: 44 }
               : userMenuTriggerStyle,
             children: (
               <span className={`flex min-w-0 items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`}>
@@ -459,14 +438,8 @@ export function AppShell() {
             icon={<IconCreditCard className="size-4" />}
             onClick={() => setIsBillingOpen(true)}
           />
-          {/* Pemilihan bahasa — submenu (flyout) di dalam dropdown akun */}
-          <DropdownMenuSubMenu
-            icon={<span className="text-sm leading-none">{activeLanguage.flag}</span>}
-            label={t('nav.language')}
-            menuWidth={160}
-          >
-            <LanguageMenuItems />
-          </DropdownMenuSubMenu>
+          {/* Pemilihan bahasa — submenu flyout berisi pilihan EN/ID. */}
+          <LanguageSubMenu />
           <DropdownMenuItem
             label={t('common.logout')}
             icon={<IconLogout className="size-4" />}
@@ -475,31 +448,32 @@ export function AppShell() {
         </DropdownMenu>
 
         {/* Aksi footer — baris ikon kecil: Help (paling kiri) + toggle
-            ciutkan sidebar (paling kanan). Toggle hanya untuk sidebar desktop
-            (showCollapse; drawer mobile punya tombol tutup sendiri). Ukuran
-            ikon menyusut saat rail ciut agar dua tombol muat di lebar w-16. */}
+            ciutkan sidebar (paling kanan), tanpa separator dari menu akun.
+            Toggle hanya untuk sidebar desktop (showCollapse; drawer mobile
+            punya tombol tutup sendiri). Saat rail ciut, Help disembunyikan —
+            yang tampil hanya tombol collapsible (full width, rasio 1:1). */}
         <div
-          className={`flex items-center border-t border-zinc-200/70 ${
-            collapsed ? 'mt-1.5 justify-between gap-0 pt-1.5' : 'mt-2 justify-between gap-1 pt-2'
+          className={`flex items-center ${
+            collapsed ? 'mt-0 justify-center gap-0' : 'mt-0.5 justify-between gap-1'
           }`}
         >
-          <NavLink
-            to="/app/help"
-            onClick={onNavigate}
-            title={t('nav.help')}
-            aria-label={t('nav.help')}
-            className={({ isActive }) =>
-              `flex shrink-0 items-center justify-center rounded-lg transition ${
-                collapsed ? 'size-6' : 'size-7'
-              } ${
-                isActive
-                  ? 'bg-amber-500/10 text-amber-600'
-                  : 'text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600'
-              }`
-            }
-          >
-            <IconHelp className={collapsed ? 'size-3.5' : 'size-4'} />
-          </NavLink>
+          {!collapsed && (
+            <NavLink
+              to="/app/help"
+              onClick={onNavigate}
+              title={t('nav.help')}
+              aria-label={t('nav.help')}
+              className={({ isActive }) =>
+                `flex size-7 shrink-0 items-center justify-center rounded-lg transition ${
+                  isActive
+                    ? 'bg-amber-500/10 text-amber-600'
+                    : 'text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600'
+                }`
+              }
+            >
+              <IconHelp className="size-4" />
+            </NavLink>
+          )}
 
           {showCollapse && (
             <button
@@ -510,7 +484,7 @@ export function AppShell() {
               aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
               aria-expanded={!collapsed}
               className={`flex shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-200/70 hover:text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
-                collapsed ? 'size-6' : 'size-7'
+                collapsed ? 'h-11 w-full' : 'size-7'
               }`}
             >
               {collapsed ? (
@@ -533,7 +507,7 @@ export function AppShell() {
           saling menutup di layar kecil. */}
       {isDesktop && (
         <div
-          className={`fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 lg:block ${
+          className={`fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 ease-out lg:block ${
             isSidebarCollapsed ? 'w-16' : 'w-60'
           }`}
         >
@@ -578,7 +552,7 @@ export function AppShell() {
       )}
 
       <div
-        className={`transition-[padding] duration-200 ${
+        className={`transition-[padding] duration-200 ease-out ${
           isSidebarCollapsed ? 'lg:pl-16' : 'lg:pl-60'
         }`}
       >

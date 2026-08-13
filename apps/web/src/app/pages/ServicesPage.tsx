@@ -1,0 +1,1066 @@
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
+import {
+  Button,
+  Dialog,
+  DialogHeader,
+  DropdownMenu,
+  DropdownMenuItem,
+  InputGroup,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  MultiSelector,
+  NumberInput,
+  Pagination,
+  Selector,
+  SelectorOption,
+  Skeleton,
+  StatusDot,
+  Switch,
+  Table,
+  TextArea,
+  TextInput,
+  Tokenizer,
+  paginateData,
+  pixel,
+  proportional,
+  useTablePagination,
+  useTableSelection,
+  useTableSelectionState,
+  type SearchableItem,
+  type SearchSource,
+  type TableColumn,
+} from '@astryxdesign/core';
+
+import { ApiError, apiFetch } from '../../lib/api';
+import { errorMessage } from '../../lib/errors';
+import type { StaffRecord } from '../../lib/staff';
+import {
+  type CreateServicePayload,
+  type ServiceRecord,
+  type UpdateServicePayload,
+  formatServiceDuration,
+  formatServicePrice,
+  SERVICE_CURRENCIES,
+} from '../../lib/services';
+import { useWorkspaceStore } from '../../stores/workspace';
+import {
+  IconAlertTriangle,
+  IconDotsHorizontal,
+  IconEdit,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+  IconUsers,
+} from '../shell/icons';
+import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
+
+/** Dropdown aksi per baris layanan — tombol ⋯ membuka menu (edit, hapus). */
+function ServiceActionsMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu
+      placement="below"
+      menuWidth={180}
+      isMenuOpen={open}
+      onOpenChange={setOpen}
+      button={{
+        label: t('common.moreActions'),
+        isIconOnly: true,
+        icon: <IconDotsHorizontal className="size-4" />,
+        variant: 'ghost',
+        size: 'sm',
+        style: { padding: 0 },
+      }}
+    >
+      <DropdownMenuItem
+        icon={<IconEdit className="size-4" />}
+        label={t('common.edit')}
+        onClick={onEdit}
+      />
+      <DropdownMenuItem
+        icon={<IconTrash className="size-4 text-red-500" />}
+        label={<span className="font-medium text-red-600">{t('common.delete')}</span>}
+        onClick={onDelete}
+      />
+    </DropdownMenu>
+  );
+}
+
+/** Baris tabel: ServiceRecord + index signature (Table butuh Record<string, unknown>). */
+type ServiceTableRow = ServiceRecord & Record<string, unknown>;
+
+/** Warna teks opsi filter status — selaras dengan variant StatusDot-nya. */
+const STATUS_TEXT: Record<string, string> = {
+  '': 'text-zinc-500',
+  active: 'text-emerald-600',
+  inactive: 'text-zinc-500',
+};
+
+export function ServicesPage() {
+  const { t } = useTranslation();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const queryClient = useQueryClient();
+
+  const { data, isPending, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ['services', activeWorkspaceId],
+    queryFn: () => apiFetch<{ services: ServiceRecord[] }>('/services'),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+
+  // Staf (untuk chip nama di kolom staf + opsi MultiSelector) — di-fetch paralel.
+  const { data: staffData } = useQuery({
+    queryKey: ['staff', activeWorkspaceId],
+    queryFn: () => apiFetch<{ staff: StaffRecord[] }>('/staff'),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+
+  const servicesList = data?.services ?? [];
+  const activeStaff = (staffData?.staff ?? []).filter((staff) => staff.isActive);
+  const staffNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const staff of staffData?.staff ?? []) map.set(staff.id, staff.name);
+    return map;
+  }, [staffData]);
+
+  const isAuthExpiry = error instanceof ApiError && error.status === 401;
+  const showError = isError && !isAuthExpiry;
+
+  // ── Filter layanan — dipersist di URL agar bisa dibagikan ──
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const searchFilter = searchParams.get('q') ?? '';
+  const rawStatus = searchParams.get('status') ?? '';
+  const statusFilter = rawStatus === 'active' || rawStatus === 'inactive' ? rawStatus : '';
+  // Kategori multi-select — di-persist sebagai parameter URL berulang (?category=a&category=b).
+  const categoryFilter = useMemo(() => searchParams.getAll('category').sort(), [searchParams]);
+  const categoryKey = categoryFilter.join('\u0000');
+  const hasFilters = Boolean(searchFilter.trim() || statusFilter || categoryFilter.length > 0);
+
+  const [debouncedSearch, setDebouncedSearch] = useState(searchFilter);
+  const [debouncedStatus, setDebouncedStatus] = useState(statusFilter);
+  const [debouncedCategory, setDebouncedCategory] = useState<string[]>(categoryFilter);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchFilter);
+      setDebouncedStatus(statusFilter);
+      setDebouncedCategory(categoryFilter);
+      setPage(1);
+      setSelectedKeys(new Set());
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFilter, statusFilter, categoryKey]);
+
+  const setFilter = (key: 'q' | 'status', value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  // Multi-kategori: tulis semua nilai sekaligus (hapus lalu append berulang).
+  const setCategoryFilter = (values: string[]) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('category');
+        for (const value of values) next.append('category', value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const resetFilters = () => {
+    setSearchParams(
+      (prev) => {
+        prev.delete('q');
+        prev.delete('status');
+        prev.delete('category');
+        return prev;
+      },
+      { replace: true },
+    );
+  };
+
+  // Kategori unik dari SELURUH daftar layanan (tak terfilter) — opsi Selector
+  // tetap stabil meski filter lain sedang aktif.
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const service of servicesList) for (const category of service.category ?? []) set.add(category);
+    return [...set].sort();
+  }, [servicesList]);
+
+  // Sumber pencarian Tokenizer kategori — kandidat dari kategori yang sudah ada.
+  // `hasCreate` di komponen menambah token baru dari teks bebas (Enter).
+  const categorySource = useMemo<SearchSource<SearchableItem>>(
+    () => ({
+      search: (query) => {
+        const q = query.trim().toLowerCase();
+        return categoryOptions
+          .filter((category) => !q || category.toLowerCase().includes(q))
+          .map((category) => ({ id: category, label: category }));
+      },
+      bootstrap: () => categoryOptions.map((category) => ({ id: category, label: category })),
+    }),
+    [categoryOptions],
+  );
+
+  // Filter client-side: cari (nama/deskripsi/kategori) + status + kategori.
+  const filteredList = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    return servicesList.filter((service) => {
+      if (debouncedStatus === 'active' && !service.isActive) return false;
+      if (debouncedStatus === 'inactive' && service.isActive) return false;
+      if (debouncedCategory.length > 0) {
+        const serviceCategories = service.category ?? [];
+        if (!debouncedCategory.some((category) => serviceCategories.includes(category))) return false;
+      }
+      if (q) {
+        const haystack = [service.name, service.description, ...(service.category ?? [])]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [servicesList, debouncedSearch, debouncedStatus, debouncedCategory]);
+
+  // ── Dialog tambah layanan ─────────────────────────────────
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addDescription, setAddDescription] = useState('');
+  const [addDuration, setAddDuration] = useState(60);
+  const [addPrice, setAddPrice] = useState<number | null>(null);
+  const [addCurrency, setAddCurrency] = useState<string>('IDR');
+  const [addCategories, setAddCategories] = useState<string[]>([]);
+  const [addStaffIds, setAddStaffIds] = useState<string[]>([]);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const closeAdd = () => {
+    setIsAddOpen(false);
+    setAddError(null);
+  };
+  const openAdd = () => {
+    setAddName('');
+    setAddDescription('');
+    setAddDuration(60);
+    setAddPrice(null);
+    setAddCurrency('IDR');
+    setAddCategories([]);
+    setAddStaffIds([]);
+    setAddError(null);
+    setIsAddOpen(true);
+  };
+
+  const addMutation = useMutation({
+    mutationFn: (payload: CreateServicePayload) =>
+      apiFetch<{ service: ServiceRecord }>('/services', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      closeAdd();
+      queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+    },
+    onError: (err) => setAddError(errorMessage(err, t, 'errors.saveService')),
+  });
+
+  const submitAdd = (event: FormEvent) => {
+    event.preventDefault();
+    if (!addName.trim()) {
+      setAddError(t('services.nameRequired'));
+      return;
+    }
+    setAddError(null);
+    addMutation.mutate({
+      name: addName.trim(),
+      description: addDescription.trim() || undefined,
+      durationMinutes: addDuration,
+      priceMinor: addPrice === null ? null : Math.round(addPrice * 100),
+      currency: addCurrency,
+      category: addCategories.length > 0 ? addCategories : undefined,
+      staffIds: addStaffIds,
+    });
+  };
+
+  // ── Dialog edit layanan ────────────────────────────────────
+  const [editing, setEditing] = useState<ServiceRecord | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editDuration, setEditDuration] = useState(60);
+  const [editPrice, setEditPrice] = useState<number | null>(null);
+  const [editCurrency, setEditCurrency] = useState('USD');
+  const [editCategories, setEditCategories] = useState<string[]>([]);
+  const [editStaffIds, setEditStaffIds] = useState<string[]>([]);
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEdit = (service: ServiceRecord) => {
+    setEditing(service);
+    setEditName(service.name);
+    setEditDescription(service.description ?? '');
+    setEditDuration(service.durationMinutes);
+    setEditPrice(service.priceMinor === null ? null : service.priceMinor / 100);
+    setEditCurrency(service.currency);
+    setEditCategories(service.category ?? []);
+    setEditStaffIds(service.staffIds);
+    setEditIsActive(service.isActive);
+    setEditError(null);
+  };
+
+  const editMutation = useMutation({
+    mutationFn: (payload: UpdateServicePayload) =>
+      apiFetch<{ service: ServiceRecord }>(`/services/${editing?.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      setEditing(null);
+      queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
+    },
+    onError: (err) => setEditError(errorMessage(err, t, 'errors.saveService')),
+  });
+
+  const submitEdit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!editing || !editName.trim()) return;
+    setEditError(null);
+    editMutation.mutate({
+      name: editName.trim(),
+      description: editDescription.trim() || null,
+      durationMinutes: editDuration,
+      priceMinor: editPrice === null ? null : Math.round(editPrice * 100),
+      currency: editCurrency,
+      category: editCategories.length > 0 ? editCategories : null,
+      isActive: editIsActive,
+      staffIds: editStaffIds,
+    });
+  };
+
+  // ── Hapus layanan ──────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<ServiceRecord | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiFetch(`/services/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      setDeleteError(null);
+      queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
+    },
+    onError: (err) => {
+      setDeleteTarget(null);
+      setDeleteError(errorMessage(err, t, 'errors.deleteService'));
+    },
+  });
+
+  // ── Tampilan tabel: pagination client-side (mirror StaffPage) ──
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const visibleRows = useMemo<ServiceTableRow[]>(
+    () => paginateData(filteredList, page, pageSize) as ServiceTableRow[],
+    [filteredList, page, pageSize],
+  );
+
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const resetSelection = () => setSelectedKeys(new Set());
+
+  const { selectionConfig } = useTableSelectionState({
+    data: visibleRows,
+    idKey: 'id',
+    selectedKeys,
+    setSelectedKeys,
+  });
+  const selectionPlugin = useTableSelection({
+    ...selectionConfig,
+    getRowLabel: (service) => service.name,
+  });
+
+  const paginationPlugin = useTablePagination<ServiceTableRow>({
+    page,
+    onPageChange: setPage,
+    totalItems: filteredList.length,
+    pageSize,
+    position: 'none',
+    align: 'end',
+  });
+
+  const changePageSize = (value: string) => {
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0 || next === pageSize) return;
+    setPageSize(next);
+    setPage(1);
+    resetSelection();
+  };
+
+  // ── Aksi bulk (seleksi baris) — PATCH isActive / DELETE per id ──
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, isActive }: { ids: string[]; isActive: boolean }) =>
+      Promise.all(
+        ids.map((id) =>
+          apiFetch(`/services/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isActive }),
+          }),
+        ),
+      ),
+    onMutate: () => setBulkError(null),
+    onSuccess: () => {
+      resetSelection();
+      queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
+    },
+    onError: (err) => setBulkError(errorMessage(err, t, 'errors.saveService')),
+  });
+
+  const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      Promise.all(ids.map((id) => apiFetch(`/services/${id}`, { method: 'DELETE' }))),
+    onMutate: () => setBulkError(null),
+    onSuccess: () => {
+      setBulkDeleteIds(null);
+      resetSelection();
+      queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
+    },
+    onError: (err) => {
+      setBulkDeleteIds(null);
+      setBulkError(errorMessage(err, t, 'errors.deleteService'));
+    },
+  });
+
+  const lastPage = filteredList.length ? Math.max(1, Math.ceil(filteredList.length / pageSize)) : 1;
+  useEffect(() => {
+    if (filteredList.length > 0 && page > lastPage) setPage(lastPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredList.length, page, lastPage, pageSize]);
+
+  /** Kolom tabel layanan — data-driven; aksi baris memakai handler dialog di atas. */
+  const serviceColumns = useMemo<TableColumn<ServiceTableRow>[]>(() => [
+    {
+      key: 'service',
+      header: t('services.colService'),
+      width: proportional(3),
+      renderCell: (service) => (
+        <span className="block min-w-0 truncate text-base font-semibold text-zinc-900">
+          {service.name}
+        </span>
+      ),
+    },
+    {
+      key: 'duration',
+      header: t('services.colDuration'),
+      width: pixel(110),
+      renderCell: (service) => (
+        <span className="block min-w-0 text-base text-zinc-600">
+          {formatServiceDuration(service.durationMinutes)}
+        </span>
+      ),
+    },
+    {
+      key: 'price',
+      header: t('services.colPrice'),
+      width: proportional(2),
+      renderCell: (service) => {
+        const price = formatServicePrice(service.priceMinor, service.currency);
+        return (
+          <span className="block min-w-0 text-base text-zinc-600">
+            {price ?? <span className="text-zinc-300">—</span>}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'category',
+      header: t('services.colCategory'),
+      width: proportional(2),
+      renderCell: (service) =>
+        service.category && service.category.length > 0 ? (
+          <span className="inline-flex max-w-full items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-sm font-medium text-zinc-600">
+            <span className="truncate">{service.category.join(', ')}</span>
+          </span>
+        ) : (
+          <span className="text-sm text-zinc-300">—</span>
+        ),
+    },
+    {
+      key: 'staff',
+      header: t('services.colStaff'),
+      width: proportional(2),
+      renderCell: (service) =>
+        service.staffIds.length === 0 ? (
+          <span className="text-sm text-zinc-400">{t('services.noStaffHint')}</span>
+        ) : (
+          <span className="flex flex-wrap gap-1">
+            {service.staffIds.map((staffId) => (
+              <span
+                key={staffId}
+                className="inline-flex max-w-[10rem] items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-sm font-medium text-zinc-600"
+              >
+                <span className="truncate">{staffNameById.get(staffId) ?? '?'}</span>
+              </span>
+            ))}
+          </span>
+        ),
+    },
+    {
+      key: 'actions',
+      header: t('services.colActions'),
+      width: pixel(72),
+      align: 'end',
+      renderCell: (service) => (
+        <span className="flex items-center justify-end">
+          <ServiceActionsMenu
+            onEdit={() => openEdit(service)}
+            onDelete={() => setDeleteTarget(service)}
+          />
+        </span>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t, staffNameById]);
+
+  return (
+    <div className="space-y-8">
+      <PageHeader title={t('services.title')} description={t('services.description')} icon={IconUsers}>
+        <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
+        <button
+          type="button"
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+        >
+          <IconPlus className="size-4" />
+          {t('services.add')}
+        </button>
+      </PageHeader>
+
+      {/* Filter bar — mirror StaffPage: cari layanan + status + kategori. */}
+      {!isPending && !isError && data && servicesList.length > 0 && (
+        <Card className="p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <div className="min-w-0 flex-1">
+              <TextInput
+                label={t('services.colService')}
+                placeholder={t('services.searchPlaceholder')}
+                value={searchFilter}
+                onChange={(value) => setFilter('q', value)}
+                startIcon={<IconSearch className="size-4" />}
+                width="100%"
+              />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <Selector
+                label={t('common.status')}
+                options={[
+                  {
+                    value: '',
+                    label: t('services.allStatuses'),
+                    icon: <StatusDot variant="neutral" label={t('services.allStatuses')} />,
+                  },
+                  {
+                    value: 'active',
+                    label: t('services.active'),
+                    icon: <StatusDot variant="success" label={t('services.active')} />,
+                  },
+                  {
+                    value: 'inactive',
+                    label: t('services.inactive'),
+                    icon: <StatusDot variant="neutral" label={t('services.inactive')} />,
+                  },
+                ]}
+                value={statusFilter}
+                onChange={(value) => setFilter('status', value ?? '')}
+                width="100%"
+                renderOption={(option) => (
+                  <SelectorOption
+                    icon={option.icon}
+                    label={
+                      <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500'}>
+                        {option.label}
+                      </span>
+                    }
+                  />
+                )}
+              />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <MultiSelector
+                label={t('services.colCategory')}
+                placeholder={t('services.allCategories')}
+                options={categoryOptions.map((category) => ({ value: category, label: category }))}
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                hasSearch
+                searchPlaceholder={t('services.searchCategories')}
+                hasSelectAll
+                selectAllLabel={t('services.allCategories')}
+                hasClear
+                triggerDisplay="count"
+                width="100%"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 lg:ml-auto">
+              {hasFilters && (
+                <Button
+                  label={t('services.resetFilter')}
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                />
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {deleteError && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {deleteError}
+        </p>
+      )}
+
+      {showError && (
+        <Card className="flex flex-col items-center gap-4 p-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+            <IconAlertTriangle className="size-6" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.servicesLoadTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {error instanceof ApiError ? t('errors.apiStatus', { status: error.status }) : t('errors.apiConnection')}
+            </p>
+          </div>
+          <Button label={t('common.retry')} variant="primary" onClick={() => void refetch()} />
+        </Card>
+      )}
+
+      {isPending && (
+        <Card className="divide-y divide-zinc-100">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 p-4">
+              <Skeleton width={40} height={40} radius={4} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton width="40%" height={14} />
+                <Skeleton width="66%" height={12} />
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {!isPending && !isError && data && (
+        <>
+          {servicesList.length === 0 ? (
+            <EmptyState
+              icon={IconUsers}
+              title={t('services.emptyTitle')}
+              description={t('services.emptyDesc')}
+              action={{ label: t('services.add'), onClick: openAdd }}
+            />
+          ) : filteredList.length === 0 ? (
+            <EmptyState
+              icon={IconUsers}
+              title={t('services.emptyFilteredTitle')}
+              description={t('services.emptyFilteredDesc')}
+              action={{ label: t('services.resetFilter'), onClick: resetFilters }}
+            />
+          ) : (
+            <>
+              {selectedKeys.size > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-medium text-zinc-800">
+                      {t('services.selectedCount', { count: selectedKeys.size })}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        label={t('services.activate')}
+                        variant="secondary"
+                        size="sm"
+                        isDisabled={bulkStatusMutation.isPending}
+                        isLoading={bulkStatusMutation.isPending}
+                        onClick={() =>
+                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: true })
+                        }
+                      />
+                      <Button
+                        label={t('services.deactivate')}
+                        variant="secondary"
+                        size="sm"
+                        isDisabled={bulkStatusMutation.isPending}
+                        isLoading={bulkStatusMutation.isPending}
+                        onClick={() =>
+                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: false })
+                        }
+                      />
+                      <Button
+                        label={t('common.delete')}
+                        variant="destructive"
+                        size="sm"
+                        isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        onClick={() => setBulkDeleteIds([...selectedKeys])}
+                      />
+                      <Button
+                        label={t('services.clearSelection')}
+                        variant="ghost"
+                        size="sm"
+                        isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        onClick={resetSelection}
+                      />
+                    </div>
+                  </div>
+                  {bulkError && (
+                    <p role="alert" className="mt-3 text-sm text-red-600">{bulkError}</p>
+                  )}
+                </div>
+              )}
+
+              <Card
+                variant="transparent"
+                className="overflow-hidden"
+                style={{
+                  borderTop: '1px solid #e4e4e7',
+                  borderBottom: '1px solid #e4e4e7',
+                  '--_card-radius': '0px',
+                }}
+              >
+                <Table
+                  data={visibleRows}
+                  columns={serviceColumns}
+                  idKey="id"
+                  density="balanced"
+                  dividers="none"
+                  hasHover
+                  textOverflow="truncate"
+                  plugins={{ selection: selectionPlugin, pagination: paginationPlugin }}
+                />
+              </Card>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-500">
+                    {t('services.rowsPerPage')}
+                  </span>
+                  <Selector
+                    label={t('services.rowsPerPage')}
+                    isLabelHidden
+                    placement="above"
+                    width={88}
+                    options={[10, 25, 50, 100].map((n) => ({
+                      value: String(n),
+                      label: String(n),
+                    }))}
+                    value={String(pageSize)}
+                    onChange={changePageSize}
+                  />
+                </div>
+                <p className="text-sm text-zinc-400">
+                  <Trans
+                    i18nKey="services.showingRows"
+                    values={{ shown: visibleRows.length, total: filteredList.length }}
+                    components={{ strong: <strong className="font-bold text-black" /> }}
+                  />
+                </p>
+                <Pagination
+                  page={page}
+                  onChange={setPage}
+                  totalItems={filteredList.length}
+                  pageSize={pageSize}
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Dialog tambah layanan */}
+      <Dialog isOpen={isAddOpen} onOpenChange={(open) => { if (!open) closeAdd(); }} purpose="info" width={560}>
+        <Layout
+          header={
+            <DialogHeader
+              title={t('services.addTitle')}
+              subtitle={t('services.addSubtitle')}
+              onOpenChange={(open) => { if (!open) closeAdd(); }}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              <form id="add-service-form" onSubmit={submitAdd} className="space-y-5">
+                <TextInput
+                  label={t('common.name')}
+                  placeholder={t('services.namePlaceholder')}
+                  value={addName}
+                  onChange={setAddName}
+                  isRequired
+                />
+                <TextArea
+                  label={t('services.descriptionLabel')}
+                  placeholder={t('services.descriptionPlaceholder')}
+                  value={addDescription}
+                  onChange={setAddDescription}
+                  isOptional
+                  rows={2}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <NumberInput
+                    label={t('services.duration')}
+                    description={t('services.durationDesc')}
+                    value={addDuration}
+                    onChange={(value) => setAddDuration(value ?? 60)}
+                    min={5}
+                    max={720}
+                    width="100%"
+                  />
+                  <InputGroup
+                    label={t('services.price')}
+                    description={t('services.priceDesc')}
+                    isOptional
+                    className="w-full"
+                  >
+                    <Selector
+                      label={t('services.currency')}
+                      isLabelHidden
+                      options={SERVICE_CURRENCIES.map((code) => ({ value: code, label: code }))}
+                      value={addCurrency}
+                      onChange={(value) => setAddCurrency(value ?? 'IDR')}
+                      style={{ flex: '0 0 auto', width: 'fit-content' }}
+                    />
+                    <NumberInput
+                      label={t('services.price')}
+                      isLabelHidden
+                      value={addPrice}
+                      onChange={(value) => setAddPrice(value ?? null)}
+                      min={0}
+                      step={0.01}
+                      hasClear
+                      width="100%"
+                    />
+                  </InputGroup>
+                </div>
+                <Tokenizer
+                  label={t('services.category')}
+                  placeholder={t('services.categoryPlaceholder')}
+                  description={t('services.categoryDesc')}
+                  searchSource={categorySource}
+                  value={addCategories.map((category) => ({ id: category, label: category }))}
+                  onChange={(items) => setAddCategories(items.map((item) => item.label))}
+                  isOptional
+                  hasCreate
+                  hasEntriesOnFocus
+                  width="100%"
+                />
+                <MultiSelector
+                  label={t('services.staff')}
+                  description={t('services.staffDesc')}
+                  placeholder={t('services.staffPlaceholder')}
+                  options={activeStaff.map((staff) => ({ value: staff.id, label: staff.name }))}
+                  value={addStaffIds}
+                  onChange={setAddStaffIds}
+                  hasSearch
+                  searchPlaceholder={t('services.searchStaff')}
+                  triggerDisplay="badges"
+                  maxBadges={3}
+                  hasClear
+                  width="100%"
+                />
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {addError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{addError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button label={t('common.cancel')} variant="ghost" onClick={closeAdd} isDisabled={addMutation.isPending} />
+                <Button
+                  label={t('common.save')}
+                  variant="primary"
+                  type="submit"
+                  form="add-service-form"
+                  isLoading={addMutation.isPending}
+                />
+              </div>
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
+
+      {/* Dialog edit layanan */}
+      <Dialog isOpen={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }} purpose="info" width={560}>
+        <Layout
+          header={
+            <DialogHeader
+              title={t('services.editTitle')}
+              subtitle={editing?.name}
+              onOpenChange={(open) => { if (!open) setEditing(null); }}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              <form id="edit-service-form" onSubmit={submitEdit} className="space-y-5">
+                <TextInput
+                  label={t('common.name')}
+                  placeholder={t('services.namePlaceholder')}
+                  value={editName}
+                  onChange={setEditName}
+                  isRequired
+                />
+                <TextArea
+                  label={t('services.descriptionLabel')}
+                  placeholder={t('services.descriptionPlaceholder')}
+                  value={editDescription}
+                  onChange={setEditDescription}
+                  isOptional
+                  rows={2}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <NumberInput
+                    label={t('services.duration')}
+                    description={t('services.durationDesc')}
+                    value={editDuration}
+                    onChange={(value) => setEditDuration(value ?? 60)}
+                    min={5}
+                    max={720}
+                    width="100%"
+                  />
+                  <InputGroup
+                    label={t('services.price')}
+                    description={t('services.priceDesc')}
+                    isOptional
+                    className="w-full"
+                  >
+                    <Selector
+                      label={t('services.currency')}
+                      isLabelHidden
+                      options={SERVICE_CURRENCIES.map((code) => ({ value: code, label: code }))}
+                      value={editCurrency}
+                      onChange={(value) => setEditCurrency(value ?? 'USD')}
+                      style={{ flex: '0 0 auto', width: 'fit-content' }}
+                    />
+                    <NumberInput
+                      label={t('services.price')}
+                      isLabelHidden
+                      value={editPrice}
+                      onChange={(value) => setEditPrice(value ?? null)}
+                      min={0}
+                      step={0.01}
+                      hasClear
+                      width="100%"
+                    />
+                  </InputGroup>
+                </div>
+                <Tokenizer
+                  label={t('services.category')}
+                  placeholder={t('services.categoryPlaceholder')}
+                  description={t('services.categoryDesc')}
+                  searchSource={categorySource}
+                  value={editCategories.map((category) => ({ id: category, label: category }))}
+                  onChange={(items) => setEditCategories(items.map((item) => item.label))}
+                  isOptional
+                  hasCreate
+                  hasEntriesOnFocus
+                  width="100%"
+                />
+                <MultiSelector
+                  label={t('services.staff')}
+                  description={t('services.staffDesc')}
+                  placeholder={t('services.staffPlaceholder')}
+                  options={activeStaff.map((staff) => ({ value: staff.id, label: staff.name }))}
+                  value={editStaffIds}
+                  onChange={setEditStaffIds}
+                  hasSearch
+                  searchPlaceholder={t('services.searchStaff')}
+                  triggerDisplay="badges"
+                  maxBadges={3}
+                  hasClear
+                  width="100%"
+                />
+                <Switch
+                  label={t('services.active')}
+                  description={t('services.activeDesc')}
+                  value={editIsActive}
+                  onChange={setEditIsActive}
+                />
+              </form>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {editError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{editError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button label={t('common.cancel')} variant="ghost" onClick={() => setEditing(null)} isDisabled={editMutation.isPending} />
+                <Button
+                  label={t('common.save')}
+                  variant="primary"
+                  type="submit"
+                  form="edit-service-form"
+                  isLoading={editMutation.isPending}
+                />
+              </div>
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
+
+      {/* Dialog hapus layanan */}
+      <ConfirmDialog
+        isOpen={deleteTarget !== null || bulkDeleteIds !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setBulkDeleteIds(null);
+          }
+        }}
+        title={
+          bulkDeleteIds
+            ? t('services.bulkDeleteTitle', { count: bulkDeleteIds.length })
+            : t('services.deleteTitle')
+        }
+        description={
+          bulkDeleteIds
+            ? t('services.bulkDeleteDesc', { count: bulkDeleteIds.length })
+            : t('services.deleteDesc', { name: deleteTarget?.name ?? '' })
+        }
+        actionLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        isActionLoading={deleteMutation.isPending || bulkDeleteMutation.isPending}
+        onAction={() => {
+          if (bulkDeleteIds) {
+            bulkDeleteMutation.mutate(bulkDeleteIds);
+          } else if (deleteTarget) {
+            deleteMutation.mutate(deleteTarget.id);
+          }
+        }}
+      />
+
+    </div>
+  );
+}

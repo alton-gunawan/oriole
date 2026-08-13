@@ -65,6 +65,31 @@ async function main(): Promise<void> {
   const secret = webhookSecret ?? crypto.randomUUID();
   const webhookUrl = readArg('url') ?? `${apiUrl}/api/webhooks/telegram/${workspaceId}`;
 
+  // Telegram mensyaratkan URL HTTPS publik — gagal cepat dengan pesan jelas
+  // sebelum memanggil api.telegram.org (error asli "bad webhook" membingungkan).
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(webhookUrl);
+  } catch {
+    console.error(`Webhook URL tidak valid: ${webhookUrl}`);
+    process.exit(1);
+  }
+  const host = parsedUrl.hostname.toLowerCase();
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    host.endsWith('.localhost');
+  if (parsedUrl.protocol !== 'https:' || isLocal) {
+    console.error(
+      `Webhook Telegram membutuhkan URL HTTPS publik yang dapat diakses internet (saat ini: ${webhookUrl}).\n` +
+        `Setel API_URL (atau berikan --url) ke URL publik Anda — mis. https://api.domain.com. ` +
+        `localhost / alamat internal tidak dapat dijangkau Telegram.`,
+    );
+    process.exit(1);
+  }
+
   await db
     .insert(workspaceChannels)
     .values({

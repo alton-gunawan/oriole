@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Badge, Button, TextArea } from '@astryxdesign/core';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Button, DropdownMenu, DropdownMenuItem, TextArea } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '../../lib/api';
@@ -14,19 +14,45 @@ import {
 } from '../../lib/messaging';
 import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTimeFull } from '../../i18n/format';
-import { IconAlertTriangle, IconArrowRight, IconChat, IconMail, IconSend } from '../shell/icons';
+import {
+  IconArrowRight,
+  IconChat,
+  IconCheck,
+  IconFilter,
+  IconGmail,
+  IconMail,
+  IconSend,
+  IconTelegram,
+  IconWhatsApp,
+} from '../shell/icons';
 import { Card, EmptyState, PageHeader } from '../shell/ui';
 
-const CHANNEL_STYLE: Record<string, string> = {
-  telegram: 'bg-sky-500/10 text-sky-600',
-  whatsapp: 'bg-emerald-500/10 text-emerald-600',
-  email: 'bg-amber-500/10 text-amber-600',
+/** Warna solid per channel — dipakai badge titik pada tombol filter channel. */
+const CHANNEL_DOT: Record<string, string> = {
+  telegram: '#0284c7',
+  whatsapp: '#059669',
+  email: '#d97706',
 };
 
-function ChannelBadge({ channelType }: { channelType: string }) {
+/** Urutan item menu filter channel (All tampil terpisah di atas). */
+const CHANNEL_ORDER: InboxConversation['channelType'][] = ['telegram', 'whatsapp', 'email'];
+
+/** Ikon merek per channel (dari svgl.app) — dipakai item menu filter. */
+const CHANNEL_ICON: Record<InboxConversation['channelType'], ReactNode> = {
+  telegram: <IconTelegram className="size-4" />,
+  whatsapp: <IconWhatsApp className="size-4" />,
+  email: <IconGmail className="size-4" />,
+};
+
+/** Logo channel dalam lingkaran kecil di pojok kanan bawah avatar — pengganti
+ *  teks nama channel (ChannelBadge) di list & thread chat. */
+function ChannelAvatarBadge({ channelType }: { channelType: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold ${CHANNEL_STYLE[channelType] ?? 'bg-zinc-500/10 text-zinc-500'}`}>
-      {channelLabel(channelType)}
+    <span
+      className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-zinc-200"
+      aria-hidden="true"
+    >
+      {CHANNEL_ICON[channelType] ?? null}
     </span>
   );
 }
@@ -47,6 +73,11 @@ export function InboxPage() {
   const [sending, setSending] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // Filter channel: null = semua channel. Tombol funnel di sebelah input
+  // pencarian membuka menu pilihan channel; badge titik pada tombol
+  // mengikuti warna channel aktif.
+  const [channelFilter, setChannelFilter] = useState<InboxConversation['channelType'] | null>(null);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
   const loadList = useCallback(async () => {
@@ -144,55 +175,126 @@ export function InboxPage() {
     }
   };
 
-  const unreadTotal = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
-  const attentionCount = conversations.filter((c) => c.needsAttention).length;
-
   const query = searchQuery.trim().toLowerCase();
-  const visibleConversations = query
-    ? conversations.filter((c) =>
-        [c.customerName, c.externalId, c.bookingTitle, c.preview?.content]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(query)),
-      )
-    : conversations;
+  // Filter channel + pencarian berlaku bersamaan (keduanya AND).
+  const visibleConversations = conversations.filter((conversation) => {
+    if (channelFilter && conversation.channelType !== channelFilter) return false;
+    if (!query) return true;
+    return [conversation.customerName, conversation.externalId, conversation.bookingTitle, conversation.preview?.content]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
 
-  // Header dipakai dua kali: mobile di atas daftar, desktop di kolom kanan.
+  // Label & tooltip tombol funnel — menampilkan channel aktif bila difilter.
+  const filterLabel = channelFilter
+    ? t('inbox.filterActive', { channel: channelLabel(channelFilter) })
+    : t('inbox.filterByChannel');
+
+  // Header halaman — kini tampil di atas inputan search di kolom daftar
+  // percakapan (mobile & desktop), bukan lagi di kolom kanan.
   const pageHeader = (
     <PageHeader
       title={t('inbox.title')}
       description={t('inbox.description')}
-    >
-      {unreadTotal > 0 && (
-        <Badge variant="success" label={t('inbox.unread', { count: unreadTotal })} />
-      )}
-      {attentionCount > 0 && (
-        <Badge variant="warning" label={t('inbox.attention', { count: attentionCount })} />
-      )}
-    </PageHeader>
+      icon={IconChat}
+    />
   );
 
   return (
     <div className="space-y-6 lg:space-y-0">
-      {/* Header — mobile saja (desktop: judul pindah ke kolom kanan). */}
-      <div className="lg:hidden">{pageHeader}</div>
-
-      {/* ── Daftar percakapan — desktop: kolom FIXED penuh tinggi tepat di
-          sebelah sidebar aplikasi (left-60 = lebar sidebar; inset-y-0 = tinggi
-          penuh viewport), border hanya di kanan, background putih. Di bawah
-          lg kembali menjadi kartu biasa dalam alur halaman. ── */}
+      {/* ── Daftar percakapan + header halaman — kolom FIXED penuh tinggi tepat
+          di sebelah sidebar aplikasi (left-60 = lebar sidebar; inset-y-0 =
+          tinggi penuh viewport). Header halaman diletakkan DI ATAS inputan
+          search name/number (mobile & desktop). Di bawah lg kembali menjadi
+          kartu biasa dalam alur halaman. ── */}
       <aside
         aria-label={t('inbox.title')}
-        className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-60 lg:z-30 lg:w-[340px] lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-l-0 lg:border-r lg:border-zinc-200"
+        className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-60 lg:z-30 lg:w-[calc(38vw-9rem)] lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-l-0 lg:border-r lg:border-zinc-200"
       >
+          {/* Header halaman — di atas inputan search name/number. */}
+          <div className="border-b border-zinc-100 px-4 py-4">
+            {pageHeader}
+          </div>
+
           <div className="border-b border-zinc-100 px-4 py-3">
-            <div className="relative">
-              <input
-                aria-label={t('inbox.searchLabel')}
-                placeholder={t('inbox.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-500/10"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <input
+                  aria-label={t('inbox.searchLabel')}
+                  placeholder={t('inbox.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-500/10"
+                />
+              </div>
+              {/* Tombol filter channel — membuka menu pilihan channel (ikon
+                  merek per item). Badge titik berwarna channel aktif tampil
+                  di pojok tombol. */}
+              <DropdownMenu
+                placement="below"
+                menuWidth={200}
+                isMenuOpen={filterMenuOpen}
+                onOpenChange={setFilterMenuOpen}
+                button={{
+                  label: filterLabel,
+                  isIconOnly: true,
+                  variant: 'ghost',
+                  size: 'sm',
+                  icon: (
+                    <span className="relative inline-flex">
+                      <IconFilter className="size-4" />
+                      {channelFilter && (
+                        <span
+                          className="absolute -right-1.5 -top-1.5 size-2.5 rounded-full ring-2 ring-white"
+                          style={{ backgroundColor: CHANNEL_DOT[channelFilter] }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </span>
+                  ),
+                  // Selaras dengan input pencarian (border + bg zinc-50).
+                  style: {
+                    padding: 0,
+                    width: 36,
+                    height: 36,
+                    borderRadius: '0.5rem',
+                    border: '1px solid #e4e4e7',
+                    backgroundColor: '#fafafa',
+                  },
+                }}
+              >
+                <DropdownMenuItem
+                  icon={<IconFilter className="size-4" />}
+                  label={
+                    <span className={channelFilter === null ? 'font-medium text-zinc-900' : ''}>
+                      {t('inbox.allChannels')}
+                    </span>
+                  }
+                  endContent={
+                    channelFilter === null ? (
+                      <IconCheck className="size-4 text-emerald-600" />
+                    ) : undefined
+                  }
+                  onClick={() => setChannelFilter(null)}
+                />
+                {CHANNEL_ORDER.map((channel) => (
+                  <DropdownMenuItem
+                    key={channel}
+                    icon={CHANNEL_ICON[channel]}
+                    label={
+                      <span className={channelFilter === channel ? 'font-medium text-zinc-900' : ''}>
+                        {channelLabel(channel)}
+                      </span>
+                    }
+                    endContent={
+                      channelFilter === channel ? (
+                        <IconCheck className="size-4 text-emerald-600" />
+                      ) : undefined
+                    }
+                    onClick={() => setChannelFilter(channel)}
+                  />
+                ))}
+              </DropdownMenu>
             </div>
           </div>
 
@@ -206,8 +308,10 @@ export function InboxPage() {
                 </p>
               </div>
             )}
-            {query && visibleConversations.length === 0 && (
-              <p className="p-6 text-center text-xs text-zinc-400">{t('inbox.noSearchResults')}</p>
+            {(query || channelFilter) && visibleConversations.length === 0 && (
+              <p className="p-6 text-center text-xs text-zinc-400">
+                {channelFilter && !query ? t('inbox.noChannelResults') : t('inbox.noSearchResults')}
+              </p>
             )}
             {listError && <p className="p-6 text-center text-xs text-red-600">{listError}</p>}
 
@@ -219,12 +323,19 @@ export function InboxPage() {
                     <button
                       type="button"
                       onClick={() => void openThread(conversation.id)}
-                      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition ${
-                        selected ? 'bg-amber-500/5' : 'hover:bg-zinc-50'
+                      className={`flex w-full items-start gap-3 border-l-2 px-4 py-3 text-left transition ${
+                        selected ? 'border-amber-500' : 'border-transparent'
+                      } ${
+                        conversation.needsAttention
+                          ? 'bg-orange-50 hover:bg-orange-100'
+                          : selected
+                            ? 'bg-amber-500/5'
+                            : 'hover:bg-zinc-50'
                       }`}
                     >
                       <span className="relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
                         {(conversation.customerName ?? conversation.externalId ?? '?').slice(0, 1).toUpperCase()}
+                        <ChannelAvatarBadge channelType={conversation.channelType} />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
@@ -237,14 +348,11 @@ export function InboxPage() {
                             </span>
                           )}
                         </span>
-                        <span className="mt-0.5 flex items-center gap-1.5">
-                          <ChannelBadge channelType={conversation.channelType} />
-                          {conversation.bookingTitle && (
-                            <span className="truncate text-xs text-zinc-400">
-                              {conversation.bookingTitle}
-                            </span>
-                          )}
-                        </span>
+                        {conversation.bookingTitle && (
+                          <span className="mt-0.5 block truncate text-xs text-zinc-400">
+                            {conversation.bookingTitle}
+                          </span>
+                        )}
                         <span className="mt-1 block truncate text-xs text-zinc-500">
                           {conversation.preview
                             ? `${conversation.preview.direction === 'outbound' ? t('inbox.youPrefix') : ''}${conversation.preview.content}`
@@ -252,11 +360,6 @@ export function InboxPage() {
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-1">
-                        {conversation.needsAttention && (
-                          <span className="flex items-center gap-1 rounded-md bg-orange-50 px-1.5 py-0.5 text-xs font-semibold text-orange-600">
-                            <IconAlertTriangle className="size-3" /> {t('inbox.attentionBadge')}
-                          </span>
-                        )}
                         {conversation.unreadCount > 0 && (
                           <span className="flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-zinc-950">
                             {conversation.unreadCount}
@@ -277,15 +380,13 @@ export function InboxPage() {
           </div>
       </aside>
 
-      {/* ── Kolom kanan: judul (desktop) + thread. pl-[308px] memberi ruang
-          untuk kolom fixed di kiri (left-60 240px + w-[340px] = 580px; dikurangi
-          padding kiri main 32px → 308px): pas di viewport sempit, aman (tidak
-          tertutup) di viewport lebar. ── */}
-      <div className="min-w-0 space-y-6 lg:pl-[308px]">
-        <div className="hidden lg:block">{pageHeader}</div>
-
+      {/* ── Kolom kanan: thread FULLSCREEN. Pada desktop area setelah sidebar
+          (15rem) dibagi ~38% untuk daftar dan sisanya untuk thread. Padding
+          kiri menjaga alur halaman tetap sejajar dengan panel daftar fixed.
+          Mobile: kartu tetap berada dalam alur halaman biasa. ── */}
+      <div className="min-w-0 lg:pl-[calc(38vw-11rem)]">
         {/* ── Thread ── */}
-        <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden">
+        <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-[calc(38vw+6rem)] lg:right-0 lg:z-20 lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-0">
           {!selectedId ? (
             <div className="flex flex-1 items-center justify-center p-10">
               <div className="text-center">
@@ -311,23 +412,18 @@ export function InboxPage() {
               {/* Header thread */}
               <div className="border-b border-zinc-100 px-5 py-3.5">
                 <div className="flex items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
+                  <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
                     {(thread.conversation.customerName ?? thread.conversation.externalId ?? '?').slice(0, 1).toUpperCase()}
+                    <ChannelAvatarBadge channelType={thread.conversation.channelType} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-zinc-900">
                       {thread.conversation.customerName ?? thread.conversation.externalId}
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
-                      <ChannelBadge channelType={thread.conversation.channelType} />
                       <span className="text-xs text-zinc-400">{thread.conversation.externalId}</span>
                     </div>
                   </div>
-                  {thread.conversation.needsAttention && (
-                    <span className="flex items-center gap-1 rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-600">
-                      <IconAlertTriangle className="size-3.5" /> {t('inbox.attentionBadge')}
-                    </span>
-                  )}
                 </div>
 
                 {thread.booking && (
@@ -411,12 +507,17 @@ export function InboxPage() {
         </Card>
       </div>
 
+      {/* Empty state halaman hanya untuk mobile — di desktop daftar kosong
+          sudah terwakili panel kiri ("No conversations") + placeholder chat
+          kanan; kartu besar ini akan tertutup panel fixed chat. */}
       {loaded && conversations.length === 0 && (
-        <EmptyState
-          icon={IconMail}
-          title={t('inbox.emptyStateTitle')}
-          description={t('inbox.emptyStateDesc')}
-        />
+        <div className="lg:hidden">
+          <EmptyState
+            icon={IconMail}
+            title={t('inbox.emptyStateTitle')}
+            description={t('inbox.emptyStateDesc')}
+          />
+        </div>
       )}
     </div>
   );
@@ -433,7 +534,9 @@ function MessageBubble({ message }: { message: InboxMessage }) {
             : 'rounded-tr-sm bg-amber-500 text-zinc-950'
         }`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {/* `ph-no-capture`: isi pesan inbox = PII customer — jangan pernah
+            ter-capture autocapture/session replay PostHog. */}
+        <p className="whitespace-pre-wrap break-words ph-no-capture">{message.content}</p>
         <p className={`mt-1 text-right text-xs ${inbound ? 'text-zinc-400' : 'text-zinc-900/60'}`}>
           {formatMessageTime(message.createdAt)}
         </p>

@@ -25,7 +25,7 @@ import { IconAlertTriangle, IconCheck, IconCreditCard, IconRefreshCw } from './i
 
 /* ── Types (mirror dari GET /api/billing) ──────────────────── */
 
-type PlanId = 'free' | 'pro';
+type PlanId = 'free' | 'pro' | 'business';
 
 interface PlanInfo {
   id: PlanId;
@@ -33,6 +33,7 @@ interface PlanInfo {
   pricePerMonth: number;
   callsPerMonth: number;
   minutesPerMonth: number;
+  inboundNumbersIncluded: number;
   features: string[];
 }
 
@@ -40,6 +41,8 @@ interface BillingResponse {
   paddleConfigured: boolean;
   plan: PlanId;
   planInfo: PlanInfo;
+  /** Semua paket (free → pro → business) untuk tabel perbandingan. */
+  plans: PlanInfo[];
   usage: { totalCalls: number; monthCalls: number; totalSeconds: number };
   subscription: {
     status: string;
@@ -153,18 +156,38 @@ export function BillingDialog({
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
   const showError = isError && !isAuthExpiry;
 
-  const runAction = async (kind: 'checkout' | 'portal') => {
+  const failAction = (err: unknown) => {
+    // apiFetch sudah mengekstrak `detail` (alasan asli, mis. dari Paddle)
+    // bila ada — tampilkan apa adanya.
+    const message = err instanceof Error ? err.message : t('errors.billingAction');
+    setActionError(message);
+    setActionBusy(null);
+  };
+
+  /** Checkout paket berbayar (pro | business) → redirect ke Paddle. */
+  const runCheckout = async (target: 'pro' | 'business') => {
     setActionError(null);
-    setActionBusy(kind);
+    setActionBusy('checkout');
     try {
-      const { url } = await apiFetch<{ url: string }>(`/billing/${kind}`, { method: 'POST' });
+      const { url } = await apiFetch<{ url: string }>('/billing/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ plan: target }),
+      });
       window.location.assign(url);
     } catch (err) {
-      // apiFetch sudah mengekstrak `detail` (alasan asli, mis. dari Paddle)
-      // bila ada — tampilkan apa adanya.
-      const message = err instanceof Error ? err.message : t('errors.billingAction');
-      setActionError(message);
-      setActionBusy(null);
+      failAction(err);
+    }
+  };
+
+  /** Portal billing Paddle (kelola langganan / pembayaran). */
+  const runPortal = async () => {
+    setActionError(null);
+    setActionBusy('portal');
+    try {
+      const { url } = await apiFetch<{ url: string }>('/billing/portal', { method: 'POST' });
+      window.location.assign(url);
+    } catch (err) {
+      failAction(err);
     }
   };
 
@@ -211,7 +234,7 @@ export function BillingDialog({
                     <p className="mt-0.5 [&_code]:rounded [&_code]:bg-amber-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs">
                       <Trans i18nKey="billing.notConfiguredBody">
                         Fill in <code>PADDLE_API_KEY</code>, <code>PADDLE_CLIENT_TOKEN</code>, and{' '}
-                        <code>PADDLE_PRO_PRICE_ID</code> in <code>.env</code> to enable checkout & portal. Info below shows default status.
+                        <code>PADDLE_PRO_PRICE_ID</code> / <code>PADDLE_BUSINESS_PRICE_ID</code> in <code>.env</code> to enable checkout & portal. Info below shows default status.
                       </Trans>
                     </p>
                   </div>
@@ -354,20 +377,20 @@ export function BillingDialog({
                       {t('billing.comparePlans')}
                     </h2>
                     <Card className="overflow-x-auto">
-                      <table className="w-full min-w-[560px] text-left text-sm">
+                      <table className="w-full min-w-[640px] text-left text-sm">
                         <thead>
                           <tr className="border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-400">
                             <th className="px-5 py-3.5 font-semibold">{t('billing.feature')}</th>
-                            {(['free', 'pro'] as const).map((id) => {
+                            {data.plans.map((p) => {
                               return (
                                 <th
-                                  key={id}
+                                  key={p.id}
                                   className={`px-5 py-3.5 font-semibold ${
-                                    data.plan === id ? 'text-amber-600' : ''
+                                    data.plan === p.id ? 'text-amber-600' : ''
                                   }`}
                                 >
-                                  {id === 'free' ? t('billing.free') : t('billing.pro')}
-                                  {data.plan === id && (
+                                  {p.name}
+                                  {data.plan === p.id && (
                                     <Badge variant="warning" label={t('billing.active')} className="ml-2" />
                                   )}
                                 </th>
@@ -378,28 +401,54 @@ export function BillingDialog({
                         <tbody className="divide-y divide-zinc-100">
                           <tr>
                             <td className="px-5 py-3 text-zinc-600">{t('billing.price')}</td>
-                            <td className="px-5 py-3 font-semibold text-zinc-900">{t('billing.free')}</td>
-                            <td className="px-5 py-3 font-semibold text-zinc-900">{t('billing.pricePro')}</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 font-semibold text-zinc-900">
+                                {formatPrice(p.pricePerMonth)}
+                                <span className="text-xs font-medium text-zinc-400">
+                                  {t('common.perMonth')}
+                                </span>
+                              </td>
+                            ))}
                           </tr>
                           <tr>
                             <td className="px-5 py-3 text-zinc-600">{t('billing.aiCallsPerMonth')}</td>
-                            <td className="px-5 py-3 text-zinc-900">10</td>
-                            <td className="px-5 py-3 text-zinc-900">500</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                                {formatNumber(p.callsPerMonth)}
+                              </td>
+                            ))}
                           </tr>
                           <tr>
                             <td className="px-5 py-3 text-zinc-600">{t('billing.minutesPerMonth')}</td>
-                            <td className="px-5 py-3 text-zinc-900">30</td>
-                            <td className="px-5 py-3 text-zinc-900">2.000</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                                {formatNumber(p.minutesPerMonth)}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="px-5 py-3 text-zinc-600">{t('billing.inboundReceptionist')}</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                                {p.inboundNumbersIncluded > 0 ? t('billing.oneNumberIncluded') : '—'}
+                              </td>
+                            ))}
                           </tr>
                           <tr>
                             <td className="px-5 py-3 text-zinc-600">{t('billing.callHistory')}</td>
-                            <td className="px-5 py-3 text-zinc-900">{t('billing.days30')}</td>
-                            <td className="px-5 py-3 text-zinc-900">{t('billing.unlimited')}</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                                {p.id === 'free' ? t('billing.days30') : t('billing.unlimited')}
+                              </td>
+                            ))}
                           </tr>
                           <tr>
                             <td className="px-5 py-3 text-zinc-600">{t('billing.support')}</td>
-                            <td className="px-5 py-3 text-zinc-900">{t('billing.community')}</td>
-                            <td className="px-5 py-3 text-zinc-900">{t('billing.priority')}</td>
+                            {data.plans.map((p) => (
+                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                                {p.id === 'free' ? t('billing.community') : t('billing.priority')}
+                              </td>
+                            ))}
                           </tr>
                         </tbody>
                       </table>
@@ -427,14 +476,28 @@ export function BillingDialog({
                   variant="secondary"
                   isLoading={actionBusy === 'portal'}
                   isDisabled={!data.paddleConfigured || !data.subscription || actionBusy !== null}
-                  onClick={() => void runAction('portal')}
+                  onClick={() => void runPortal()}
                 />
                 <Button
-                  label={actionBusy === 'checkout' ? t('billing.preparing') : data.plan === 'pro' ? t('billing.changePlan') : t('billing.upgradePro')}
+                  label={
+                    actionBusy !== null
+                      ? actionBusy === 'checkout'
+                        ? t('billing.preparing')
+                        : t('billing.openingPortal')
+                      : data.plan === 'free'
+                        ? t('billing.upgradePro')
+                        : data.plan === 'pro'
+                          ? t('billing.upgradeBusiness')
+                          : t('billing.changePlan')
+                  }
                   variant="primary"
-                  isLoading={actionBusy === 'checkout'}
+                  isLoading={actionBusy !== null}
                   isDisabled={!data.paddleConfigured || actionBusy !== null}
-                  onClick={() => void runAction('checkout')}
+                  onClick={() =>
+                    void (data.plan === 'business'
+                      ? runPortal()
+                      : runCheckout(data.plan === 'free' ? 'pro' : 'business'))
+                  }
                 />
               </div>
             </LayoutFooter>

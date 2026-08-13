@@ -1,7 +1,7 @@
 # Multi-Channel Messaging — Architecture & Ops Runbook
 
 Oriole mengirim reminder & menerima balasan customer lewat **Telegram**, **WhatsApp**,
-dan **email**, ter-orchestrasi dari satu pipeline yang sama dengan CALL-E.
+dan **email**, ter-orchestrasi dari satu pipeline yang sama dengan panggilan AI (Vapi).
 
 Keputusan arsitektur (dikunci saat riset):
 
@@ -45,8 +45,8 @@ Tabel baru (migrasi `0003` + `0004`):
   `needsAttention`); `unreadCount` + `lastMessageAt` untuk inbox.
 - `messages` — riwayat pesan; dedup per (conversation, provider_message_id).
 - `workspaces.reminder_lead_minutes` — lead time reminder per project (default 120 menit).
-- `workspaces.call_goal_language` — bahasa panggilan CALL-E (default `en`; `id` disiapkan).
-- `workspaces.auto_call_enabled` + `workspaces.auto_call_lead_hours` — auto-call CALL-E otomatis per project (default mati; lead default 24 jam sebelum jadwal). Migrasi: `drizzle.gen/0005_brave_vivisector.sql`.
+- `workspaces.call_goal_language` — bahasa panggilan AI / Vapi (default `en`; `id` disiapkan).
+- `workspaces.auto_call_enabled` + `workspaces.auto_call_lead_hours` — auto-call Vapi otomatis per project (default mati; lead default 24 jam sebelum jadwal). Migrasi: `drizzle.gen/0005_brave_vivisector.sql`.
 
 ### Apply migrasi (di mesin normal, sandbox tidak bisa menulis `drizzle/`)
 
@@ -79,6 +79,27 @@ pnpm --filter @oriole/api setup:telegram --workspace <workspaceId> --token <BOT_
 
 Hanya butuh `DATABASE_URL` + `API_URL` (bukan env API lengkap).
 
+### Dev mode: tunnel + webhook otomatis (`pnpm dev`)
+
+Di development, `pnpm dev` menjalankan `pnpm dev:services` lebih dulu
+(`apps/api/src/scripts/dev-services.ts`, **dev only** — di-skip saat
+`NODE_ENV=production`), yang otomatis:
+
+1. Menghidupkan **Cloudflare quick tunnel** (`cloudflared` → URL `*.trycloudflare.com`)
+   jika `WEBHOOK_BASE_URL` kosong / masih trycloudflare. URL permanen milik Anda
+   tidak diganggu.
+2. Menyinkronkan `WEBHOOK_BASE_URL` di root `.env` (URL quick tunnel berubah
+   tiap restart) dan **mendaftarkan ulang webhook Telegram** (`setWebhook`,
+   secret lama dipertahankan) untuk semua channel workspace.
+3. Menghidupkan **Inngest Dev Server** (localhost:8288) bila belum jalan.
+
+Jebakan DNS: hostname quick tunnel butuh waktu hingga ~1 menit untuk propagate
+ke resolver publik. Script menunggu DNS hangat (lokal + 8.8.8.8 + 1.1.1.1)
+sebelum `setWebhook` pertama — bila tetap gagal (resolver Telegram meng-cache
+NXDOMAIN), tunnel otomatis **dirotasi** ke URL baru. State tunnel disimpan di
+`node_modules/.cache/oriole/tunnel.json` agar `pnpm dev` berikutnya me-reuse
+tunnel yang masih hidup. Jalankan ulang hanya `pnpm dev:services` bila perlu.
+
 ### Via UI
 
 1. Buat bot di [@BotFather](https://t.me/BotFather) → dapatkan token.
@@ -87,6 +108,25 @@ Hanya butuh `DATABASE_URL` + `API_URL` (bukan env API lengkap).
    secret acak (`setWebhook`).
 3. Webhook URL: `{API_URL}/api/webhooks/telegram/{workspaceId}` (tampil di UI,
    bisa disalin). Secret `X-Telegram-Bot-Api-Secret-Token` diverifikasi pada tiap request.
+
+### Linking chat → booking (nomor HP)
+
+Bot Telegram tidak pernah menerima nomor telepon user secara otomatis. Alur linking:
+
+1. User chat pertama kali → bot minta nomor HP dengan **reply keyboard sekali pakai
+   `request_contact`** (tombol "📱 Bagikan Nomor") — nomor yang dikirim Telegram
+   **verified** (lengkap kode negara, tanpa typo) dan merupakan consent eksplisit.
+   Ketikan manual tetap didukung sebagai fallback (state `awaiting-phone`).
+2. Nomor (dari `message.contact.phone_number` → intent `contact`, atau dari teks)
+   dicocokkan secara kanonik (+62 / 62 / 0812) dengan **booking aktif** saja
+   (`findActiveBookingByPhone`, status pending/confirmed) — mencegah klaim nomor
+   customer lain. Cocok → `customer_channels` dibuat/update (opt-in) + chat ter-link.
+3. Nomor valid **tanpa booking aktif** → bot TIDAK membalas "nomor tidak cocok";
+   ia menandai percakapan `needsAttention` (terlihat staf di inbox) dan mengarahkan
+   ke **form booking terintegrasi** (Google Forms/Tally) bila ada — customer yang
+   ingin booking dari awal langsung bisa. Tanpa form → balasan handoff
+   (`renderNoFormReply`). Input yang bukan nomor valid → bot minta ulang dengan
+   tombol request_contact (bukan penolakan).
 
 ## 4. Setup WhatsApp (360dialog)
 
@@ -126,16 +166,26 @@ INNGEST_SIGNING_KEY=
 Tanpa `INNGEST_EVENT_KEY`, `inngest.send` butuh **Dev Server** lokal:
 
 ```bash
-npx inngest-cli dev
+pnpm --filter @oriole/api dev:inngest
+# ≡ inngest-cli dev -u http://localhost:3000/api/inngest
 ```
 
-Reminder tidak akan jalan tanpa fungsi `remindBooking` terdaftar (lihat
-`apps/api/src/inngest/functions.ts`).
+**Alternatif satu-perintah (disarankan):** overlay compose di
+`deploy/waha/docker-compose.dev.yml` menjalankan WAHA + API + Inngest Dev
+Server sekaligus di container — tanpa terminal `dev:inngest` terpisah
+(lihat `deploy/waha/README.md` → "Full stack in one command").
+
+⚠️ **Tanpa Dev Server ini, pipeline WhatsApp BYO (WAHA) TIDAK berfungsi:**
+webhook `message` memanggil `inngest.send` → koneksi ditolak → API balas 503
+(WAHA me-retry dengan envelope id yang sama, jadi pesan tidak hilang — begitu
+server hidup, retry diproses). Dev Server juga wajib agar fungsi `remindBooking`
+dkk. terdaftar (lihat `apps/api/src/inngest/functions.ts`).
 
 ## 6. Endpoint API
 
 | Method | Path | Keterangan |
 |---|---|---|
+| GET | `/api/health/inngest` | Health pipeline Inngest (`{ status: ok\|down, mode, baseUrl }`) — UI menampilkan peringatan saat down (webhook pesan membalas 503 diam-diam) |
 | GET | `/api/channels` | Status channel + webhook URL (tanpa kredensial) |
 | POST | `/api/channels/telegram/setup` | Validasi token + setWebhook |
 | POST | `/api/channels/telegram/rewebhook` | Re-register webhook |
@@ -172,6 +222,28 @@ Setup channel dibatasi rate limit 10/menit.
 - [ ] Idempotensi: webhook dedup di `webhook_events`; balasan bot dedup via
       `metadata.replyToUpdateId` / `replyToWamid`; reminder guard status di
       Inngest (booking dibatalkan = tidak dikirim).
+
+## 7b. Integrasi form booking: Tally (pengganti Typeform)
+
+Form submission → kontak + booking otomatis didukung oleh **Google Forms**
+(polling) dan **Tally** (webhook real-time). Tally menggantikan Typeform
+sepenuhnya:
+
+- **Connect** (halaman Integrations): tempel API key Tally (sekali) → pilih
+  form → webhook `FORM_RESPONSE` didaftarkan otomatis via `POST /webhooks`
+  (Tally tidak menyediakan OAuth — API key Bearer adalah satu-satunya auth).
+  Pintasan "Get your API key" di dialog mengarah ke `tally.so/settings/api-keys`.
+- **Webhook masuk**: `POST /api/webhooks/tally/:workspaceId`, verifikasi header
+  `Tally-Signature` (base64 HMAC-SHA256 raw body, `signingSecret`), idempotent
+  per `submissionId` (tabel `webhook_events`).
+- **Mapping field**: tipe `INPUT_PHONE_NUMBER`/`INPUT_EMAIL`/`INPUT_DATE`/
+  `INPUT_TIME` dipakai langsung; nama/catatan/layanan heuristic judul — sama
+  dengan Google Forms. Pilihan (multiple choice dll.) di-resolve ke teks option.
+- **Migrasi dari Typeform**: migration DB `0022` mengubah baris
+  `workspace_integrations` dengan `integration_type = 'typeform'` menjadi
+  `'tally'` dalam keadaan NONAKTIF (`provider_config = {"migratedFrom":"typeform"}`)
+  — API key Typeform lama tidak bisa dipakai Tally. UI menampilkan banner
+  "migrated" dan workspace tinggal hubungkan ulang dengan API key Tally.
 
 ## 8. Extension point berikutnya
 

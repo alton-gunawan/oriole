@@ -1,169 +1,320 @@
-import { describe, expect, it } from 'vitest';
-import {
-  aggregateBookingsByMonth,
-  aggregateBookingStatus,
-  aggregateCallOutcomes,
-  aggregateMessagesByChannel,
-  buildFunnel,
-  countNeedsAttention,
-  countThisMonth,
-  monthKey,
-  type BookingRow,
-  type CallRow,
-  type ConversationRow,
-  type MessageRow,
-} from './analytics.ts';
+import { afterEach, describe, expect, it } from 'vitest';
 
-// Waktu tetap: 2026-07-15 → 12 bulan terakhir = Agu 2025 … Jul 2026.
-const NOW = new Date('2026-07-15T12:00:00.000Z');
+// Env wajib (dibaca env.ts saat modul di-import). POSTHOG_PUBLIC_KEY sengaja
+// TIDAK disetel — default sink = null (analitik nonaktif); test yang butuh
+// sink menyuntikkan fake via setAnalyticsSinkForTests. Import modul dilakukan
+// secara dinamis SETELAH env disetel (ESM hoist import statis ke atas).
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/oriole_test';
+process.env.NEON_AUTH_URL = 'https://ep-test.neon.tech/neondb/auth';
+process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
+process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
+process.env.RESEND_API_KEY = 're_test';
+process.env.VAPI_API_KEY = 'vapi_test';
+process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
 
-function booking(status: string, createdAt: Date): BookingRow {
-  return { status, createdAt };
+const {
+  captureBookingEvent,
+  captureCallEvent,
+  captureEvent,
+  captureException,
+  captureIntegrationEvent,
+  capturePaymentEvent,
+  captureWorkspaceEvent,
+  flushAnalytics,
+  getFeatureFlagValue,
+  getSink,
+  isAnalyticsEnabled,
+  setAnalyticsSinkForTests,
+  shutdownAnalytics,
+} = await import('./analytics.ts');
+import type { AnalyticsEventPayload, AnalyticsSink, FlagsSnapshot } from './analytics.ts';
+
+/** Sink fiktif yang merekam semua event — tanpa jaringan ke PostHog. */
+class FakeSink implements AnalyticsSink {
+  captured: AnalyticsEventPayload[] = [];
+  exceptions: { error: unknown; distinctId: string; properties?: Record<string, unknown> }[] = [];
+  flushCalls = 0;
+  shutdownCalls = 0;
+  /** Nilai flag per key (boolean = on/off; undefined = flag tidak ada). */
+  flags: Record<string, string | boolean> = {};
+  /** true → evaluateFlags melempar (simulasi PostHog down). */
+  flagError = false;
+  flagCalls: { distinctId: string; groups?: Record<string, string>; flagKeys?: string[] }[] = [];
+
+  capture(payload: AnalyticsEventPayload): void {
+    this.captured.push(payload);
+  }
+  captureException(error: unknown, distinctId: string, properties?: Record<string, unknown>): void {
+    this.exceptions.push({ error, distinctId, properties });
+  }
+  async evaluateFlags(
+    distinctId: string,
+    options?: { groups?: Record<string, string>; flagKeys?: string[] },
+  ): Promise<FlagsSnapshot> {
+    this.flagCalls.push({ distinctId, groups: options?.groups, flagKeys: options?.flagKeys });
+    if (this.flagError) throw new Error('posthog down');
+    return {
+      isEnabled: (key) => this.flags[key] === true,
+      getFlag: (key) => this.flags[key],
+      getFlagPayload: () => undefined,
+    };
+  }
+  async flush(): Promise<void> {
+    this.flushCalls += 1;
+  }
+  async shutdown(): Promise<void> {
+    this.shutdownCalls += 1;
+  }
 }
 
-function call(status: string | null, createdAt: Date): CallRow {
-  return { status, createdAt };
-}
-
-function message(channel: string, direction: string): MessageRow {
-  return { channel, direction };
-}
-
-describe('monthKey & lastTwelveMonths', () => {
-  it('monthKey memformat YYYY-MM dengan nol depan', () => {
-    expect(monthKey(new Date('2026-01-05T00:00:00.000Z'))).toBe('2026-01');
-    expect(monthKey(new Date('2026-11-05T00:00:00.000Z'))).toBe('2026-11');
-  });
-});
-
-describe('aggregateBookingsByMonth', () => {
-  it('mengisi 12 bulan terakhir dengan nol untuk bulan kosong', () => {
-    const rows = [booking('confirmed', new Date('2026-07-01T00:00:00.000Z'))];
-    const result = aggregateBookingsByMonth(rows, NOW);
-
-    expect(result).toHaveLength(12);
-    expect(result[0]).toEqual({ month: '2025-08', count: 0 });
-    expect(result[11]).toEqual({ month: '2026-07', count: 1 });
+describe('analytics (server-side PostHog)', () => {
+  afterEach(() => {
+    // Reset cache sink antar test (undefined → dibuat ulang dari env saat
+    // dipakai; env tanpa key → null, jadi tidak ada klien PostHog dibuat).
+    setAnalyticsSinkForTests(undefined);
   });
 
-  it('menjumlahkan booking di bulan yang sama', () => {
-    const rows = [
-      booking('confirmed', new Date('2026-03-01T00:00:00.000Z')),
-      booking('cancelled', new Date('2026-03-20T00:00:00.000Z')),
-      booking('pending', new Date('2026-03-31T00:00:00.000Z')),
-    ];
-    const result = aggregateBookingsByMonth(rows, NOW);
-    const march = result.find((row) => row.month === '2026-03');
-    expect(march?.count).toBe(3);
+  it('tanpa POSTHOG_PUBLIC_KEY → sink null, semua helper no-op aman', async () => {
+    expect(isAnalyticsEnabled).toBe(false);
+    expect(getSink()).toBeNull();
+    expect(() => captureEvent({ event: 'x', distinctId: 'u' })).not.toThrow();
+    expect(() => captureException(new Error('x'), 'u')).not.toThrow();
+    await expect(flushAnalytics()).resolves.toBeUndefined();
+    await expect(shutdownAnalytics()).resolves.toBeUndefined();
   });
 
-  it('mengabaikan booking di luar 12 bulan terakhir', () => {
-    const rows = [booking('confirmed', new Date('2024-01-01T00:00:00.000Z'))];
-    const result = aggregateBookingsByMonth(rows, NOW);
-    expect(result.every((row) => row.count === 0)).toBe(true);
-  });
-});
-
-describe('aggregateBookingStatus', () => {
-  it('mengelompokkan berdasarkan status', () => {
-    const rows = [
-      booking('confirmed', NOW),
-      booking('confirmed', NOW),
-      booking('cancelled', NOW),
-      booking('completed', NOW),
-    ];
-    const result = aggregateBookingStatus(rows);
-    expect(result).toEqual(
-      expect.arrayContaining([
-        { status: 'confirmed', count: 2 },
-        { status: 'cancelled', count: 1 },
-        { status: 'completed', count: 1 },
-      ]),
-    );
-  });
-});
-
-describe('buildFunnel', () => {
-  it('funnel menurun: created ≥ confirmed ≥ completed', () => {
-    const rows = [
-      booking('confirmed', NOW),
-      booking('completed', NOW),
-      booking('cancelled', NOW),
-      booking('pending', NOW),
-    ];
-    const funnel = buildFunnel(rows);
-    expect(funnel).toEqual([
-      { step: 'created', count: 4 },
-      { step: 'confirmed', count: 2 },
-      { step: 'completed', count: 1 },
-    ]);
+  it('sink null dipaksa → captureEvent no-op tanpa throw', () => {
+    setAnalyticsSinkForTests(null);
+    expect(getSink()).toBeNull();
+    expect(() => captureEvent({ event: 'x', distinctId: 'u' })).not.toThrow();
   });
 
-  it('workspace kosong → funnel semua nol', () => {
-    expect(buildFunnel([])).toEqual([
-      { step: 'created', count: 0 },
-      { step: 'confirmed', count: 0 },
-      { step: 'completed', count: 0 },
-    ]);
-  });
-});
+  it('captureEvent meneruskan payload apa adanya ke sink', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
 
-describe('aggregateCallOutcomes', () => {
-  it('null status dikelompokkan sebagai unknown', () => {
-    const rows = [
-      call('completed', NOW),
-      call('completed', NOW),
-      call('failed', NOW),
-      call(null, NOW),
-    ];
-    const result = aggregateCallOutcomes(rows);
-    expect(result).toEqual(
-      expect.arrayContaining([
-        { status: 'completed', count: 2 },
-        { status: 'failed', count: 1 },
-        { status: 'unknown', count: 1 },
-      ]),
-    );
-  });
-});
+    captureEvent({
+      event: 'test.event',
+      distinctId: 'u-1',
+      properties: { a: 1 },
+      groups: { workspace: 'ws-1' },
+    });
 
-describe('aggregateMessagesByChannel', () => {
-  it('memecah inbound/outbound per channel', () => {
-    const rows = [
-      message('telegram', 'inbound'),
-      message('telegram', 'inbound'),
-      message('telegram', 'outbound'),
-      message('whatsapp', 'outbound'),
-    ];
-    const result = aggregateMessagesByChannel(rows);
-    expect(result).toEqual(
-      expect.arrayContaining([
-        { channel: 'telegram', inbound: 2, outbound: 1 },
-        { channel: 'whatsapp', inbound: 0, outbound: 1 },
-      ]),
-    );
+    expect(sink.captured).toHaveLength(1);
+    expect(sink.captured[0]).toMatchObject({
+      event: 'test.event',
+      distinctId: 'u-1',
+      properties: { a: 1 },
+      groups: { workspace: 'ws-1' },
+    });
   });
-});
 
-describe('countNeedsAttention', () => {
-  it('menghitung percakapan dengan state.needsAttention', () => {
-    const rows: ConversationRow[] = [
-      { state: { needsAttention: true } },
-      { state: { needsAttention: false } },
-      { state: null },
-      { state: { step: 'awaiting-time' } },
-    ];
-    expect(countNeedsAttention(rows)).toBe(1);
+  it('captureBookingEvent → group workspace + properti no-PII, distinctId = userId', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    captureBookingEvent('booking.created', {
+      workspaceId: 'ws-1',
+      bookingId: 'b-1',
+      userId: 'u-1',
+      source: 'manual',
+      goalType: 'booking-reminder',
+      status: 'pending',
+    });
+
+    const ev = sink.captured[0];
+    expect(ev.event).toBe('booking.created');
+    expect(ev.distinctId).toBe('u-1');
+    expect(ev.groups).toEqual({ workspace: 'ws-1' });
+    expect(ev.properties).toMatchObject({
+      booking_id: 'b-1',
+      source: 'manual',
+      goal_type: 'booking-reminder',
+      status: 'pending',
+    });
+    // PII tidak boleh pernah masuk properti event.
+    expect(ev.properties).not.toHaveProperty('phone');
+    expect(ev.properties).not.toHaveProperty('email');
+    expect(ev.properties).not.toHaveProperty('customer_name');
   });
-});
 
-describe('countThisMonth', () => {
-  it('hanya menghitung baris pada bulan berjalan', () => {
-    const rows = [
-      booking('confirmed', new Date('2026-07-01T00:00:00.000Z')),
-      booking('pending', new Date('2026-07-31T00:00:00.000Z')),
-      booking('pending', new Date('2026-06-30T00:00:00.000Z')),
-    ];
-    expect(countThisMonth(rows, NOW)).toBe(2);
+  it('captureBookingEvent tanpa userId → distinctId fallback workspace:* (system)', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    captureBookingEvent('booking.completed', {
+      workspaceId: 'ws-1',
+      bookingId: 'b-1',
+      status: 'completed',
+    });
+
+    expect(sink.captured[0].distinctId).toBe('workspace:ws-1');
+    expect(sink.captured[0].groups).toEqual({ workspace: 'ws-1' });
+  });
+
+  it('captureCallEvent → durasi + status + id + ended_reason, group workspace', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    captureCallEvent('call.completed', {
+      workspaceId: 'ws-1',
+      bookingId: 'b-1',
+      callId: 'call-1',
+      status: 'completed',
+      goalType: 'booking-reminder',
+      durationSeconds: 42,
+      endedReason: 'customer-ended-call',
+    });
+
+    const ev = sink.captured[0];
+    expect(ev.event).toBe('call.completed');
+    expect(ev.distinctId).toBe('workspace:ws-1');
+    expect(ev.properties).toMatchObject({
+      booking_id: 'b-1',
+      call_id: 'call-1',
+      status: 'completed',
+      goal_type: 'booking-reminder',
+      duration_seconds: 42,
+      ended_reason: 'customer-ended-call',
+    });
+  });
+
+  it('captureWorkspaceEvent → template category + industry', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    captureWorkspaceEvent('workspace.created', {
+      userId: 'u-1',
+      workspaceId: 'ws-1',
+      templateCategory: 'salon',
+      industry: 'beauty',
+    });
+
+    const ev = sink.captured[0];
+    expect(ev.event).toBe('workspace.created');
+    expect(ev.distinctId).toBe('u-1');
+    expect(ev.groups).toEqual({ workspace: 'ws-1' });
+    expect(ev.properties).toMatchObject({
+      workspace_id: 'ws-1',
+      template_category: 'salon',
+      industry: 'beauty',
+    });
+  });
+
+  it('captureIntegrationEvent → integration_type tanpa kredensial', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    captureIntegrationEvent('integration.connected', {
+      workspaceId: 'ws-1',
+      integrationType: 'slack',
+    });
+
+    const ev = sink.captured[0];
+    expect(ev.event).toBe('integration.connected');
+    expect(ev.properties).toEqual({
+      workspace_id: 'ws-1',
+      integration_type: 'slack',
+    });
+    expect(ev.properties).not.toHaveProperty('webhook_url');
+    expect(ev.properties).not.toHaveProperty('token');
+  });
+
+  it('capturePaymentEvent → jumlah + mata uang, group workspace', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    capturePaymentEvent('payment.completed', {
+      workspaceId: 'ws-1',
+      paymentLinkId: 'pay-1',
+      bookingId: 'b-1',
+      status: 'paid',
+      amountMinor: 25000,
+      currency: 'USD',
+    });
+
+    const ev = sink.captured[0];
+    expect(ev.event).toBe('payment.completed');
+    expect(ev.groups).toEqual({ workspace: 'ws-1' });
+    expect(ev.properties).toMatchObject({
+      payment_link_id: 'pay-1',
+      booking_id: 'b-1',
+      status: 'paid',
+      amount_minor: 25000,
+      currency: 'USD',
+    });
+  });
+
+  it('captureException → diteruskan ke sink dengan distinctId', () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+    const error = new Error('boom');
+
+    captureException(error, 'u-1', { path: '/api/x' });
+
+    expect(sink.exceptions).toHaveLength(1);
+    expect(sink.exceptions[0].error).toBe(error);
+    expect(sink.exceptions[0].distinctId).toBe('u-1');
+    expect(sink.exceptions[0].properties).toEqual({ path: '/api/x' });
+  });
+
+  it('flushAnalytics / shutdownAnalytics memanggil sink', async () => {
+    const sink = new FakeSink();
+    setAnalyticsSinkForTests(sink);
+
+    await flushAnalytics();
+    await shutdownAnalytics();
+
+    expect(sink.flushCalls).toBe(1);
+    expect(sink.shutdownCalls).toBe(1);
+  });
+
+  it('getFeatureFlagValue → sink tanpa evaluateFlags = fallback (analitik nonaktif)', async () => {
+    // Tanpa key → sink null, tanpa metode flag.
+    expect(await getFeatureFlagValue('reminders-enabled', 'ws-1', { fallback: true })).toBe(true);
+    expect(await getFeatureFlagValue('reminders-enabled', 'ws-1', { fallback: false })).toBe(false);
+  });
+
+  it('getFeatureFlagValue → nilai boolean flag menimpa fallback', async () => {
+    const sink = new FakeSink();
+    sink.flags = { 'reminders-enabled': false, 'beta-ui': true };
+    setAnalyticsSinkForTests(sink);
+
+    await expect(
+      getFeatureFlagValue('reminders-enabled', 'workspace:ws-1', {
+        groups: { workspace: 'ws-1' },
+        fallback: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      getFeatureFlagValue('beta-ui', 'workspace:ws-1', { groups: { workspace: 'ws-1' }, fallback: false }),
+    ).resolves.toBe(true);
+
+    // Satu pemanggilan /flags dengan group workspace + subset flag.
+    expect(sink.flagCalls).toHaveLength(2);
+    expect(sink.flagCalls[0]).toMatchObject({ distinctId: 'workspace:ws-1', groups: { workspace: 'ws-1' } });
+    expect(sink.flagCalls[0].flagKeys).toEqual(['reminders-enabled']);
+  });
+
+  it('getFeatureFlagValue → flag tidak ada (undefined) = fallback, bukan false', async () => {
+    const sink = new FakeSink();
+    sink.flags = {}; // tidak ada flag → getFlag undefined
+    setAnalyticsSinkForTests(sink);
+
+    // Kill-switch: flag belum dibuat TIDAK boleh mematikan fitur.
+    await expect(
+      getFeatureFlagValue('reminders-enabled', 'workspace:ws-1', { fallback: true }),
+    ).resolves.toBe(true);
+  });
+
+  it('getFeatureFlagValue → PostHog error/network gagal = fallback, tidak throw', async () => {
+    const sink = new FakeSink();
+    sink.flagError = true;
+    setAnalyticsSinkForTests(sink);
+
+    await expect(
+      getFeatureFlagValue('reminders-enabled', 'workspace:ws-1', { fallback: true }),
+    ).resolves.toBe(true);
   });
 });

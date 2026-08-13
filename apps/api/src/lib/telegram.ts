@@ -44,20 +44,34 @@ async function telegramCall(
 
 /**
  * Kirim pesan teks + tombol inline ke sebuah chat.
- * Setiap tombol ditaruh di baris sendiri agar rapi di layar sempit.
+ * Setiap tombol inline ditaruh di baris sendiri agar rapi di layar sempit.
+ *
+ * `requestContact` menampilkan reply keyboard SEKALI PAKAI dengan tombol
+ * "Bagikan Nomor" (request_contact) — dipakai alur linking chat → booking.
+ * Hanya berlaku di private chat (ditolak Telegram di group).
  */
 export async function telegramSendMessage(params: {
   token: string;
   chatId: string;
   text: string;
   buttons?: TelegramInlineButton[];
+  requestContact?: { label: string };
 }): Promise<{ messageId: number }> {
+  let replyMarkup: Record<string, unknown> | undefined;
+  if (params.buttons?.length) {
+    replyMarkup = { inline_keyboard: params.buttons.map((button) => [{ text: button.label, callback_data: button.id }]) };
+  } else if (params.requestContact) {
+    replyMarkup = {
+      keyboard: [[{ text: params.requestContact.label, request_contact: true }]],
+      one_time_keyboard: true,
+      resize_keyboard: true,
+    };
+  }
+
   const result = await telegramCall(params.token, 'sendMessage', {
     chat_id: params.chatId,
     text: params.text,
-    reply_markup: params.buttons?.length
-      ? { inline_keyboard: params.buttons.map((button) => [{ text: button.label, callback_data: button.id }]) }
-      : undefined,
+    reply_markup: replyMarkup,
   });
   return { messageId: Number(result.message_id) };
 }

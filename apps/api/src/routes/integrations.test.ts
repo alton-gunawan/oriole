@@ -1,6 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 
+import { TelnyxApiError } from '../services/telnyx.ts';
+import { VapiCredentialApiError } from '../services/vapi-credential.ts';
+
 // ── Mocks ───────────────────────────────────────────────────────
 
 // Mock jose agar requireAuth tidak perlu JWKS remote (network).
@@ -17,7 +20,64 @@ vi.mock('../lib/env.ts', () => ({
   env: {
     API_URL: 'http://localhost:3000',
     NEON_AUTH_URL: 'https://ep-test.neon.tech/neondb/auth',
+    VAPI_API_KEY: 'vapi_test_key',
+    VAPI_PHONE_NUMBER_ID: 'vapi-default-1',
   },
+}));
+
+// Mock layanan Vapi — daftar nomor phone number (dipakai blok Voice AI).
+const { listVapiPhoneNumbersMock, listOperatorVapiPhoneNumbersMock } = vi.hoisted(() => ({
+  listVapiPhoneNumbersMock: vi.fn(),
+  listOperatorVapiPhoneNumbersMock: vi.fn(),
+}));
+
+vi.mock('../services/vapi.ts', () => ({
+  listVapiPhoneNumbers: listVapiPhoneNumbersMock,
+  listOperatorVapiPhoneNumbers: listOperatorVapiPhoneNumbersMock,
+}));
+
+// Mock lib inbound — route panggilan MASUK di-stub (unit: routing + status).
+const {
+  listInboundNumbersMock,
+  registerInboundNumberForWorkspaceMock,
+  unregisterInboundNumberForWorkspaceMock,
+  InboundNumberNotFoundErrorMock,
+} = vi.hoisted(() => ({
+  listInboundNumbersMock: vi.fn(),
+  registerInboundNumberForWorkspaceMock: vi.fn(),
+  unregisterInboundNumberForWorkspaceMock: vi.fn(),
+  InboundNumberNotFoundErrorMock: class extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'InboundNumberNotFoundError';
+    }
+  },
+}));
+
+vi.mock('../lib/vapi-inbound.ts', () => ({
+  listInboundNumbers: listInboundNumbersMock,
+  registerInboundNumberForWorkspace: registerInboundNumberForWorkspaceMock,
+  unregisterInboundNumberForWorkspace: unregisterInboundNumberForWorkspaceMock,
+  InboundNumberNotFoundError: InboundNumberNotFoundErrorMock,
+}));
+
+// Mock BYOC orchestrator — semua panggilan Telnyx / kredensial Vapi di-stub.
+const { searchTelnyxByocMock, connectTelnyxByocMock, TelnyxByocNumberUnavailableErrorMock } =
+  vi.hoisted(() => ({
+    searchTelnyxByocMock: vi.fn(),
+    connectTelnyxByocMock: vi.fn(),
+    TelnyxByocNumberUnavailableErrorMock: class extends Error {
+      constructor(message: string) {
+        super(message);
+        this.name = 'TelnyxByocNumberUnavailableError';
+      }
+    },
+  }));
+
+vi.mock('../lib/telnyx-byoc.ts', () => ({
+  searchTelnyxByoc: searchTelnyxByocMock,
+  connectTelnyxByoc: connectTelnyxByocMock,
+  TelnyxByocNumberUnavailableError: TelnyxByocNumberUnavailableErrorMock,
 }));
 
 // Mock lib Notion — semua panggilan network di-stub.
@@ -114,6 +174,52 @@ vi.mock('../lib/outgoing-webhooks.ts', () => ({
   WebhookDeliveryError: WebhookDeliveryErrorMock,
 }));
 
+const { dispatchFormInvitationMock, FormSendErrorMock } = vi.hoisted(() => ({
+  dispatchFormInvitationMock: vi.fn(),
+  FormSendErrorMock: class extends Error {
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+      this.name = 'FormSendError';
+    }
+  },
+}));
+
+vi.mock('../lib/form-send.ts', () => ({
+  dispatchFormInvitation: dispatchFormInvitationMock,
+  FormSendError: FormSendErrorMock,
+}));
+
+// Mock Slack — pengiriman webhook di-stub (jangan hit network).
+const {
+  deliverSlackMessageMock,
+  sendTestSlackMock,
+  buildSlackMessageMock,
+  SlackDeliveryErrorMock,
+} = vi.hoisted(() => ({
+  deliverSlackMessageMock: vi.fn(),
+  sendTestSlackMock: vi.fn(),
+  buildSlackMessageMock: vi.fn((event: string) => ({ text: event, blocks: [] })),
+  SlackDeliveryErrorMock: class extends Error {
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+      this.name = 'SlackDeliveryError';
+    }
+  },
+}));
+
+vi.mock('../lib/slack.ts', () => ({
+  deliverSlackMessage: deliverSlackMessageMock,
+  sendTestSlack: sendTestSlackMock,
+  buildSlackMessage: buildSlackMessageMock,
+  SlackDeliveryError: SlackDeliveryErrorMock,
+}));
+
 // ── Fake Drizzle db ─────────────────────────────────────────────
 const { dbState } = vi.hoisted(() => ({
   dbState: {
@@ -164,22 +270,35 @@ vi.mock('../db/index.ts', async () => {
         from: (table: object) => makeSelectBuilder(tableNames.get(table) ?? 'unknown'),
       }),
       insert: (table: object) => ({
-        values: (values: Record<string, unknown>) => ({
+        values: (values: Record<string, unknown> | Record<string, unknown>[]) => ({
+          returning: async () => {
+            const name = tableNames.get(table) ?? 'unknown';
+            const rows = dbState.tables.get(name) ?? [];
+            const row = {
+              ...(Array.isArray(values) ? values[0] ?? {} : values),
+              id: `row-${dbState.seq++}`,
+              createdAt: NOW,
+              updatedAt: NOW,
+            };
+            rows.push(row);
+            return [row];
+          },
           onConflictDoUpdate: () => ({
             returning: async () => {
               const name = tableNames.get(table) ?? 'unknown';
               const rows = dbState.tables.get(name) ?? [];
+              const first = Array.isArray(values) ? values[0] ?? {} : values;
               const idx = rows.findIndex(
                 (r) =>
-                  r.workspaceId === values.workspaceId &&
-                  r.integrationType === values.integrationType,
+                  r.workspaceId === first.workspaceId &&
+                  r.integrationType === first.integrationType,
               );
               if (idx >= 0) {
-                const merged = { ...rows[idx], ...values, updatedAt: NOW };
+                const merged = { ...rows[idx], ...first, updatedAt: NOW };
                 rows[idx] = merged;
                 return [merged];
               }
-              const row = { ...values, id: `int-${dbState.seq++}`, createdAt: NOW, updatedAt: NOW };
+              const row = { ...first, id: `int-${dbState.seq++}`, createdAt: NOW, updatedAt: NOW };
               rows.push(row);
               return [row];
             },
@@ -201,16 +320,17 @@ vi.mock('../db/index.ts', async () => {
         }),
       }),
       delete: (table: object) => ({
-        where: () => ({
-          returning: async () => {
-            const name = tableNames.get(table) ?? 'unknown';
-            const rows = dbState.tables.get(name) ?? [];
-            const idx = rows.findIndex((r) => r.workspaceId === 'ws-1');
-            if (idx < 0) return [];
-            const [deleted] = rows.splice(idx, 1);
-            return [{ id: deleted.id }];
-          },
-        }),
+        where: () => {
+          // Hapus baris workspace ini saat where dipanggil (mendukung pola
+          // `await db.delete().where()` tanpa `.returning()`).
+          const name = tableNames.get(table) ?? 'unknown';
+          const rows = dbState.tables.get(name) ?? [];
+          const idx = rows.findIndex((r) => r.workspaceId === 'ws-1');
+          const deletedId = idx >= 0 ? (rows.splice(idx, 1)[0]?.id ?? null) : null;
+          return {
+            returning: async () => (deletedId ? [{ id: deletedId }] : []),
+          };
+        },
       }),
     },
   };
@@ -251,6 +371,23 @@ beforeEach(() => {
   getNotionUserMock.mockReset();
   listNotionDatabasesMock.mockReset();
   syncContactsToNotionMock.mockReset();
+  dispatchFormInvitationMock.mockReset();
+  listVapiPhoneNumbersMock.mockReset();
+  listVapiPhoneNumbersMock.mockResolvedValue([
+    { id: 'vapi-telnyx-1', number: '+628211111111', name: null, provider: 'telnyx' },
+    { id: 'vapi-default-1', number: '+15550000000', name: 'Default', provider: 'vapi' },
+  ]);
+  listInboundNumbersMock.mockReset();
+  listInboundNumbersMock.mockResolvedValue([]);
+  registerInboundNumberForWorkspaceMock.mockReset();
+  unregisterInboundNumberForWorkspaceMock.mockReset();
+  listOperatorVapiPhoneNumbersMock.mockReset();
+  listOperatorVapiPhoneNumbersMock.mockResolvedValue([
+    { id: 'vapi-telnyx-1', number: '+628211111111', name: null, provider: 'telnyx' },
+    { id: 'vapi-default-1', number: '+15550000000', name: 'Default', provider: 'vapi' },
+  ]);
+  searchTelnyxByocMock.mockReset();
+  connectTelnyxByocMock.mockReset();
 });
 
 describe('GET /api/integrations', () => {
@@ -472,6 +609,9 @@ beforeEach(() => {
   getGoogleCalendarMock.mockReset();
   syncBookingsToCalendarMock.mockReset();
   sendTestWebhookMock.mockReset();
+  deliverSlackMessageMock.mockReset();
+  sendTestSlackMock.mockReset();
+  buildSlackMessageMock.mockImplementation((event: string) => ({ text: event, blocks: [] }));
 });
 
 describe('POST /api/integrations/forms/preview', () => {
@@ -569,6 +709,108 @@ describe('POST /api/integrations/forms/sync', () => {
       headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
     });
     expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /api/integrations/forms/send', () => {
+  const SEND_BODY = {
+    integrationType: 'google-forms',
+    contactId: '550e8400-e29b-41d4-a716-446655440000',
+    channel: 'whatsapp',
+  };
+
+  const formsIntegration = () =>
+    baseIntegration({
+      integrationType: 'google-forms',
+      identifier: 'Lead Form',
+      providerConfig: { formId: 'form-abc', formName: 'Lead Form' },
+    });
+
+  it('tanpa auth → 401', async () => {
+    const res = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(SEND_BODY),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('body tidak valid → 400 (channel asing / contactId bukan UUID)', async () => {
+    const badChannel = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...SEND_BODY, channel: 'sms' }),
+    });
+    expect(badChannel.status).toBe(400);
+
+    const badContact = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...SEND_BODY, contactId: 'not-a-uuid' }),
+    });
+    expect(badContact.status).toBe(400);
+  });
+
+  it('form belum terhubung → 404', async () => {
+    const res = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(SEND_BODY),
+    });
+    expect(res.status).toBe(404);
+    expect(dispatchFormInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it('integrasi dijeda → 409', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'google-forms',
+        isActive: false,
+        providerConfig: { formId: 'form-abc' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(SEND_BODY),
+    });
+    expect(res.status).toBe(409);
+    expect(dispatchFormInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it('sukses → 201 dengan formUrl & channel', async () => {
+    dbState.tables.set('workspaceIntegrations', [formsIntegration()]);
+    dispatchFormInvitationMock.mockResolvedValue({
+      sent: true,
+      channel: 'email',
+      formUrl: 'https://docs.google.com/forms/d/e/form-abc/viewform',
+    });
+    const res = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...SEND_BODY, channel: 'email' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { sent: boolean; channel: string; formUrl: string };
+    expect(body).toMatchObject({ sent: true, channel: 'email' });
+    expect(body.formUrl).toContain('docs.google.com');
+    expect(dispatchFormInvitationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ formId: 'form-abc', formName: 'Lead Form', contactId: SEND_BODY.contactId }),
+    );
+  });
+
+  it('customer belum terhubung → status dari FormSendError (409)', async () => {
+    dbState.tables.set('workspaceIntegrations', [formsIntegration()]);
+    dispatchFormInvitationMock.mockRejectedValue(
+      new FormSendErrorMock('Customer belum terhubung ke WhatsApp', 409),
+    );
+    const res = await app.request('/api/integrations/forms/send', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(SEND_BODY),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain('Customer belum terhubung');
   });
 });
 
@@ -805,6 +1047,138 @@ describe('POST /api/integrations/webhook/test', () => {
   });
 });
 
+// ── Slack ───────────────────────────────────────────────────────
+describe('POST /api/integrations/slack/connect', () => {
+  it('sukses → 201, URL tersimpan, URL webhook tidak bocor (hanya host)', async () => {
+    deliverSlackMessageMock.mockResolvedValue({ ok: true, status: 200 });
+    const res = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXX',
+        channel: '#general',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      integration: {
+        integrationType: string;
+        identifier: string | null;
+        config: { webhookUrlHost: string | null; channel: string | null };
+      };
+    };
+    expect(body.integration).toMatchObject({
+      integrationType: 'slack',
+      identifier: '#general',
+      config: { webhookUrlHost: 'hooks.slack.com', channel: '#general' },
+    });
+    expect(JSON.stringify(body)).not.toContain('XXXXXX');
+    expect(deliverSlackMessageMock).toHaveBeenCalledWith(
+      'https://hooks.slack.com/services/T00000000/B00000000/XXXXXX',
+      expect.any(Object),
+    );
+
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    expect(rows).toHaveLength(1);
+    expect((rows[0].providerConfig as { webhookUrl: string }).webhookUrl).toBe(
+      'https://hooks.slack.com/services/T00000000/B00000000/XXXXXX',
+    );
+  });
+
+  it('URL bukan Slack Incoming Webhook → 400 tanpa panggilan Slack', async () => {
+    const res = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: 'https://example.com/hook' }),
+    });
+    expect(res.status).toBe(400);
+    expect(deliverSlackMessageMock).not.toHaveBeenCalled();
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('ping uji ditolak Slack → 502, tidak menyimpan apa pun', async () => {
+    deliverSlackMessageMock.mockRejectedValue(
+      new SlackDeliveryErrorMock('Slack menolak: invalid_payload', 400),
+    );
+    const res = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: 'https://hooks.slack.com/services/T/B/X' }),
+    });
+    expect(res.status).toBe(502);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+});
+
+describe('POST /api/integrations/slack/test', () => {
+  it('terkirim → 200 dengan status', async () => {
+    sendTestSlackMock.mockResolvedValue({ delivered: true, status: 200 });
+    const res = await app.request('/api/integrations/slack/test', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ delivered: true, status: 200 });
+  });
+
+  it('belum terhubung → 409', async () => {
+    sendTestSlackMock.mockRejectedValue(new SlackDeliveryErrorMock('Belum terhubung', 409));
+    const res = await app.request('/api/integrations/slack/test', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('pengiriman gagal (non-2xx) → 502', async () => {
+    sendTestSlackMock.mockRejectedValue(new SlackDeliveryErrorMock('Slack menjawab 500', 500));
+    const res = await app.request('/api/integrations/slack/test', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(502);
+  });
+});
+
+describe('PATCH/DELETE /api/integrations/slack', () => {
+  it('PATCH mengubah isActive', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'slack',
+        providerConfig: { webhookUrl: 'https://hooks.slack.com/services/T/B/X' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/slack', {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { integration: { isActive: boolean } }).integration.isActive).toBe(false);
+  });
+
+  it('DELETE menghapus & belum terhubung → 404', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'slack',
+        providerConfig: { webhookUrl: 'https://hooks.slack.com/services/T/B/X' },
+      }),
+    ]);
+    const ok = await app.request('/api/integrations/slack', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(ok.status).toBe(200);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+
+    const missing = await app.request('/api/integrations/slack', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(missing.status).toBe(404);
+  });
+});
+
 describe('PATCH/DELETE /api/integrations/webhook', () => {
   it('PATCH mengubah isActive', async () => {
     dbState.tables.set('workspaceIntegrations', [
@@ -839,6 +1213,42 @@ describe('PATCH/DELETE /api/integrations/webhook', () => {
 });
 
 describe('GET /api/integrations — konfigurasi publik per tipe', () => {
+  it('google-forms → formUrl publik (deterministik dari formId)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'google-forms',
+        providerConfig: { formId: 'form-abc', formName: 'Lead Form' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      integrations: { integrationType: string; config: { formUrl: string | null } }[];
+    };
+    expect(body.integrations[0].config.formUrl).toBe(
+      'https://docs.google.com/forms/d/e/form-abc/viewform',
+    );
+  });
+
+  it('tally → formUrl publik (deterministik dari formId)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'tally',
+        providerConfig: { formId: 'xyz123', formName: 'Survey' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      integrations: { integrationType: string; config: { formUrl: string | null } }[];
+    };
+    expect(body.integrations[0].config.formUrl).toBe('https://tally.so/r/xyz123');
+  });
+
   it('webhook terhubung → url + hasSecret, tanpa nilai secret', async () => {
     dbState.tables.set('workspaceIntegrations', [
       baseIntegration({
@@ -856,5 +1266,462 @@ describe('GET /api/integrations — konfigurasi publik per tipe', () => {
       config: { url: 'https://example.com/hook', hasSecret: true },
     });
     expect(JSON.stringify(body)).not.toContain('top-secret-value');
+  });
+
+  it('slack terhubung → hanya host + channel, URL webhook tidak bocor', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'slack',
+        providerConfig: {
+          webhookUrl: 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXX',
+          channel: '#general',
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      integrations: { integrationType: string; config: { webhookUrlHost: string | null; channel: string | null } }[];
+    };
+    expect(body.integrations[0]).toMatchObject({
+      integrationType: 'slack',
+      config: { webhookUrlHost: 'hooks.slack.com', channel: '#general' },
+    });
+    expect(JSON.stringify(body)).not.toContain('XXXXXX');
+  });
+});
+
+describe('Voice AI (Vapi) — GET /api/integrations/vapi', () => {
+  it('menampilkan kesiapan server, daftar nomor, dan pilihan workspace', async () => {
+    const res = await app.request('/api/integrations/vapi', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      configured: boolean;
+      apiKeyConfigured: boolean;
+      defaultPhoneNumberId: string | null;
+      numbers: { id: string; number: string | null }[];
+      selected: unknown;
+    };
+    expect(body).toMatchObject({
+      configured: true,
+      apiKeyConfigured: true,
+      defaultPhoneNumberId: 'vapi-default-1',
+      numbers: [
+        { id: 'vapi-telnyx-1', number: '+628211111111' },
+        { id: 'vapi-default-1', number: '+15550000000' },
+      ],
+      selected: null,
+    });
+  });
+
+  it('menampilkan pilihan workspace bila ada', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+628211111111',
+        providerConfig: { vapiPhoneNumberId: 'vapi-telnyx-1', phoneNumber: '+628211111111' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    const body = (await res.json()) as {
+      selected: {
+        integrationType: string;
+        identifier: string | null;
+        config: { vapiPhoneNumberId: string | null; phoneNumber: string | null };
+      };
+    };
+    expect(body.selected).toMatchObject({
+      integrationType: 'vapi',
+      identifier: '+628211111111',
+      config: { vapiPhoneNumberId: 'vapi-telnyx-1', phoneNumber: '+628211111111' },
+    });
+  });
+
+  it('gagal list nomor Vapi → error field terisi, response tetap 200', async () => {
+    listOperatorVapiPhoneNumbersMock.mockRejectedValue(new Error('Vapi down'));
+    const res = await app.request('/api/integrations/vapi', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { error: string | null; numbers: unknown[] };
+    expect(body.error).toContain('Vapi down');
+    expect(body.numbers).toEqual([]);
+  });
+});
+
+describe('Voice AI (Vapi) — POST /api/integrations/vapi/connect', () => {
+  it('nomor valid → integrasi tersimpan (tanpa kredensial bocor)', async () => {
+    const res = await app.request('/api/integrations/vapi/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vapiPhoneNumberId: 'vapi-telnyx-1' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      integration: { integrationType: string; identifier: string | null };
+    };
+    expect(body.integration).toMatchObject({
+      integrationType: 'vapi',
+      identifier: '+628211111111',
+    });
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { providerConfig: Record<string, unknown> }).providerConfig).toEqual({
+      vapiPhoneNumberId: 'vapi-telnyx-1',
+      phoneNumber: '+628211111111',
+    });
+    expect(JSON.stringify(body)).not.toContain('vapi_test_key');
+  });
+
+  it('nomor tidak ada di akun Vapi → 400', async () => {
+    const res = await app.request('/api/integrations/vapi/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vapiPhoneNumberId: 'vapi-nonexistent' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('VAPI_API_KEY belum dikonfigurasi → 503', async () => {
+    const envModule = (await import('../lib/env.ts')) as { env: Record<string, unknown> };
+    const original = envModule.env.VAPI_API_KEY;
+    envModule.env.VAPI_API_KEY = undefined;
+    try {
+      const res = await app.request('/api/integrations/vapi/connect', {
+        method: 'POST',
+        headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vapiPhoneNumberId: 'vapi-telnyx-1' }),
+      });
+      expect(res.status).toBe(503);
+    } finally {
+      envModule.env.VAPI_API_KEY = original;
+    }
+  });
+});
+
+describe('Voice AI (Vapi) — DELETE /api/integrations/vapi', () => {
+  it('menghapus pilihan → kembali ke default server', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        providerConfig: { vapiPhoneNumberId: 'vapi-telnyx-1', phoneNumber: '+628211111111' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('belum terhubung → 404', async () => {
+    const res = await app.request('/api/integrations/vapi', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Voice AI BYOC — POST /api/integrations/vapi/byoc/search', () => {
+  it('key valid → owned + available dari akun Telnyx workspace (key tidak bocor)', async () => {
+    searchTelnyxByocMock.mockResolvedValue({
+      owned: [{ id: 'tn-1', phoneNumber: '+628211111111' }],
+      available: [{ phoneNumber: '+6282199999999', locality: 'Jakarta' }],
+    });
+    const res = await app.request('/api/integrations/vapi/byoc/search', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'telnyx_key_123456', countryCode: 'ID', areaCode: '21' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { owned: unknown[]; available: unknown[] };
+    expect(body.owned).toHaveLength(1);
+    expect(body.available).toHaveLength(1);
+    expect(JSON.stringify(body)).not.toContain('telnyx_key_123456');
+    expect(searchTelnyxByocMock).toHaveBeenCalledWith(
+      expect.objectContaining({ countryCode: 'ID', areaCode: '21' }),
+    );
+  });
+
+  it('API key Telnyx ditolak → 401', async () => {
+    searchTelnyxByocMock.mockRejectedValue(new TelnyxApiError(401, 'Invalid API key'));
+    const res = await app.request('/api/integrations/vapi/byoc/search', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'telnyx_key_123456', countryCode: 'ID' }),
+    });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain('telnyx_key_123456');
+  });
+
+  it('error lain dari Telnyx → 502', async () => {
+    searchTelnyxByocMock.mockRejectedValue(new TelnyxApiError(500, 'boom'));
+    const res = await app.request('/api/integrations/vapi/byoc/search', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'telnyx_key_123456', countryCode: 'ID' }),
+    });
+    expect(res.status).toBe(502);
+  });
+
+  it('country code bukan 2 huruf → 400 tanpa panggilan', async () => {
+    const res = await app.request('/api/integrations/vapi/byoc/search', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'telnyx_key_123456', countryCode: 'IND' }),
+    });
+    expect(res.status).toBe(400);
+    expect(searchTelnyxByocMock).not.toHaveBeenCalled();
+  });
+
+  it('VAPI_API_KEY belum dikonfigurasi → 503', async () => {
+    const envModule = (await import('../lib/env.ts')) as { env: Record<string, unknown> };
+    const original = envModule.env.VAPI_API_KEY;
+    envModule.env.VAPI_API_KEY = undefined;
+    try {
+      const res = await app.request('/api/integrations/vapi/byoc/search', {
+        method: 'POST',
+        headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: 'telnyx_key_123456', countryCode: 'ID' }),
+      });
+      expect(res.status).toBe(503);
+      expect(searchTelnyxByocMock).not.toHaveBeenCalled();
+    } finally {
+      envModule.env.VAPI_API_KEY = original;
+    }
+  });
+});
+
+describe('Voice AI BYOC — POST /api/integrations/vapi/byoc/connect', () => {
+  const BYOC_BODY = { apiKey: 'telnyx_key_123456', phoneNumber: '+6282199999999' };
+  const CONNECT_RESULT = {
+    vapiCredentialId: 'cred-byoc-1',
+    vapiPhoneNumberId: 'pn-byoc-1',
+    telnyxNumber: '+6282199999999',
+    purchased: true,
+    registered: true,
+  };
+
+  it('sukses → 201, row mode byoc tersimpan, API key & credential id tidak keluar', async () => {
+    connectTelnyxByocMock.mockResolvedValue(CONNECT_RESULT);
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      integration: {
+        integrationType: string;
+        identifier: string | null;
+        config: { mode: string; vapiPhoneNumberId: string | null; phoneNumber: string | null };
+      };
+      purchased: boolean;
+      registered: boolean;
+    };
+    expect(body).toMatchObject({
+      integration: {
+        integrationType: 'vapi',
+        identifier: '+6282199999999',
+        config: { mode: 'byoc', vapiPhoneNumberId: 'pn-byoc-1', phoneNumber: '+6282199999999' },
+      },
+      purchased: true,
+      registered: true,
+    });
+    // Secret & referensi internal TIDAK pernah keluar ke klien.
+    expect(JSON.stringify(body)).not.toContain('telnyx_key_123456');
+    expect(JSON.stringify(body)).not.toContain('cred-byoc-1');
+
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    expect(rows).toHaveLength(1);
+    const stored = (rows[0] as { providerConfig: Record<string, unknown> }).providerConfig;
+    expect(stored).toEqual({
+      mode: 'byoc',
+      vapiPhoneNumberId: 'pn-byoc-1',
+      vapiCredentialId: 'cred-byoc-1',
+      phoneNumber: '+6282199999999',
+    });
+    // API key Telnyx TIDAK pernah disimpan di DB.
+    expect(JSON.stringify(stored)).not.toContain('telnyx_key_123456');
+  });
+
+  it('row sudah ada → credential lama di-reuse (idempotensi retry)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+628211111111',
+        providerConfig: {
+          mode: 'byoc',
+          vapiPhoneNumberId: 'pn-byoc-0',
+          vapiCredentialId: 'cred-old-1',
+          phoneNumber: '+628211111111',
+        },
+      }),
+    ]);
+    connectTelnyxByocMock.mockResolvedValue(CONNECT_RESULT);
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(connectTelnyxByocMock).toHaveBeenCalledWith(
+      expect.objectContaining({ existingCredentialId: 'cred-old-1' }),
+    );
+  });
+
+  it('tanpa row → existingCredentialId null + nama deterministik per workspace', async () => {
+    connectTelnyxByocMock.mockResolvedValue(CONNECT_RESULT);
+    await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(connectTelnyxByocMock).toHaveBeenCalledWith(
+      expect.objectContaining({ existingCredentialId: null, credentialName: 'oriole-byoc-ws-1' }),
+    );
+  });
+
+  it('API key Telnyx ditolak → 401, tidak menyimpan apa pun', async () => {
+    connectTelnyxByocMock.mockRejectedValue(new TelnyxApiError(401, 'Invalid API key'));
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(401);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('nomor tidak tersedia dibeli → 400, tidak menyimpan apa pun', async () => {
+    connectTelnyxByocMock.mockRejectedValue(
+      new TelnyxByocNumberUnavailableErrorMock('+6282199999999'),
+    );
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(400);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('Vapi menolak kredensial → 502, tidak menyimpan apa pun', async () => {
+    connectTelnyxByocMock.mockRejectedValue(new VapiCredentialApiError(400, 'bad payload'));
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(502);
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('phone number tidak valid → 400 sebelum panggilan', async () => {
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'telnyx_key_123456', phoneNumber: 'abc' }),
+    });
+    expect(res.status).toBe(400);
+    expect(connectTelnyxByocMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI inbound — GET /api/integrations/vapi/inbound', () => {
+  it('mengembalikan daftar nomor + configured', async () => {
+    listInboundNumbersMock.mockResolvedValue([
+      {
+        id: 'inb-1',
+        vapiPhoneNumberId: 'vapi-number-1',
+        number: '+14155550123',
+        name: 'Main line',
+        provider: 'vapi',
+        isActive: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const res = await app.request('/api/integrations/vapi/inbound', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.configured).toBe(true);
+    expect(body.numbers).toHaveLength(1);
+    expect(listInboundNumbersMock).toHaveBeenCalledWith('ws-1');
+  });
+});
+
+describe('Voice AI inbound — POST /api/integrations/vapi/inbound/register', () => {
+  it('berhasil → 201 + nomor baru', async () => {
+    registerInboundNumberForWorkspaceMock.mockResolvedValue({
+      id: 'inb-2',
+      vapiPhoneNumberId: 'vapi-number-2',
+      number: null,
+      name: 'Cabang',
+      provider: 'vapi',
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await app.request('/api/integrations/vapi/inbound/register', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Cabang', areaCode: '21' }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.number.vapiPhoneNumberId).toBe('vapi-number-2');
+    expect(registerInboundNumberForWorkspaceMock).toHaveBeenCalledWith({
+      userId: 'test-user-1',
+      workspaceId: 'ws-1',
+      name: 'Cabang',
+      areaCode: '21',
+    });
+  });
+
+  it('area code tidak valid → 400 tanpa memanggil Vapi', async () => {
+    const res = await app.request('/api/integrations/vapi/inbound/register', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areaCode: 'abc!' }),
+    });
+    expect(res.status).toBe(400);
+    expect(registerInboundNumberForWorkspaceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI inbound — DELETE /api/integrations/vapi/inbound/:id', () => {
+  it('berhasil → ok:true + panggil unregister', async () => {
+    unregisterInboundNumberForWorkspaceMock.mockResolvedValue(undefined);
+    const res = await app.request('/api/integrations/vapi/inbound/inb-1', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(unregisterInboundNumberForWorkspaceMock).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      inboundNumberId: 'inb-1',
+    });
+  });
+
+  it('nomor tidak ditemukan → 404', async () => {
+    unregisterInboundNumberForWorkspaceMock.mockRejectedValue(
+      new InboundNumberNotFoundErrorMock('Nomor inbound tidak ditemukan di workspace ini.'),
+    );
+    const res = await app.request('/api/integrations/vapi/inbound/inb-999', {
+      method: 'DELETE',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('tidak ditemukan') });
   });
 });

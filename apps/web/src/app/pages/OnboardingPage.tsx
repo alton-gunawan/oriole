@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { Button, TextInput } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { AppLogo } from '../components/AppLogo';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { apiFetch } from '../../lib/api';
+import { trackEvent } from '../../lib/analytics';
 import { errorMessage } from '../../lib/errors';
 import { RECOMMENDED_TEMPLATE_CATEGORIES, type Workspace } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -16,6 +17,11 @@ export function OnboardingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
+
+  // Produk analytics: mulai onboarding (funnel signup → workspace → booking).
+  useEffect(() => {
+    void trackEvent('onboarding.started');
+  }, []);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -37,6 +43,9 @@ export function OnboardingPage() {
         }),
       });
       addWorkspace(response.workspace);
+      // Produk analytics: selesai onboarding (kategori template dipakai untuk
+      // breakdown funnel per industri).
+      void trackEvent('onboarding.completed', { template_category: category });
       navigate('/app/dashboard', { replace: true });
     } catch (err) {
       setError(errorMessage(err, t, 'errors.createProject'));

@@ -72,11 +72,15 @@ const CALL_STATUS_KEYS: Record<string, TranslationKey> = {
   'in-progress': 'callStatus.inProgress',
   pending: 'callStatus.pending',
   queued: 'callStatus.queued',
+  ringing: 'callStatus.ringing',
+  forwarding: 'callStatus.forwarding',
+  scheduled: 'callStatus.scheduled',
+  ended: 'callStatus.ended',
   canceled: 'callStatus.canceled',
   cancelled: 'callStatus.cancelled',
 };
 
-/** Status panggilan CALL-E → kunci i18n; slug asing dikembalikan null. */
+/** Status panggilan AI → kunci i18n; slug asing dikembalikan null. */
 export function callStatusKey(status: string | null | undefined): TranslationKey | null {
   if (!status) return 'callStatus.draft';
   return CALL_STATUS_KEYS[status] ?? null;

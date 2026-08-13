@@ -1,0 +1,117 @@
+# ════════════════════════════════════════════════════════════════════
+# Oriole full-stack LOCAL DEVELOPMENT overlay.
+#
+# One command runs the entire WhatsApp BYO pipeline — no separate
+# `pnpm dev:inngest` terminal:
+#
+#   cd deploy/waha
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Services:  waha     (gateway — defined in docker-compose.yml)
+#            api      (Oriole API — tsx watch, hot-reloads on every save)
+#            inngest  (Inngest Dev Server — UI at http://localhost:8288)
+#
+# Requirements (see README → "Full stack in one command"):
+#   • deploy/waha/.env  — gateway secrets (run ./scripts/init-env.sh)
+#   • root ../.env      — API secrets (DATABASE_URL, Paddle, Resend, …)
+#   • In root .env set:   API_URL=http://api:3000            (WAHA → API webhook
+#                          delivery; loadRootEnv overrides compose values)
+#                          WAHA_GATEWAY_URL=http://waha:3000 (managed mode)
+#                          WAHA_GATEWAY_API_KEY=<plain key dari deploy/waha/.env>
+#   • Stop host services on the same ports: API (3000), inngest (8288).
+# ════════════════════════════════════════════════════════════════════
+
+name: oriole-waha
+
+services:
+  # ── Oriole API (dev) ────────────────────────────────────────
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile.dev
+    container_name: oriole-api
+    restart: unless-stopped
+    ports:
+      # 127.0.0.1 — sama seperti gateway: container membawa SEMUA secret root
+      # .env, jangan pernah expose ke LAN.
+      - "127.0.0.1:${ORIOLE_API_PORT:-3000}:3000"
+
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      # SDK mengirim event Inngest ke container `inngest` (bukan localhost:
+      # loadRootEnv hanya menimpa key yang ADA di root .env — INNGEST_DEV
+      # tidak ada di sana, jadi nilai ini selalu menang).
+      INNGEST_DEV: http://inngest:8288
+      # Gateway BYO selalu ter-managed server: API menyapa gateway lewat
+      # network compose, dialog tidak menampilkan field Gateway URL/API key.
+      # CATATAN: bila root .env mendefinisikan WAHA_GATEWAY_URL /
+      # WAHA_GATEWAY_API_KEY, nilai root .env yang menang (loadRootEnv) —
+      # setel keduanya di root .env (lihat README).
+      WAHA_GATEWAY_URL: http://waha:3000
+      WAHA_GATEWAY_API_KEY: ${WAHA_API_KEY_PLAIN:?Set WAHA_API_KEY_PLAIN di deploy/waha/.env (run ./scripts/init-env.sh)}
+
+    sysctls:
+      # Container OrbStack TIDAK punya rute IPv6, tapi DNS tetap mengembalikan
+      # AAAA untuk beberapa host (mis. pooler Neon) → koneksi hostname macet
+      # (ETIMEDOUT). Paksa IPv4-only supaya getaddrinfo melewati AAAA.
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
+
+    volumes:
+      # Repo di-bind-mount → tsx watch hot-reload tiap save. node_modules
+      # TETAP dari image (binary Linux) — dilindungi dari bind mount via
+      # named volumes yang di-seed saat `up` pertama.
+      - ../..:/app:cached
+      - api_node_modules:/app/node_modules
+      - api_app_node_modules:/app/apps/api/node_modules
+      - api_config_node_modules:/app/packages/config/node_modules
+      - api_database_node_modules:/app/packages/database/node_modules
+      - api_messaging_node_modules:/app/packages/messaging/node_modules
+      - api_call_goals_node_modules:/app/packages/call-goals/node_modules
+
+    depends_on:
+      waha:
+        condition: service_healthy
+      inngest:
+        condition: service_started
+
+    healthcheck:
+      # /api/health (tanpa DB check) — container harus bisa boot penuh dulu
+      # (env root .env valid), jadi healthcheck = tanda API siap melayani.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Inngest Dev Server (pengganti `pnpm dev:inngest`) ───────
+  inngest:
+    image: inngest/inngest:${INNGEST_IMAGE_TAG:-latest}
+    container_name: oriole-inngest
+    restart: unless-stopped
+    command:
+      - inngest
+      - dev
+      - --host
+      - "0.0.0.0" # wajib: port published Docker → butuh bind semua interface
+      - --port
+      - "8288"
+      - --sdk-url
+      - http://api:3000/api/inngest
+    ports:
+      - "127.0.0.1:${INNGEST_PORT:-8288}:8288"
+    # NOTE: sengaja TANPA depends_on api — Dev Server me-poll `--sdk-url`
+    # tiap 5 detik, jadi ia menemukan API begitu boot (cycle api↔inngest).
+
+volumes:
+  api_node_modules:
+  api_app_node_modules:
+  api_config_node_modules:
+  api_database_node_modules:
+  api_messaging_node_modules:
+  api_call_goals_node_modules:

@@ -13,21 +13,24 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
+import { applyAnalyticsConsent, isAnalyticsEnabled } from '../../lib/analytics';
+import { useConsentStore } from '../../stores/consent';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { ConfirmDialog } from './ui';
-import { IconBell, IconFolder, IconTrash, IconUser, type IconProps } from './icons';
+import { IconBell, IconFolder, IconShield, IconTrash, IconUser, type IconProps } from './icons';
 
 /** Bagian dalam dialog Settings — ditampilkan di sidebar kiri dialog. */
 const SECTIONS: {
-  id: 'profile' | 'notifications' | 'projects';
+  id: 'profile' | 'notifications' | 'projects' | 'privacy';
   labelKey: TranslationKey;
   icon: ComponentType<IconProps>;
 }[] = [
   { id: 'profile', labelKey: 'settings.profile', icon: IconUser },
   { id: 'notifications', labelKey: 'settings.notifications', icon: IconBell },
+  { id: 'privacy', labelKey: 'consent.privacy', icon: IconShield },
   { id: 'projects', labelKey: 'settings.projects', icon: IconFolder },
 ];
 
@@ -53,6 +56,9 @@ export function SettingsDialog({
   const [error, setError] = useState<string | null>(null);
   // Bagian aktif dialog — kembali ke Profil setiap dibuka.
   const [activeSection, setActiveSection] = useState<(typeof SECTIONS)[number]['id']>('profile');
+  // Privasi — consent replay/survei (sync dengan stores/consent + PostHog).
+  const replayConsent = useConsentStore((s) => s.replayConsent);
+  const setReplayConsent = useConsentStore((s) => s.setReplayConsent);
   // Notifikasi — state lokal (placeholder; belum ada API persist).
   const [notif, setNotif] = useState({ email: true, call: false, weekly: true });
 
@@ -248,6 +254,38 @@ export function SettingsDialog({
 
                     {deleteError && (
                       <p role="alert" className="text-sm text-red-600">{deleteError}</p>
+                    )}
+                  </div>
+                )}
+
+                {activeSection === 'privacy' && (
+                  <div className="space-y-4">
+                    <p className="text-sm leading-relaxed text-zinc-500">{t('consent.privacyDesc')}</p>
+
+                    <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 px-4">
+                      <Switch
+                        label={t('consent.sessionReplayLabel')}
+                        description={t('consent.sessionReplayDesc')}
+                        value={replayConsent === 'granted'}
+                        onChange={(enabled) => {
+                          const next = enabled ? 'granted' : 'denied';
+                          setReplayConsent(next);
+                          void applyAnalyticsConsent(next);
+                        }}
+                        labelPosition="start"
+                        labelSpacing="spread"
+                      />
+                    </div>
+
+                    {!isAnalyticsEnabled && (
+                      <p className="text-xs leading-relaxed text-zinc-400">
+                        {t('consent.analyticsDisabled')}
+                      </p>
+                    )}
+                    {replayConsent === 'denied' && (
+                      <p className="text-xs leading-relaxed text-zinc-400">
+                        {t('consent.deniedNote')}
+                      </p>
                     )}
                   </div>
                 )}

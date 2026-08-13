@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import type { TFunction } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
-  DateInput,
+  ButtonGroup,
+  DateRangeInput,
   DropdownMenu,
   DropdownMenuItem,
   EmptyState,
   Pagination,
   Selector,
+  SelectorOption,
   Skeleton,
+  StatusDot,
   Table,
   TextInput,
   Typeahead,
@@ -23,32 +26,49 @@ import {
   useTableSelectionState,
   type BadgeVariant,
   type ButtonVariant,
-  type ISODateString,
+  type DateRange,
   type SearchableItem,
   type SearchSource,
+  type StatusDotVariant,
   type TableColumn,
 } from '@astryxdesign/core';
 
+import { IlamyCalendar } from '@ilamy/calendar';
 import { ApiError, apiFetch } from '../../lib/api';
-import type {
-  BookingRecord,
-  BookingsListResponse,
-  CustomersResponse,
+import {
+  intersectCalendarDateRange,
+  toCalendarEvents,
+  type CalendarDateRange,
+} from '../../lib/bookings-calendar';
+import { dayjs } from '../../lib/dayjs-setup';
+import {
+  applyRangeFilter,
+  type BookingRecord,
+  type BookingsListResponse,
+  type CustomersResponse,
 } from '../../lib/bookings';
 import { useWorkspaceStore } from '../../stores/workspace';
+import type { StaffListResponse } from '../../lib/staff';
 import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
 import {
   IconAlertTriangle,
+  IconArrowUpRight,
   IconCalendar,
   IconCheck,
   IconDotsHorizontal,
+  IconList,
   IconPlus,
   IconSearch,
   IconTrash,
   IconUsers,
 } from '../shell/icons';
+import {
+  CalendarEventBar,
+  CalendarHeader,
+  useCalendarTranslations,
+} from './BookingsCalendarHeader';
 import { Card, PageHeader, ReloadMenuButton } from '../shell/ui';
 
 /** Warna status → variant Badge Astryx (theme-neutral). */
@@ -57,6 +77,23 @@ const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
   confirmed: 'success',
   cancelled: 'error',
   completed: 'neutral',
+};
+
+/** Variant StatusDot per status booking — selaras dengan STATUS_BADGE. */
+const STATUS_DOT: Record<BookingRecord['status'], StatusDotVariant> = {
+  pending: 'warning',
+  confirmed: 'success',
+  cancelled: 'error',
+  completed: 'neutral',
+};
+
+/** Warna teks opsi filter status — mengikuti variant dot-nya. */
+const STATUS_TEXT: Record<string, string> = {
+  '': 'text-zinc-500',
+  pending: 'text-amber-600',
+  confirmed: 'text-emerald-600',
+  completed: 'text-zinc-500',
+  cancelled: 'text-red-600',
 };
 
 /** Baris tabel: BookingRecord + index signature (Table butuh Record<string, unknown>). */
@@ -70,12 +107,9 @@ function isValidDateParam(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
 }
 
-/** Konversi string tanggal yang sudah divalidasi → ISODateString untuk DateInput. */
-function asDate(value: string): ISODateString | undefined {
-  return value ? (value as ISODateString) : undefined;
-}
-
 const VALID_STATUSES: BookingRecord['status'][] = ['pending', 'confirmed', 'completed', 'cancelled'];
+const CALENDAR_VIEWS = ['month', 'week', 'day'] as const;
+type BookingsCalendarView = (typeof CALENDAR_VIEWS)[number];
 
 function statusLabel(status: string | null, t: TFunction): string {
   const key = bookingStatusKey(status);
@@ -169,6 +203,21 @@ export function BookingsPage() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const queryClient = useQueryClient();
 
+  // Nama staf per id — untuk badge staf & durasi di kolom jadwal.
+  const { data: staffPage } = useQuery({
+    queryKey: ['staff', activeWorkspaceId],
+    queryFn: () => apiFetch<StaffListResponse>('/staff'),
+    enabled: Boolean(activeWorkspaceId),
+    // Retry dengan backoff (1s/2s/4s default react-query) — kegagalan sesaat
+    // (API restart, Neon cold-start) pulih sendiri tanpa user klik Retry.
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
+  });
+  const staffNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const staff of staffPage?.staff ?? []) map.set(staff.id, staff.name);
+    return map;
+  }, [staffPage]);
+
   // ── Filter daftar booking — dipersist di URL agar bisa dibagikan ──
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -188,6 +237,13 @@ export function BookingsPage() {
   const fromFilter = isValidDateParam(fromRaw) ? fromRaw : '';
   const toFilter = isValidDateParam(toRaw) ? toRaw : '';
   const hasFilters = Boolean(statusFilter || titleHasValue || customerFilter || fromFilter || toFilter);
+  // Nilai DateRangeInput — hanya terbentuk bila kedua ujung ada di URL.
+  // Cast per-property: from/to sudah divalidasi isValidDateParam (YYYY-MM-DD)
+  // sehingga aman dinaikkan ke tipe template-literal ISODateString milik DateRange.
+  const dateRangeValue: DateRange | null =
+    fromFilter && toFilter
+      ? { start: fromFilter as DateRange['start'], end: toFilter as DateRange['end'] }
+      : null;
 
   // Salinan filter yang baru dipakai query setelah input berhenti berubah
   // (debounce 300ms) — mengetik tanggal tidak lagi memicu fetch per huruf.
@@ -239,6 +295,49 @@ export function BookingsPage() {
       { replace: true },
     );
   };
+  /** Tulis kedua ujung rentang dalam SATU setSearchParams (lihat
+      applyRangeFilter di lib/bookings — logika murni, diuji unit). */
+  const setRangeFilter = (range: DateRange | null) => {
+    setSearchParams((prev) => applyRangeFilter(prev, range), { replace: true });
+  };
+
+  // Tampilan halaman — 'list' (tabel) atau 'calendar'. Dipersist di URL agar
+  // bisa dibagikan, tapi BUKAN bagian dari filter: bar filter tetap tampil
+  // dan berfungsi di kedua view (resetFilters tidak menyentuh param ini).
+  const view: 'list' | 'calendar' =
+    searchParams.get('view') === 'calendar' ? 'calendar' : 'list';
+  const setView = (next: 'list' | 'calendar') => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === 'list') params.delete('view');
+        else params.set('view', 'calendar');
+        return params;
+      },
+      { replace: true },
+    );
+  };
+
+  const rawCalendarView = searchParams.get('calendarView');
+  const calendarView: BookingsCalendarView = CALENDAR_VIEWS.includes(
+    rawCalendarView as BookingsCalendarView,
+  )
+    ? (rawCalendarView as BookingsCalendarView)
+    : 'month';
+
+  // Range awal agar kalender tidak menunggu callback internal untuk menampilkan
+  // booking saat pertama kali dibuka. IlamyCalendar akan segera menggantinya
+  // dengan range persis untuk month/week/day lewat onDateChange.
+  const [calendarRange, setCalendarRange] = useState<CalendarDateRange>(() => {
+    const monthStart = dayjs().startOf('month');
+    const monthEnd = monthStart.endOf('month');
+    const leadingDays = (monthStart.day() + 6) % 7;
+    const trailingDays = (7 - monthEnd.day()) % 7;
+    return {
+      start: monthStart.subtract(leadingDays, 'day').startOf('day').toISOString(),
+      end: monthEnd.add(trailingDays, 'day').endOf('day').toISOString(),
+    };
+  });
 
   // Pagination offset (server-side) — dipakai useTablePagination di bawah.
   const [page, setPage] = useState(1);
@@ -269,7 +368,11 @@ export function BookingsPage() {
     },
     // Tampilkan data lama saat filter/halaman berubah — hindari kedipan skeleton.
     placeholderData: keepPreviousData,
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+    // Retry dengan backoff (1s/2s/4s default react-query): API dev restart
+    // tiap file disimpan (tsx watch) dan Neon bisa cold-start > 10s — blip
+    // sesaat tidak boleh menampilkan "Couldn't load bookings" yang buntu.
+    // 401 tetap tidak di-retry (lapisan auth menangani refresh).
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
   });
 
   // Aksi status — satu atau lebih booking sedang diproses dalam satu waktu.
@@ -354,9 +457,10 @@ export function BookingsPage() {
     setSelectedKeys,
   });
   // getRowLabel ada di config plugin (bukan state) — label checkbox per baris.
+  // Booking diidentifikasi oleh layanan katalog, bukan judul manual.
   const selectionPlugin = useTableSelection({
     ...selectionConfig,
-    getRowLabel: (booking) => booking.title,
+    getRowLabel: (booking) => booking.serviceName ?? booking.title ?? t('bookings.noService'),
   });
 
   // Pagination astryx — kanan bawah tabel; totalItems dari server (mode offset).
@@ -460,14 +564,16 @@ export function BookingsPage() {
 
   /** Kolom tabel booking — data-driven (renderCell dipakai untuk konten kaya). */
   const bookingColumns = useMemo<TableColumn<BookingTableRow>[]>(() => [
+    // Kolom Service = identitas booking (nama layanan katalog) sekaligus link
+    // ke detail. Booking diambil dari services — tidak ada kolom title manual.
     {
-      key: 'title',
-      header: t('bookings.colTitle'),
+      key: 'service',
+      header: t('bookings.colService'),
       width: proportional(3),
       renderCell: (booking) => (
         <Link to={`/app/bookings/${booking.id}`} className="group block min-w-0">
           <span className="block truncate text-base font-semibold text-zinc-900 transition group-hover:text-amber-600">
-            {booking.title}
+            {booking.serviceName ?? booking.title ?? t('bookings.noService')}
           </span>
         </Link>
       ),
@@ -476,9 +582,32 @@ export function BookingsPage() {
       key: 'schedule',
       header: t('bookings.colSchedule'),
       width: proportional(2),
+      renderCell: (booking) => {
+        const staffName = booking.staffId ? staffNameById.get(booking.staffId) : null;
+        return (
+          <span className="block min-w-0">
+            <span className="block truncate text-base text-zinc-600">
+              {formatDateTime(booking.scheduledAt)}
+            </span>
+            {staffName && (
+              <span className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-zinc-400">
+                <IconUsers className="size-3" aria-hidden="true" />
+                <span className="truncate">{staffName}</span>
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'duration',
+      header: t('bookings.colDuration'),
+      width: pixel(100),
       renderCell: (booking) => (
         <span className="block truncate text-base text-zinc-600">
-          {formatDateTime(booking.scheduledAt)}
+          {booking.durationMinutes > 0
+            ? t('bookings.duration', { count: booking.durationMinutes })
+            : '—'}
         </span>
       ),
     },
@@ -486,23 +615,28 @@ export function BookingsPage() {
       key: 'customer',
       header: t('bookings.colCustomer'),
       width: proportional(2),
-      renderCell: (booking) => (
-        <span className="block truncate text-base text-zinc-600">
-          <span className="inline-flex min-w-0 items-center gap-1.5">
-            {booking.contactId && (
-              <span
-                title={t('bookings.linkedContact')}
-                className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100"
-              >
-                <IconUsers className="size-3 text-emerald-600" aria-hidden="true" />
-              </span>
-            )}
+      renderCell: (booking) => {
+        // Semua baris = link biru ke detail customer (tab baru). Booking lama
+        // tanpa contactId lewat /contacts/ensure yang memastikan kontak ada
+        // (idempoten) lalu membuka detail-nya — jadi tiap baris berfungsi.
+        const contactHref = booking.contactId
+          ? `/app/contacts/${booking.contactId}`
+          : `/app/contacts/ensure?booking=${booking.id}`;
+        return (
+          <a
+            href={contactHref}
+            target="_blank"
+            rel="noreferrer"
+            title={t('bookings.openContactDetail')}
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-blue-600 transition hover:text-blue-700 hover:underline"
+          >
             <span className="truncate">
               {booking.customerName ?? t('common.noName')} · {booking.phone ?? t('common.noPhone')}
             </span>
-          </span>
-        </span>
-      ),
+            <IconArrowUpRight className="size-3.5 shrink-0" aria-hidden="true" />
+          </a>
+        );
+      },
     },
     {
       key: 'status',
@@ -543,17 +677,142 @@ export function BookingsPage() {
   ], [t, mutating]);
 
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
-  const showError = isError && !isAuthExpiry;
+  // Jangan timpa data yang masih tampil dengan kartu error: saat fetch gagal
+  // dengan data lama tersedia (placeholderData), tampilkan data itu — retry
+  // di atas akan menyegarkannya. Kartu error hanya muncul bila TIDAK ada
+  // data sama sekali (fetch gagal di awal).
+  const showError = isError && !isAuthExpiry && !isPlaceholderData;
   // Redup saat filter baru sedang dimuat (placeholder = data filter lama).
   const isFilterLoading = isFetching && isPlaceholderData;
+
+  // Kalender mengambil range visible secara terpisah dari tabel. Ini penting
+  // untuk week/day: tabel hanya memuat 10/25/50 baris halaman aktif, sedangkan
+  // kalender harus memuat semua booking pada rentang yang sedang dilihat.
+  const handleCalendarDateChange = useCallback(
+    (_date: unknown, range: { start: { toISOString: () => string }; end: { toISOString: () => string } }) => {
+      setCalendarRange({
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+      });
+    },
+    [],
+  );
+
+  const calendarQuery = useQuery({
+    queryKey: [
+      'bookings-calendar',
+      activeWorkspaceId,
+      debouncedStatus,
+      debouncedTitle.trim(),
+      debouncedCustomer,
+      debouncedFrom,
+      debouncedTo,
+      calendarRange.start,
+      calendarRange.end,
+    ],
+    enabled: Boolean(activeWorkspaceId && view === 'calendar'),
+    queryFn: async ({ signal }) => {
+      const visibleRange = intersectCalendarDateRange(
+        calendarRange,
+        debouncedFrom,
+        debouncedTo,
+      );
+      if (!visibleRange) return { bookings: [], total: 0 } satisfies BookingsListResponse;
+
+      const params = new URLSearchParams();
+      if (debouncedStatus) params.set('status', debouncedStatus);
+      const titleQuery = debouncedTitle.trim();
+      if (titleQuery) params.set('title', titleQuery);
+      if (debouncedCustomer) params.set('customer', debouncedCustomer);
+      params.set('from', visibleRange.start);
+      params.set('to', visibleRange.end);
+
+      // The API caps one offset page at 200. Keep requesting pages so a busy
+      // week/month never silently drops events from the calendar.
+      const allBookings: BookingRecord[] = [];
+      const pageSize = 200;
+      let pageNumber = 1;
+      let total = 0;
+      do {
+        params.set('page', String(pageNumber));
+        params.set('pageSize', String(pageSize));
+        const response = await apiFetch<BookingsListResponse>(
+          `/bookings?${params.toString()}`,
+          { signal },
+        );
+        allBookings.push(...response.bookings);
+        total = response.total ?? allBookings.length;
+        if (allBookings.length >= total || response.bookings.length === 0) break;
+        pageNumber += 1;
+      } while (allBookings.length < total);
+
+      return { bookings: allBookings, total } satisfies BookingsListResponse;
+    },
+    placeholderData: keepPreviousData,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
+  });
+
+  // ── Kalender @ilamy/calendar ──────────────────────────────
+  const navigate = useNavigate();
+  const calendarTranslations = useCalendarTranslations();
+  const calendarEvents = useMemo(
+    () => toCalendarEvents(calendarQuery.data?.bookings ?? [], staffNameById),
+    [calendarQuery.data, staffNameById],
+  );
+  const handleCalendarEventClick = useCallback(
+    (event: import('@ilamy/calendar').CalendarEvent) => {
+      const bookingId = (event.data as Record<string, unknown>)?.bookingId;
+      if (bookingId) navigate(`/app/bookings/${bookingId}`);
+    },
+    [navigate],
+  );
+  const renderBookingEvent = useCallback(
+    (event: import('@ilamy/calendar').CalendarEvent) => (
+      <CalendarEventBar event={event} />
+    ),
+    [],
+  );
 
   return (
     <div className="space-y-8">
       <PageHeader
         title={t('bookings.title')}
         description={t('bookings.description')}
+        icon={IconCalendar}
       >
-        <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
+        {/* Toggle tampilan — di kiri tombol ⋯ (ReloadMenuButton). View aktif
+            memakai variant secondary agar terlihat menyatu sebagai satu unit
+            (ButtonGroup Astryx: tombol berbagi border & radius luar). */}
+        <ButtonGroup
+          label={t('bookings.viewToggle')}
+          // Bungkus seluruh toggle dengan border — konsisten dengan tombol ⋯ di
+          // sebelahnya (Button Astryx polos tanpa border; border dibuat eksplisit).
+          // Radius mengikuti token Astryx agar menyatu dengan sudut tombol di dalam.
+          style={{
+            border: '1px solid var(--color-border-emphasized)',
+            borderRadius: 'var(--radius-element)',
+          }}
+        >
+          <Button
+            label={t('bookings.viewList')}
+            variant={view === 'list' ? 'secondary' : 'ghost'}
+            icon={<IconList className="size-4" />}
+            onClick={() => setView('list')}
+          />
+          <Button
+            label={t('bookings.viewCalendar')}
+            variant={view === 'calendar' ? 'secondary' : 'ghost'}
+            icon={<IconCalendar className="size-4" />}
+            onClick={() => setView('calendar')}
+          />
+        </ButtonGroup>
+        <ReloadMenuButton
+          isFetching={isFetching || calendarQuery.isFetching}
+          onReload={() => {
+            void refetch();
+            if (view === 'calendar') void calendarQuery.refetch();
+          }}
+        />
         <Link
           to="/app/bookings/new"
           className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
@@ -568,8 +827,8 @@ export function BookingsPage() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="min-w-0 flex-1">
             <TextInput
-              label={t('bookings.colTitle')}
-              placeholder={t('bookings.titlePlaceholder')}
+              label={t('bookings.colService')}
+              placeholder={t('bookings.servicePlaceholder')}
               value={titleFilter}
               onChange={(value) => setFilter('title', value)}
               startIcon={<IconSearch className="size-4" />}
@@ -597,34 +856,45 @@ export function BookingsPage() {
               label={t('common.status')}
               placeholder={t('bookings.allStatuses')}
               options={[
-                { value: '', label: t('bookings.allStatuses') },
-                { value: 'pending', label: t('status.pending') },
-                { value: 'confirmed', label: t('status.confirmed') },
-                { value: 'completed', label: t('status.completed') },
-                { value: 'cancelled', label: t('status.cancelled') },
+                {
+                  value: '',
+                  label: t('bookings.allStatuses'),
+                  icon: <StatusDot variant="neutral" label={t('bookings.allStatuses')} />,
+                },
+                ...VALID_STATUSES.map((status) => ({
+                  value: status,
+                  label: statusLabel(status, t),
+                  icon: <StatusDot variant={STATUS_DOT[status]} label={statusLabel(status, t)} />,
+                })),
               ]}
               value={statusFilter}
               onChange={(value) => setFilter('status', value)}
               width="100%"
+              renderOption={(option) => (
+                <SelectorOption
+                  icon={option.icon}
+                  label={
+                    <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500'}>
+                      {option.label}
+                    </span>
+                  }
+                />
+              )}
             />
           </div>
 
+          {/* Filter rentang tanggal — satu DateRangeInput dengan kalender dua bulan
+              (Astryx Calendar numberOfMonths={2}); dari & sampai tetap disimpan
+              sebagai dua param URL terpisah (from/to) agar API & shareable URL
+              tidak berubah. */}
           <div className="min-w-0 flex-1">
-            <DateInput
-              label={t('bookings.fromDate')}
-              value={asDate(fromFilter)}
-              max={asDate(toFilter)}
-              onChange={(value) => setFilter('from', value ?? '')}
-              width="100%"
-            />
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <DateInput
-              label={t('bookings.toDate')}
-              value={asDate(toFilter)}
-              min={asDate(fromFilter)}
-              onChange={(value) => setFilter('to', value ?? '')}
+            <DateRangeInput
+              label={t('bookings.dateRange')}
+              placeholder={t('bookings.dateRangePlaceholder')}
+              value={dateRangeValue}
+              numberOfMonths={2}
+              hasClear
+              onChange={setRangeFilter}
               width="100%"
             />
           </div>
@@ -642,182 +912,259 @@ export function BookingsPage() {
         </div>
       </Card>
 
-      {showError && (
-        <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
-            <IconAlertTriangle className="size-6" />
-          </span>
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.bookingsLoadTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
-              {error instanceof ApiError
-                ? t('errors.apiStatus', { status: error.status })
-                : t('errors.apiConnection')}
-            </p>
-          </div>
-          <Button label={t('common.retry')} variant="primary" onClick={() => void refetch()} />
-        </Card>
-      )}
-
-      {isPending && (
-        <Card className="overflow-hidden">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="flex items-center gap-6 border-b border-zinc-100 px-5 py-4 last:border-b-0"
-            >
-              <Skeleton width="28%" height={14} />
-              <Skeleton width="18%" height={12} />
-              <Skeleton width="26%" height={12} />
-              <Skeleton className="ml-auto" width={90} height={22} />
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {actionError && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
-          {actionError}
-        </p>
-      )}
-
-      {!isPending && !isError && data && (
+      {/* Konten tabel — hanya untuk view daftar; view kalender memakai
+          placeholder kosong di bawah (filter tetap tampil di kedua view). */}
+      {view === 'list' && (
         <>
-          {data.bookings.length === 0 ? (
-            <EmptyState
-              icon={<IconCalendar className="size-6" />}
-              title={hasFilters ? t('bookings.emptyFilteredTitle') : t('bookings.emptyTitle')}
-              description={
-                hasFilters ? t('bookings.emptyFilteredDesc') : t('bookings.emptyDesc')
-              }
-              actions={
-                hasFilters ? undefined : (
-                  <Link
-                    to="/app/bookings/new"
-                    className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-                  >
-                    <IconPlus className="size-4" />
-                    {t('bookings.createFirst')}
-                  </Link>
-                )
-              }
-            />
-          ) : (
+          {showError && (
+            <Card className="flex flex-col items-center gap-4 p-10 text-center">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+                <IconAlertTriangle className="size-6" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-900">{t('errors.bookingsLoadTitle')}</h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {error instanceof ApiError
+                    ? t('errors.apiStatus', { status: error.status })
+                    : t('errors.apiConnection')}
+                </p>
+              </div>
+              <Button label={t('common.retry')} variant="primary" onClick={() => void refetch()} />
+            </Card>
+          )}
+
+          {isPending && (
+            <Card className="overflow-hidden">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-6 border-b border-zinc-100 px-5 py-4 last:border-b-0"
+                >
+                  <Skeleton width="28%" height={14} />
+                  <Skeleton width="18%" height={12} />
+                  <Skeleton width="26%" height={12} />
+                  <Skeleton className="ml-auto" width={90} height={22} />
+                </div>
+              ))}
+            </Card>
+          )}
+
+          {actionError && (
+            <p
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
+              {actionError}
+            </p>
+          )}
+
+          {!isPending && !isError && data && (
             <>
-              {selectedKeys.size > 0 && (
-                <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm font-medium text-zinc-800">
-                    {t('bookings.selectedCount', { count: selectedKeys.size })}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      label={t('bookings.confirm')}
-                      variant="primary"
-                      size="sm"
-                      isDisabled={mutating !== null || !canBulkConfirm}
-                      isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'confirmed'}
-                      onClick={() => bulkChangeStatus('confirmed')}
-                    />
-                    <Button
-                      label={t('bookings.complete')}
-                      variant="secondary"
-                      size="sm"
-                      isDisabled={mutating !== null || !canBulkComplete}
-                      isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'completed'}
-                      onClick={() => bulkChangeStatus('completed')}
-                    />
-                    <Button
-                      label={t('bookings.cancel')}
-                      variant="destructive"
-                      size="sm"
-                      isDisabled={mutating !== null || !canBulkCancel}
-                      isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'cancelled'}
-                      onClick={() => bulkChangeStatus('cancelled')}
-                    />
-                    <Button
-                      label={t('bookings.clearSelection')}
-                      variant="ghost"
-                      size="sm"
-                      isDisabled={mutating !== null}
-                      onClick={resetSelection}
+              {data.bookings.length === 0 ? (
+                <EmptyState
+                  icon={<IconCalendar className="size-6" />}
+                  title={hasFilters ? t('bookings.emptyFilteredTitle') : t('bookings.emptyTitle')}
+                  description={
+                    hasFilters ? t('bookings.emptyFilteredDesc') : t('bookings.emptyDesc')
+                  }
+                  actions={
+                    hasFilters ? undefined : (
+                      <Link
+                        to="/app/bookings/new"
+                        className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+                      >
+                        <IconPlus className="size-4" />
+                        {t('bookings.createFirst')}
+                      </Link>
+                    )
+                  }
+                />
+              ) : (
+                <>
+                  {selectedKeys.size > 0 && (
+                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm font-medium text-zinc-800">
+                        {t('bookings.selectedCount', { count: selectedKeys.size })}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          label={t('bookings.confirm')}
+                          variant="primary"
+                          size="sm"
+                          isDisabled={mutating !== null || !canBulkConfirm}
+                          isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'confirmed'}
+                          onClick={() => bulkChangeStatus('confirmed')}
+                        />
+                        <Button
+                          label={t('bookings.complete')}
+                          variant="secondary"
+                          size="sm"
+                          isDisabled={mutating !== null || !canBulkComplete}
+                          isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'completed'}
+                          onClick={() => bulkChangeStatus('completed')}
+                        />
+                        <Button
+                          label={t('bookings.cancel')}
+                          variant="destructive"
+                          size="sm"
+                          isDisabled={mutating !== null || !canBulkCancel}
+                          isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'cancelled'}
+                          onClick={() => bulkChangeStatus('cancelled')}
+                        />
+                        <Button
+                          label={t('bookings.clearSelection')}
+                          variant="ghost"
+                          size="sm"
+                          isDisabled={mutating !== null}
+                          onClick={resetSelection}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transparan: tabel tanpa border/background pembungkus; radius 0.
+                      Border horizontal atas & bawah membingkai tabel. Pagination
+                      dirender manual di footer — DI LUAR blok berbordernya. */}
+                  <Card
+                    variant="transparent"
+                    className="overflow-hidden"
+                    style={{
+                      borderTop: '1px solid #e4e4e7',
+                      borderBottom: '1px solid #e4e4e7',
+                      '--_card-radius': '0px',
+                    }}
+                  >
+                    <div
+                      // inert: blokir interaksi mouse & keyboard saat placeholder (filter lama).
+                      inert={isFilterLoading}
+                      className={`transition-opacity duration-200 ${
+                        isFilterLoading ? 'pointer-events-none opacity-40' : ''
+                      }`}
+                    >
+                      <Table
+                        data={visibleRows}
+                        columns={bookingColumns}
+                        idKey="id"
+                        density="balanced"
+                        dividers="none"
+                        hasHover
+                        textOverflow="truncate"
+                        plugins={{ selection: selectionPlugin, pagination: paginationPlugin }}
+                      />
+                    </div>
+                  </Card>
+
+                  {/* Footer: rows-per-page (kiri) + info realtime jumlah baris terlihat */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-zinc-500">
+                        {t('bookings.rowsPerPage')}
+                      </span>
+                      <Selector
+                        label={t('bookings.rowsPerPage')}
+                        isLabelHidden
+                        placement="above"
+                        width={88}
+                        options={[10, 25, 50, 100].map((n) => ({
+                          value: String(n),
+                          label: String(n),
+                        }))}
+                        value={String(pageSize)}
+                        onChange={changePageSize}
+                      />
+                    </div>
+                    <p className="text-sm text-zinc-400">
+                      <Trans
+                        i18nKey="bookings.showingRows"
+                        values={{ shown: visibleRows.length, total: data?.total ?? 0 }}
+                        components={{ strong: <strong className="font-bold text-black" /> }}
+                      />
+                    </p>
+                    {/* Pagination di ujung kanan, di luar border tabel */}
+                    <Pagination
+                      page={page}
+                      onChange={setPage}
+                      totalItems={data?.total ?? 0}
+                      pageSize={pageSize}
                     />
                   </div>
-                </div>
+                </>
               )}
-
-              {/* Transparan: tabel tanpa border/background pembungkus; radius 0.
-                  Border horizontal atas & bawah membingkai tabel. Pagination
-                  dirender manual di footer — DI LUAR blok berbordernya. */}
-              <Card
-                variant="transparent"
-                className="overflow-hidden"
-                style={{
-                  borderTop: '1px solid #e4e4e7',
-                  borderBottom: '1px solid #e4e4e7',
-                  '--_card-radius': '0px',
-                }}
-              >
-                <div
-                  // inert: blokir interaksi mouse & keyboard saat placeholder (filter lama).
-                  inert={isFilterLoading}
-                  className={`transition-opacity duration-200 ${
-                    isFilterLoading ? 'pointer-events-none opacity-40' : ''
-                  }`}
-                >
-                  <Table
-                    data={visibleRows}
-                    columns={bookingColumns}
-                    idKey="id"
-                    density="balanced"
-                    dividers="none"
-                    hasHover
-                    textOverflow="truncate"
-                    plugins={{ selection: selectionPlugin, pagination: paginationPlugin }}
-                  />
-                </div>
-              </Card>
-
-              {/* Footer: rows-per-page (kiri) + info realtime jumlah baris terlihat */}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-500">
-                    {t('bookings.rowsPerPage')}
-                  </span>
-                  <Selector
-                    label={t('bookings.rowsPerPage')}
-                    isLabelHidden
-                    placement="above"
-                    width={88}
-                    options={[10, 25, 50, 100].map((n) => ({
-                      value: String(n),
-                      label: String(n),
-                    }))}
-                    value={String(pageSize)}
-                    onChange={changePageSize}
-                  />
-                </div>
-                <p className="text-sm text-zinc-400">
-                  <Trans
-                    i18nKey="bookings.showingRows"
-                    values={{ shown: visibleRows.length, total: data?.total ?? 0 }}
-                    components={{ strong: <strong className="font-bold text-black" /> }}
-                  />
-                </p>
-                {/* Pagination di ujung kanan, di luar border tabel */}
-                <Pagination
-                  page={page}
-                  onChange={setPage}
-                  totalItems={data?.total ?? 0}
-                  pageSize={pageSize}
-                />
-              </div>
             </>
           )}
         </>
       )}
+
+      {/* View kalender — @ilamy/calendar menampilkan booking dari query yang sama.
+          Tingginya mengikuti viewport agar kalender terasa seperti workspace,
+          tetapi tetap punya minimum yang nyaman di laptop kecil. */}
+      {view === 'calendar' && (
+        <Card
+          className="bookings-calendar-card overflow-hidden"
+          style={{ height: 'min(760px, calc(100vh - 260px))', minHeight: 560 }}
+        >
+          <div
+            className="ilamy-calendar-scope bookings-calendar relative h-full"
+            aria-busy={calendarQuery.isFetching}
+          >
+            <IlamyCalendar
+              events={calendarEvents}
+              initialView={calendarView}
+              firstDayOfWeek="monday"
+              timeFormat="24-hour"
+              slotDuration={30}
+              scrollTime="08:00"
+              stickyViewHeader
+              disableDragAndDrop
+              disableCellClick
+              hideExportButton
+              headerClassName="bookings-calendar-native-header"
+              viewHeaderClassName="bookings-calendar-view-header"
+              translations={calendarTranslations}
+              headerComponent={<CalendarHeader />}
+              renderEvent={renderBookingEvent}
+              renderHour={(date) => (
+                <span className="bookings-calendar-hour">{date.format('HH:mm')}</span>
+              )}
+              onDateChange={handleCalendarDateChange}
+              onViewChange={(nextView) => {
+                if (!CALENDAR_VIEWS.includes(nextView as BookingsCalendarView)) return;
+                setSearchParams(
+                  (prev) => {
+                    const params = new URLSearchParams(prev);
+                    params.set('calendarView', nextView);
+                    return params;
+                  },
+                  { replace: true },
+                );
+              }}
+              onEventClick={handleCalendarEventClick}
+              dayMaxEvents={3}
+              eventHeight={36}
+              eventSpacing={3}
+            />
+
+            {calendarQuery.isFetching && !calendarQuery.isError && (
+              <div className="bookings-calendar-loading" role="status" aria-live="polite">
+                {t('calendar.loading')}
+              </div>
+            )}
+
+            {calendarQuery.isError && !calendarQuery.data && (
+              <div className="bookings-calendar-error" role="alert">
+                <IconAlertTriangle className="size-4" aria-hidden="true" />
+                <span>{t('errors.apiConnection')}</span>
+                <Button
+                  label={t('common.retry')}
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void calendarQuery.refetch()}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
+      )} 
     </div>
   );
 }

@@ -107,3 +107,66 @@ describe('parseWhatsAppWebhook', () => {
     expect(events).toEqual([]);
   });
 });
+
+describe('parseWhatsAppWebhook — keyword intent BYO (tekan tombol-as-text WAHA)', () => {
+  it.each([
+    // Balasan bebas user
+    ['ya', 'confirm'],
+    ['Ya hadir', 'confirm'],
+    ['ya, hadir', 'confirm'],
+    ['Saya hadir', 'confirm'],
+    ['hadir', 'confirm'],
+    ['batal', 'cancel'],
+    ['Batalkan', 'cancel'],
+    ['BATAL', 'cancel'],
+    ['gak jadi', 'cancel'],
+    ['ubah jadwal', 'reschedule'],
+    ['ganti jadwal', 'reschedule'],
+    ['reschedule', 'reschedule'],
+    // Label tombol reminder yang dikirim WAHA sebagai teks polos (dengan emoji)
+    ['✅ Ya, hadir', 'confirm'],
+    ['❌ Batalkan', 'cancel'],
+    ['📅 Ubah jadwal', 'reschedule'],
+    // Minta booking baru → bot kirim tautan form terintegrasi
+    ['mau booking', 'booking-request'],
+    ['Mau booking dong!', 'booking-request'],
+    ['minta booking', 'booking-request'],
+    ['Buat booking', 'booking-request'],
+    ['booking', 'booking-request'],
+    ['pesan jadwal', 'booking-request'],
+    ['mau pesan', 'booking-request'],
+    ['buat janji', 'booking-request'],
+    ['janji temu', 'booking-request'],
+  ] as const)('teks %j → intent %s tanpa bookingId', (body, intent) => {
+    const events = parseWhatsAppWebhook(
+      payloadWithMessages([{ from: '6281234567890', id: WAMID, type: 'text', text: { body } }]),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ intent, bookingId: null });
+  });
+
+  it('kalimat bebas yang mengandung kata keyword TIDAK ikut ter-parse (matching exact)', () => {
+    const bodies = [
+      'Saya tidak hadir',
+      'Batal pakai semua',
+      'ya udah deh',
+      'Ubah jadwal saya jadi besok',
+      'apa kabar?',
+      'Saya mau tanya harga dulu',
+      'kapan buka?',
+    ];
+    for (const body of bodies) {
+      const events = parseWhatsAppWebhook(
+        payloadWithMessages([{ from: '6281234567890', id: WAMID, type: 'text', text: { body } }]),
+      );
+      expect(events[0]?.intent, body).toBe('text');
+    }
+  });
+
+  it('teks STOP tetap opt-out (bukan keyword booking)', () => {
+    const events = parseWhatsAppWebhook(
+      payloadWithMessages([{ from: '6281234567890', id: WAMID, type: 'text', text: { body: 'STOP' } }]),
+    );
+    expect(events[0]?.intent).toBe('opt-out');
+  });
+});

@@ -1,6 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { contacts as contactsTable, workspaceIntegrations, workspaces } from '@oriole/database';
+import {
+  bookings,
+  contacts as contactsTable,
+  services,
+  serviceStaff,
+  workspaceIntegrations,
+  workspaces,
+} from '@oriole/database';
+
+// form-booking.ts (via google-forms.ts) mengimpor rantai inngest/client → env
+// saat modul dimuat — mock env agar test tak butuh variabel environment.
+vi.mock('../lib/env.ts', () => ({
+  env: { API_URL: 'https://api.example.com', NODE_ENV: 'test' },
+}));
 
 // Mock network layer (googleFetch) — parseServiceAccount tetap asli.
 const { googleFetchMock } = vi.hoisted(() => ({ googleFetchMock: vi.fn() }));
@@ -55,7 +68,10 @@ const { dbState } = vi.hoisted(() => ({
 
 vi.mock('../db/index.ts', async () => {
   const tableNames = new WeakMap<object, string>();
+  tableNames.set(bookings, 'bookings');
   tableNames.set(contactsTable, 'contacts');
+  tableNames.set(services, 'services');
+  tableNames.set(serviceStaff, 'service_staff');
   tableNames.set(workspaceIntegrations, 'workspaceIntegrations');
   tableNames.set(workspaces, 'workspaces');
 
@@ -108,6 +124,7 @@ vi.mock('../db/index.ts', async () => {
     const builder: {
       where: (...conds: unknown[]) => typeof builder;
       limit: (n: number) => typeof builder;
+      orderBy: (...cols: unknown[]) => typeof builder;
       then: (resolve: (rows: unknown[]) => unknown) => Promise<unknown>;
       _limit?: number;
       _filters: { name: string; value: unknown }[];
@@ -120,6 +137,11 @@ vi.mock('../db/index.ts', async () => {
       },
       limit(n: number) {
         builder._limit = n;
+        return builder;
+      },
+      // No-op — loadServices (service catalog) memakai orderBy; urutan tidak
+      // relevan untuk fake db.
+      orderBy() {
         return builder;
       },
       then(resolve: (rows: unknown[]) => unknown) {
@@ -161,7 +183,9 @@ vi.mock('../db/index.ts', async () => {
               if (duplicate) return [];
               const row = { ...values, id: `contact-${dbState.seq++}`, createdAt: new Date(), updatedAt: new Date() };
               rows.push(row);
-              return [{ id: row.id }];
+              // Kembalikan ROW LENGKAP (bukan hanya id) — pemanggil seperti
+              // createBookingFromFormSubmission membaca scheduledAt/title/dll.
+              return [row];
             },
           }),
         }),
@@ -212,6 +236,7 @@ beforeEach(() => {
   dbState.tables.set('workspaces', [{ id: 'ws-1', userId: 'u-1' }]);
   dbState.tables.set('workspaceIntegrations', [baseFormIntegration()]);
   dbState.tables.set('contacts', []);
+  dbState.tables.set('bookings', []);
 });
 
 describe('extractContactFromResponse', () => {
@@ -301,7 +326,7 @@ describe('syncFormResponsesToContacts', () => {
       });
 
     const result = await syncFormResponsesToContacts('ws-1');
-    expect(result).toEqual({ imported: 1, skipped: 0, total: 1 });
+    expect(result).toEqual({ imported: 1, skipped: 0, total: 1, bookingsCreated: 0 });
 
     const contacts = dbState.tables.get('contacts') ?? [];
     expect(contacts).toHaveLength(1);
@@ -338,7 +363,7 @@ describe('syncFormResponsesToContacts', () => {
       });
 
     const result = await syncFormResponsesToContacts('ws-1');
-    expect(result).toEqual({ imported: 0, skipped: 3, total: 3 });
+    expect(result).toEqual({ imported: 0, skipped: 3, total: 3, bookingsCreated: 0 });
     expect(dbState.tables.get('contacts') ?? []).toHaveLength(0);
 
     const integration = (dbState.tables.get('workspaceIntegrations') ?? [])[0];
@@ -376,6 +401,159 @@ describe('syncFormResponsesToContacts', () => {
     expect(result.imported).toBe(1);
     const contacts = dbState.tables.get('contacts') ?? [];
     expect(contacts).toHaveLength(1);
+  });
+
+  it('submission dengan layanan + tanggal/jam → booking otomatis dibuat', async () => {
+    const bookingQuestions: GoogleFormQuestion[] = [
+      { id: 'q-name', title: 'Nama lengkap' },
+      { id: 'q-phone', title: 'No. HP' },
+      { id: 'q-service', title: 'Layanan' },
+      { id: 'q-date', title: 'Tanggal' },
+      { id: 'q-time', title: 'Jam' },
+    ];
+    googleFetchMock
+      .mockResolvedValueOnce({
+        formId: 'form-abc',
+        info: { title: 'Form Booking' },
+        items: bookingQuestions.map((q) => ({
+          questionItem: { question: { questionId: q.id, title: q.title } },
+        })),
+      })
+      .mockResolvedValueOnce({
+        responses: [
+          response({
+            responseId: 'r-booking-1',
+            answers: {
+              'q-name': { textAnswers: { answers: [{ value: 'Budi' }] } },
+              'q-phone': { textAnswers: { answers: [{ value: '+62 811 222 333' }] } },
+              'q-service': { textAnswers: { answers: [{ value: 'Scaling Gigi' }] } },
+              'q-date': { textAnswers: { answers: [{ value: '2026-12-20' }] } },
+              'q-time': { textAnswers: { answers: [{ value: '14:00' }] } },
+            },
+          }),
+        ],
+        nextPageToken: null,
+      });
+
+    const result = await syncFormResponsesToContacts('ws-1');
+    expect(result).toMatchObject({ imported: 1, bookingsCreated: 1 });
+
+    // Booking dibuat idempoten dengan (source, sourceRef) dari responseId.
+    const bookingsTable = dbState.tables.get('bookings') ?? [];
+    expect(bookingsTable).toHaveLength(1);
+    expect(bookingsTable[0]).toMatchObject({
+      workspaceId: 'ws-1',
+      customerName: 'Budi',
+      phone: '+62811222333',
+      source: 'google-forms',
+      sourceRef: 'r-booking-1',
+      timezone: 'Asia/Jakarta',
+    });
+    // 14:00 WIB = 07:00 UTC.
+    expect((bookingsTable[0] as { scheduledAt: Date }).scheduledAt.toISOString()).toBe(
+      '2026-12-20T07:00:00.000Z',
+    );
+  });
+
+  it('booking form cocok dengan katalog → title/durasi/serviceId diambil dari service', async () => {
+    // Katalog workspace berisi layanan "Scaling Gigi" (durasi 90 menit).
+    dbState.tables.set('services', [
+      {
+        id: 'svc-1',
+        name: 'Scaling Gigi',
+        description: null,
+        durationMinutes: 90,
+        priceMinor: 200_000,
+        currency: 'IDR',
+        color: '#f59e0b',
+        category: null,
+        isActive: true,
+        sortOrder: 0,
+        userId: 'u-1',
+        workspaceId: 'ws-1',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    const bookingQuestions: GoogleFormQuestion[] = [
+      { id: 'q-name', title: 'Nama lengkap' },
+      { id: 'q-phone', title: 'No. HP' },
+      { id: 'q-service', title: 'Layanan' },
+      { id: 'q-date', title: 'Tanggal' },
+      { id: 'q-time', title: 'Jam' },
+    ];
+    googleFetchMock
+      .mockResolvedValueOnce({
+        formId: 'form-abc',
+        info: { title: 'Form Booking' },
+        items: bookingQuestions.map((q) => ({
+          questionItem: { question: { questionId: q.id, title: q.title } },
+        })),
+      })
+      .mockResolvedValueOnce({
+        responses: [
+          response({
+            responseId: 'r-booking-svc',
+            answers: {
+              'q-name': { textAnswers: { answers: [{ value: 'Budi' }] } },
+              'q-phone': { textAnswers: { answers: [{ value: '+62 811 222 333' }] } },
+              'q-service': { textAnswers: { answers: [{ value: 'Scaling Gigi' }] } },
+              'q-date': { textAnswers: { answers: [{ value: '2026-12-20' }] } },
+              'q-time': { textAnswers: { answers: [{ value: '14:00' }] } },
+            },
+          }),
+        ],
+        nextPageToken: null,
+      });
+
+    const result = await syncFormResponsesToContacts('ws-1');
+    expect(result).toMatchObject({ imported: 1, bookingsCreated: 1 });
+
+    const bookingsTable = dbState.tables.get('bookings') ?? [];
+    expect(bookingsTable).toHaveLength(1);
+    // Durasi & title mengikuti katalog, serviceId tertaut — bukan input manual.
+    expect(bookingsTable[0]).toMatchObject({
+      workspaceId: 'ws-1',
+      durationMinutes: 90,
+      serviceId: 'svc-1',
+    });
+  });
+
+  it('response duplikat (responseId sama) → hanya satu booking dibuat', async () => {
+    const bookingQuestions: GoogleFormQuestion[] = [
+      { id: 'q-name', title: 'Nama lengkap' },
+      { id: 'q-phone', title: 'No. HP' },
+      { id: 'q-service', title: 'Layanan' },
+      { id: 'q-date', title: 'Tanggal' },
+      { id: 'q-time', title: 'Jam' },
+    ];
+    const bookingResponse = response({
+      responseId: 'r-booking-dup',
+      answers: {
+        'q-name': { textAnswers: { answers: [{ value: 'Budi' }] } },
+        'q-phone': { textAnswers: { answers: [{ value: '+62 811 222 333' }] } },
+        'q-service': { textAnswers: { answers: [{ value: 'Scaling Gigi' }] } },
+        'q-date': { textAnswers: { answers: [{ value: '2026-12-20' }] } },
+        'q-time': { textAnswers: { answers: [{ value: '14:00' }] } },
+      },
+    });
+    googleFetchMock
+      .mockResolvedValueOnce({
+        formId: 'form-abc',
+        info: { title: 'Form Booking' },
+        items: bookingQuestions.map((q) => ({
+          questionItem: { question: { questionId: q.id, title: q.title } },
+        })),
+      })
+      .mockResolvedValueOnce({
+        responses: [bookingResponse, bookingResponse], // responseId sama dua kali
+        nextPageToken: null,
+      });
+
+    const result = await syncFormResponsesToContacts('ws-1');
+    // Kursor maju dua kali, tapi hanya SATU booking (idempoten per responseId).
+    expect(result.bookingsCreated).toBe(1);
+    expect(dbState.tables.get('bookings') ?? []).toHaveLength(1);
   });
 
   it('integrasi belum terhubung → GoogleApiError 409', async () => {

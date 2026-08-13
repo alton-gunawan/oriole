@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm run check:i18n && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "npm run check:i18n",
+    "test": "vitest run && npm run check:i18n",
     "check:i18n": "node scripts/check-locales.mjs",
     "preview": "vite preview"
   },
@@ -15,21 +15,28 @@
     "@astryxdesign/core": "^0.2.0",
     "@astryxdesign/theme-neutral": "^0.2.0",
     "@hookform/resolvers": "^5.7.1",
+    "@ilamy/calendar": "^2.0.3",
     "@neondatabase/auth": "0.4.2-beta",
     "@oriole/call-goals": "workspace:*",
+    "@posthog/react": "^1.10.3",
     "@tanstack/react-query": "^5.101.4",
     "@tremor/react": "^3.18.7",
     "boring-avatars": "^2.0.4",
+    "dayjs": "^1.11.21",
+    "framer-motion": "^13.0.0",
     "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^8.2.1",
     "i18next-resources-to-backend": "^1.2.3",
     "libphonenumber-js": "^1.13.10",
+    "lucide-react": "^1.28.0",
+    "posthog-js": "^1.415.6",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.84.0",
     "react-i18next": "^17.0.11",
     "react-phone-number-input": "^3.4.17",
     "react-router": "^7.18.2",
+    "tailwindcss-animate": "^1.0.7",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -39,6 +46,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^7.0.2",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
   }
 }

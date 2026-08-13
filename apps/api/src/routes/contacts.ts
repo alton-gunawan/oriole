@@ -183,6 +183,21 @@ export const contactsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     });
   })
 
+  /* ── Detail kontak (workspace-scoped) ─────────────────────── */
+  .get(
+    '/:id',
+    requireAuth,
+    requireWorkspace,
+    zValidator('param', contactIdParamSchema),
+    async (c) => {
+      const contact = await findContact(c.get('workspaceId'), c.req.valid('param').id);
+      if (!contact) {
+        return c.json({ error: 'Kontak tidak ditemukan' }, 404);
+      }
+      return c.json({ contact: serializeContact(contact) });
+    },
+  )
+
   /* ── Buat kontak ──────────────────────────────────────────── */
   .post('/', requireAuth, requireWorkspace, zValidator('json', createContactSchema), async (c) => {
     const body = c.req.valid('json');

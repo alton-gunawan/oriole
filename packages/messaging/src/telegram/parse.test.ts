@@ -85,6 +85,41 @@ describe('parseTelegramUpdate', () => {
     expect(event).toMatchObject({ intent: 'text', content: 'Halo!', senderIdentifier: '12345' });
   });
 
+  it('meng-parse kontak (request_contact) → intent contact dengan nomor verified', () => {
+    const event = parseTelegramUpdate({
+      update_id: 1006,
+      message: {
+        message_id: 8,
+        date: 1_700_000_000,
+        chat: { id: 12345, first_name: 'Budi', type: 'private' },
+        contact: { phone_number: '+6281234567890', first_name: 'Budi', last_name: 'Santoso', user_id: 98765 },
+      },
+    });
+
+    expect(event).toMatchObject({
+      channel: 'telegram',
+      providerEventId: '1006',
+      senderIdentifier: '12345',
+      senderName: 'Budi Santoso',
+      intent: 'contact',
+      bookingId: null,
+      content: '+6281234567890',
+    });
+  });
+
+  it('kontak tanpa nomor → diabaikan (bukan intent contact)', () => {
+    const event = parseTelegramUpdate({
+      update_id: 1007,
+      message: {
+        message_id: 9,
+        date: 1_700_000_000,
+        chat: { id: 12345, first_name: 'Budi', type: 'private' },
+        contact: { first_name: 'Budi' },
+      },
+    });
+    expect(event).toBeNull();
+  });
+
   it('meng-parse pesan STOP → intent opt-out', () => {
     const event = parseTelegramUpdate(messageUpdate('STOP'));
     expect(event?.intent).toBe('opt-out');

@@ -3,7 +3,7 @@ import { activeLocale } from '../i18n/format';
 /** Tipe respons dari /api/channels (tanpa kredensial privat). */
 export interface WorkspaceChannel {
   id: string;
-  channelType: 'telegram' | 'whatsapp' | string;
+  channelType: 'telegram' | 'whatsapp' | 'instagram' | 'facebook' | string;
   identifier: string | null;
   isActive: boolean;
   webhookUrl: string;
@@ -11,6 +11,13 @@ export interface WorkspaceChannel {
   updatedAt: string;
   /** true = bot bersama dari server (env TELEGRAM_BOT_TOKEN), belum terhubung ke project. */
   isEnvShared?: boolean;
+  /** Provider channel WhatsApp: 'waha' = BYO (unofficial); selain itu official 360dialog. */
+  provider?: string;
+  /** Health state channel BYO: connecting | qr-expired | connected | … */
+  healthState?: string;
+  /** Status session mentah terakhir dari gateway (WORKING/FAILED/…) — untuk
+   *  hint re-pairing LID saat FAILED tapi nomor masih ter-pair. */
+  healthStatus?: string;
 }
 
 export interface ChannelListResponse {

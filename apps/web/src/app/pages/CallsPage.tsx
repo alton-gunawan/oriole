@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Skeleton, type BadgeVariant } from '@astryxdesign/core';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { Card, EmptyState, PageHeader, ReloadMenuButton, SessionExpiredCard, StatCard } from '../shell/ui';
@@ -79,7 +78,6 @@ function resultSnippet(result: Record<string, unknown> | null, t: TFunction): st
 
 export function CallsPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['calls', activeWorkspaceId],
@@ -103,6 +101,7 @@ export function CallsPage() {
       <PageHeader
         title={t('calls.title')}
         description={t('calls.description')}
+        icon={IconPhone}
       >
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
       </PageHeader>
@@ -187,7 +186,6 @@ export function CallsPage() {
               icon={IconPhone}
               title={t('calls.noCallsTitle')}
               description={t('calls.noCallsDesc')}
-              action={{ label: t('calls.goToBookings'), onClick: () => navigate('/app/bookings') }}
             />
           ) : (
             <Card className="divide-y divide-zinc-100">

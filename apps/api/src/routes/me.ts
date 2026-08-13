@@ -7,6 +7,7 @@ import { INDUSTRIES } from '@oriole/call-goals';
 import { bookings, conversations, profiles, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { captureWorkspaceEvent } from '../lib/analytics.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
 import { rescheduleWorkspaceAutoCalls } from '../lib/reminders.ts';
 
@@ -26,6 +27,28 @@ const avatarUrlField = z
   .nullable()
   .optional();
 
+/**
+ * Knowledge base AI chat (WhatsApp) — sumber jawaban bot untuk layanan /
+ * harga / jam / lokasi. Field teks bebas; semua opsional (owner boleh mengisi
+ * sebagian). `faq` dibatasi jumlah & panjangnya agar tidak membebani prompt.
+ */
+const aiKnowledgeSchema = z.object({
+  description: z.string().trim().max(2_000).optional(),
+  services: z.string().trim().max(10_000).optional(),
+  hours: z.string().trim().max(1_000).optional(),
+  location: z.string().trim().max(2_000).optional(),
+  policy: z.string().trim().max(2_000).optional(),
+  faq: z
+    .array(
+      z.object({
+        q: z.string().trim().min(1, 'Pertanyaan FAQ tidak boleh kosong').max(500),
+        a: z.string().trim().min(1, 'Jawaban FAQ tidak boleh kosong').max(2_000),
+      }),
+    )
+    .max(50, 'FAQ maksimal 50 butir')
+    .optional(),
+});
+
 const workspaceSchema = z.object({
   name: z.string().trim().min(2).max(120),
   templateCategory: z.enum(WORKSPACE_TEMPLATE_CATEGORY_IDS),
@@ -41,10 +64,16 @@ const workspaceSchema = z.object({
   reminderLeadMinutes: z.number().int().min(5).max(10_080).optional(),
   /** Bahasa panggilan CALL-E (hanya 'en' aktif saat ini; 'id' = extension point). */
   callGoalLanguage: z.enum(['en', 'id']).optional(),
+  /** Bahasa balasan bot chat (Telegram / WhatsApp / email) — default 'en'. */
+  chatLanguage: z.enum(['en', 'id']).optional(),
   /** Auto-call CALL-E aktif/mati. */
   autoCallEnabled: z.boolean().optional(),
   /** Berapa jam sebelum jadwal auto-call dipicu (default 24). */
   autoCallLeadHours: z.number().int().min(1).max(10_080).optional(),
+  /** AI chat WhatsApp aktif/mati (default mati). */
+  aiEnabled: z.boolean().optional(),
+  /** Knowledge base AI chat — null = hapus KB (kembali ke kosong). */
+  aiKnowledge: aiKnowledgeSchema.nullable().optional(),
 });
 
 /** PATCH bersifat parsial — cukup kirim field yang ingin diubah. */
@@ -133,6 +162,13 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       })
       .returning();
 
+    captureWorkspaceEvent('workspace.created', {
+      userId: c.get('userId'),
+      workspaceId: workspace.id,
+      templateCategory: workspace.templateCategory,
+      industry: workspace.industry,
+    });
+
     return c.json({ workspace }, 201);
   })
   .patch(
@@ -151,9 +187,12 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
         body.industry === undefined &&
         body.reminderLeadMinutes === undefined &&
         body.callGoalLanguage === undefined &&
+        body.chatLanguage === undefined &&
         body.autoCallEnabled === undefined &&
         body.autoCallLeadHours === undefined &&
-        body.avatarUrl === undefined
+        body.avatarUrl === undefined &&
+        body.aiEnabled === undefined &&
+        body.aiKnowledge === undefined
       ) {
         return c.json({ error: 'Tidak ada field yang diubah' }, 400);
       }
@@ -191,10 +230,14 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
             ? { reminderLeadMinutes: body.reminderLeadMinutes }
             : {}),
           ...(body.callGoalLanguage !== undefined ? { callGoalLanguage: body.callGoalLanguage } : {}),
+          ...(body.chatLanguage !== undefined ? { chatLanguage: body.chatLanguage } : {}),
           ...(body.autoCallEnabled !== undefined ? { autoCallEnabled: body.autoCallEnabled } : {}),
           ...(body.autoCallLeadHours !== undefined ? { autoCallLeadHours: body.autoCallLeadHours } : {}),
           // null = hapus avatar (kembali ke planet dari nama).
           ...(body.avatarUrl !== undefined ? { avatarUrl: body.avatarUrl } : {}),
+          ...(body.aiEnabled !== undefined ? { aiEnabled: body.aiEnabled } : {}),
+          // null = hapus knowledge base AI chat.
+          ...(body.aiKnowledge !== undefined ? { aiKnowledge: body.aiKnowledge } : {}),
           updatedAt: new Date(),
         })
         .where(and(eq(workspaces.id, id), eq(workspaces.userId, userId), isNull(workspaces.deletedAt)))

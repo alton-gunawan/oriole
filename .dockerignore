@@ -1,0 +1,17 @@
+# Root build context (apps/api/Dockerfile.dev via deploy/waha overlay).
+# apps/api/.dockerignore only applies to builds run from apps/api — this file
+# guards root-context builds. Source is bind-mounted at runtime for dev, so
+# only the manifests + pnpm install matter in the image.
+.git
+.env
+.env.*
+**/node_modules
+node_modules
+apps/web
+deploy
+spikes
+data
+backups
+coverage
+**/dist
+apps/web/.tmp-*-dist

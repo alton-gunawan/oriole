@@ -9,6 +9,9 @@ import {
   DialogHeader,
   Layout,
   LayoutContent,
+  NumberInput,
+  Selector,
+  Switch,
   TextArea,
   TextInput,
   type ISODateTimeString,
@@ -23,9 +26,14 @@ import {
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
-import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
+import type {
+  BookingCreateResponse,
+  BookingsListResponse,
+  RecurrenceRule,
+} from '../../lib/bookings';
+import type { StaffListResponse } from '../../lib/staff';
+import type { ServiceRecord, ServicesListResponse } from '../../lib/services';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { BookingTitleCombobox } from '../components/BookingTitleCombobox';
 import { PhoneInput } from '../components/PhoneInput';
 import { GoalCustomizer } from '../shell/GoalCustomizer';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
@@ -44,6 +52,7 @@ export function BookingNewPage() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
 
+  // ── Title diambil dari layanan katalog (bukan input manual) ──
   const [title, setTitle] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
@@ -52,6 +61,45 @@ export function BookingNewPage() {
   const [timezone] = useState(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
   );
+  // ── Layanan katalog & staf (availabilitas) ──────────────────
+  const [serviceId, setServiceId] = useState<string>('');
+  const [staffId, setStaffId] = useState<string>('');
+  // ── Pengulangan (recurring appointments) ───────────────────
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrence, setRecurrence] = useState<RecurrenceRule>({
+    frequency: 'weekly',
+    interval: 1,
+    weekdays: [],
+    count: 4,
+  });
+
+  // Daftar staf workspace — untuk Selector penugasan.
+  const { data: staffPage } = useQuery({
+    queryKey: ['staff', activeWorkspaceId],
+    queryFn: () => apiFetch<StaffListResponse>('/staff'),
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+  const activeStaff = staffPage?.staff.filter((staff) => staff.isActive) ?? [];
+
+  // Daftar layanan katalog — Selector auto-fill title/durasi/staf saat dipilih.
+  const { data: servicesPage } = useQuery({
+    queryKey: ['services', activeWorkspaceId],
+    queryFn: () => apiFetch<ServicesListResponse>('/services'),
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+  const activeServices = servicesPage?.services.filter((service) => service.isActive) ?? [];
+
+  /** Auto-fill dari layanan katalog: title = nama layanan (bukan input
+   *  manual), staf = staf tunggal ter-assign (bila layanan hanya punya satu
+   *  staf). Durasi tidak diedit di sini — selalu diambil dari katalog. */
+  const applyService = (service: ServiceRecord) => {
+    setServiceId(service.id);
+    setTitle(service.name);
+    if (service.staffIds.length === 1) setStaffId(service.staffIds[0]);
+  };
+
   const [customization, setCustomization] = useState<GoalCustomization | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,7 +189,7 @@ export function BookingNewPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      const response = await apiFetch<{ booking: BookingRecord }>('/bookings', {
+      const response = await apiFetch<BookingCreateResponse>('/bookings', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
@@ -151,6 +199,13 @@ export function BookingNewPage() {
           customerName: customerName.trim() || undefined,
           phone: phone.trim() || undefined,
           goal: customization ?? undefined,
+          // Booking WAJIB berasal dari layanan katalog — title & durasi
+          // diisi otomatis dari service (server juga mengisi bila kosong).
+          serviceId: serviceId || undefined,
+          staffId: staffId || undefined,
+          // Hanya kirim recurrence bila toggle aktif & aturan valid.
+          recurrence:
+            isRecurring && (recurrence.count ?? 1) > 0 ? recurrence : undefined,
         }),
       });
       navigate(`/app/bookings/${response.booking.id}`, { replace: true });
@@ -166,6 +221,7 @@ export function BookingNewPage() {
       <PageHeader
         title={t('bookingNew.title')}
         description={t('bookingNew.description')}
+        icon={IconCalendar}
       >
         <Link
           to="/app/bookings"
@@ -179,13 +235,39 @@ export function BookingNewPage() {
       <form onSubmit={onSubmit} className="space-y-6">
         <Card className="space-y-5 p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <BookingTitleCombobox
-              className="sm:col-span-2"
-              workspaceId={activeWorkspaceId}
-              isRequired
-              value={title}
-              onChange={setTitle}
-            />
+            {/* Layanan katalog — WAJIB dipilih. Title, durasi, dan staf
+                tunggal diisi otomatis dari service; tidak ada input manual. */}
+            <div className="sm:col-span-2">
+              <Selector
+                label={t('bookingNew.service')}
+                description={t('bookingNew.serviceDesc')}
+                placeholder={t('bookingNew.servicePlaceholder')}
+                options={activeServices.map((service) => ({ value: service.id, label: service.name }))}
+                value={serviceId || null}
+                onChange={(value) => {
+                  const id = value ?? '';
+                  const service = activeServices.find((item) => item.id === id);
+                  if (service) applyService(service);
+                  else setServiceId(''); // clear → booking tanpa service tidak bisa disubmit
+                }}
+                hasClear
+                isRequired
+                hasSearch
+                searchPlaceholder={t('bookingNew.serviceSearch')}
+                width="100%"
+              />
+              {activeServices.length === 0 && (
+                <p className="mt-2 text-xs text-zinc-400">
+                  {t('bookingNew.noServicesHint')}{' '}
+                  <Link
+                    to="/app/services"
+                    className="font-semibold text-amber-600 transition hover:text-amber-700"
+                  >
+                    {t('bookingNew.manageServices')}
+                  </Link>
+                </p>
+              )}
+            </div>
 
             <TextInput
               label={t('bookingNew.customerName')}
@@ -221,6 +303,112 @@ export function BookingNewPage() {
               onChange={(value) => setScheduledAt(value ?? '')}
               width="100%"
             />
+
+            {/* Staf penanggung jawab — otomatis dari layanan (satu staf) atau
+                dipilih manual bila layanan punya banyak staf. Dipakai mesin
+                availabilitas untuk mencegah double-booking. Durasi selalu
+                diambil dari katalog layanan — tidak ada input manual. */}
+            <div className="sm:col-span-2">
+              <Selector
+                label={t('bookingNew.staff')}
+                description={t('bookingNew.staffDesc')}
+                placeholder={t('bookingNew.staffPlaceholder')}
+                options={activeStaff.map((staff) => ({ value: staff.id, label: staff.name }))}
+                value={staffId || null}
+                onChange={(value) => setStaffId(value ?? '')}
+                hasClear
+                width="100%"
+              />
+              {activeStaff.length === 0 && (
+                <p className="mt-2 text-xs text-zinc-400">
+                  {t('bookingNew.noStaffHint')}{' '}
+                  <Link
+                    to="/app/staff"
+                    className="font-semibold text-amber-600 transition hover:text-amber-700"
+                  >
+                    {t('bookingNew.manageStaff')}
+                  </Link>
+                </p>
+              )}
+            </div>
+
+            {/* Pengulangan — ekspansi jadi beberapa instance booking satu seri. */}
+            <div className="sm:col-span-2 rounded-xl border border-zinc-100 p-4">
+              <Switch
+                label={t('bookingNew.repeat')}
+                description={t('bookingNew.repeatDesc')}
+                value={isRecurring}
+                onChange={setIsRecurring}
+              />
+              {isRecurring && (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Selector
+                    label={t('bookingNew.repeatFrequency')}
+                    options={[
+                      { value: 'daily', label: t('bookingNew.frequencyDaily') },
+                      { value: 'weekly', label: t('bookingNew.frequencyWeekly') },
+                      { value: 'monthly', label: t('bookingNew.frequencyMonthly') },
+                    ]}
+                    value={recurrence.frequency}
+                    onChange={(value) =>
+                      setRecurrence((prev) => ({ ...prev, frequency: (value as RecurrenceRule['frequency']) ?? 'weekly' }))
+                    }
+                    width="100%"
+                  />
+                  <NumberInput
+                    label={t('bookingNew.repeatInterval')}
+                    value={recurrence.interval ?? 1}
+                    onChange={(value) => setRecurrence((prev) => ({ ...prev, interval: value ?? 1 }))}
+                    min={1}
+                    max={90}
+                    width="100%"
+                  />
+                  {recurrence.frequency === 'weekly' && (
+                    <div className="sm:col-span-2">
+                      <p className="mb-1.5 text-xs font-medium text-zinc-600">{t('bookingNew.repeatWeekdays')}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day, index) => {
+                          const selected = (recurrence.weekdays ?? []).includes(index);
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() =>
+                                setRecurrence((prev) => {
+                                  const weekdays = prev.weekdays ?? [];
+                                  const next = selected
+                                    ? weekdays.filter((d) => d !== index)
+                                    : [...weekdays, index].sort((a, b) => a - b);
+                                  return { ...prev, weekdays: next };
+                                })
+                              }
+                              className={`size-8 rounded-full text-xs font-semibold transition ${
+                                selected
+                                  ? 'bg-amber-500 text-white shadow-sm'
+                                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1.5 text-xs text-zinc-400">{t('bookingNew.repeatWeekdaysHint')}</p>
+                    </div>
+                  )}
+                  <NumberInput
+                    label={t('bookingNew.repeatCount')}
+                    description={t('bookingNew.repeatCountDesc')}
+                    value={recurrence.count ?? 1}
+                    onChange={(value) => setRecurrence((prev) => ({ ...prev, count: value ?? 1 }))}
+                    min={1}
+                    max={52}
+                    width="100%"
+                  />
+                </div>
+              )}
+            </div>
 
             <TextArea
               className="sm:col-span-2"
@@ -260,7 +448,9 @@ export function BookingNewPage() {
             label={t('bookingNew.submit')}
             variant="primary"
             isLoading={isSubmitting}
-            isDisabled={!title.trim() || !scheduledAt}
+            // Booking harus berasal dari layanan katalog — tidak ada booking
+            // tanpa service.
+            isDisabled={!serviceId || !scheduledAt}
             type="submit"
           />
         </div>
@@ -304,22 +494,22 @@ export function BookingNewPage() {
                         : t('bookingNew.noContacts')}
                     </p>
                   ) : (
-                    <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200">
+                    <ul className="space-y-1.5">
                       {filteredContacts.map((contact) => (
                         <li key={contact.phone}>
                           <button
                             type="button"
                             onClick={() => applyContact(contact)}
-                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-amber-50 focus-visible:bg-amber-50 focus-visible:outline-none"
+                            className="flex w-full items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-left transition hover:bg-amber-50 hover:ring-1 hover:ring-amber-200 focus-visible:bg-amber-50 focus-visible:ring-1 focus-visible:ring-amber-300 focus-visible:outline-none"
                           >
-                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600">
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-xs font-bold text-amber-700">
                               {(contact.name ?? '?').slice(0, 1).toUpperCase()}
                             </span>
                             <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium text-zinc-800">
+                              <span className="block truncate text-[15px] font-medium text-zinc-800">
                                 {contact.name ?? t('common.noName')}
                               </span>
-                              <span className="block truncate text-xs text-zinc-500">{contact.phone}</span>
+                              <span className="block truncate text-sm text-zinc-500">{contact.phone}</span>
                             </span>
                           </button>
                         </li>

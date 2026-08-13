@@ -1,5 +1,25 @@
 import type { TranslationKey } from '../i18n';
 
+/**
+ * Knowledge base AI chat (WhatsApp) — sumber jawaban bot untuk layanan /
+ * harga / jam buka / lokasi. Bentuk sama dengan `AiKnowledge` di
+ * packages/database (api) — dijaga sinkron manual.
+ */
+export interface AiKnowledge {
+  /** Deskripsi singkat usaha (1-2 kalimat). */
+  description?: string;
+  /** Layanan + harga, bebas format teks. */
+  services?: string;
+  /** Jam buka ("Sen–Sab 08.00–20.00"). */
+  hours?: string;
+  /** Alamat + patokan / link maps. */
+  location?: string;
+  /** Kebijakan lain (opsional): deposit, pembatalan, dsb. */
+  policy?: string;
+  /** FAQ tambahan di luar field di atas. */
+  faq?: { q: string; a: string }[];
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -9,10 +29,16 @@ export interface Workspace {
   reminderLeadMinutes?: number;
   /** Bahasa panggilan CALL-E (default 'en'). */
   callGoalLanguage?: string;
+  /** Bahasa balasan bot chat — Telegram / WhatsApp / email (default 'en'). */
+  chatLanguage?: string;
   /** Auto-call CALL-E aktif/mati (default mati). */
   autoCallEnabled?: boolean;
   /** Berapa jam sebelum jadwal auto-call dipicu (default 24). */
   autoCallLeadHours?: number;
+  /** AI chat WhatsApp aktif/mati (default mati). */
+  aiEnabled?: boolean;
+  /** Knowledge base AI chat (null = belum diisi). */
+  aiKnowledge?: AiKnowledge | null;
   /**
    * Avatar project: URL planet DiceBear / data URL upload. null = planet
    * deterministik dari nama (default lama).

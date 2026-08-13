@@ -23,6 +23,7 @@ export function HelpPage() {
       <PageHeader
         title={t('help.title')}
         description={t('help.description')}
+        icon={IconHelp}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

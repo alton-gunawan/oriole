@@ -1,8 +1,18 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { BookingGoalContext } from '@oriole/call-goals';
 import { calleCalls, type Database } from '@oriole/database';
 
 const FAILED_STATUSES = new Set(['failed', 'error']);
+
+/** Status panggilan yang masih berjalan (belum terminal) — Vapi & legacy CALL-E. */
+const IN_FLIGHT_STATUSES = new Set([
+  'scheduled',
+  'queued',
+  'ringing',
+  'in-progress',
+  'forwarding',
+  'pending',
+]);
 
 /** Hitung jumlah attempt & attempt gagal dari baris calle_calls. */
 export function countCallAttempts(calls: { status: string | null }[]): {
@@ -13,6 +23,29 @@ export function countCallAttempts(calls: { status: string | null }[]): {
     total: calls.length,
     failed: calls.filter((call) => call.status && FAILED_STATUSES.has(call.status)).length,
   };
+}
+
+/**
+ * Guard anti-panggilan-ganda: cek apakah sudah ada panggilan yang masih
+ * berjalan (non-terminal) untuk (booking, goalType) yang sama. Dipakai
+ * `placeBookingCall` (lib/place-call.ts) sebelum menempatkan panggilan —
+ * retry Inngest / klik ganda tidak boleh membuat panggilan paralel.
+ * Mengembalikan row bila ada.
+ */
+export async function findInFlightCall(
+  db: Database,
+  bookingId: string,
+  goalType: string,
+): Promise<{ id: string; calleCallId: string } | undefined> {
+  const rows = await db
+    .select({
+      id: calleCalls.id,
+      calleCallId: calleCalls.calleCallId,
+      status: calleCalls.status,
+    })
+    .from(calleCalls)
+    .where(and(eq(calleCalls.bookingId, bookingId), eq(calleCalls.goalType, goalType)));
+  return rows.find((row) => row.status && IN_FLIGHT_STATUSES.has(row.status));
 }
 
 /**

@@ -203,7 +203,9 @@ export function PhoneInput({
       <PhoneNumberInput
         id={inputId}
         aria-describedby={description ? descriptionId : undefined}
-        className="phone-input"
+        // `ph-no-capture`: nomor telepon = PII — jangan pernah ter-capture
+        // autocapture/session replay PostHog.
+        className="phone-input ph-no-capture"
         international
         withCountryCallingCode
         defaultCountry={defaultCountry}

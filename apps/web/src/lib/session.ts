@@ -1,6 +1,7 @@
 import { ApiError, apiFetch } from './api';
 import { clearAccessToken, isAuthConfigured } from './token';
 import { clearSessionCookie } from './session-cookie';
+import { identifyAnalyticsUser, resetAnalytics } from './analytics';
 import { useSessionStore } from '../stores/session';
 import { useWorkspaceStore } from '../stores/workspace';
 import type { Workspace } from './workspace';
@@ -53,6 +54,13 @@ export async function restoreSession(): Promise<void> {
       useWorkspaceStore.getState().setWorkspaces(me.workspaces);
       store.setStatus('authenticated');
       store.setUser({ id: me.userId, email: me.email, name: me.name ?? undefined });
+      // Analitik: tautkan event anonim → user dikenal + group workspace aktif.
+      void identifyAnalyticsUser({
+        id: me.userId,
+        email: me.email,
+        name: me.name ?? undefined,
+        workspaceId: useWorkspaceStore.getState().activeWorkspaceId ?? undefined,
+      });
       return;
     } catch (err) {
       // 401 yang sudah dikonfirmasi mati oleh otoritas sesi → reset lokal.
@@ -89,4 +97,7 @@ export async function signOut(): Promise<void> {
   clearAccessToken();
   useSessionStore.getState().clear();
   useWorkspaceStore.getState().clear();
+  // Analitik: lepas identitas — user berikutnya di browser ini tidak
+  // mewarisi identitas/group yang lama.
+  void resetAnalytics();
 }

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { DropdownMenu, DropdownMenuItem } from '@astryxdesign/core';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import type { SupportedLocale } from '../../i18n';
-import { IconCheck, IconChevronDown } from './icons';
+import { IconCheck, IconChevronDown, IconGlobe } from './icons';
 
 export const LANGUAGE_OPTIONS: {
   code: SupportedLocale;
@@ -59,6 +59,24 @@ export function LanguageMenuItems() {
         );
       })}
     </>
+  );
+}
+
+/**
+ * Submenu bahasa siap-pakai untuk DropdownMenu (footer sidebar, dll.): satu
+ * baris "Language" dengan ikon globe yang membuka flyout berisi pilihan bahasa
+ * (flag + nama + centang pada bahasa aktif). Memilih bahasa menutup seluruh
+ * menu (submenu Astryx meng-close stack penuh pada leaf selection).
+ */
+export function LanguageSubMenu() {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenuSubMenu
+      label={t('nav.language')}
+      icon={<IconGlobe className="size-4" />}
+    >
+      <LanguageMenuItems />
+    </DropdownMenuSubMenu>
   );
 }
 

@@ -52,7 +52,8 @@ beforeAll(() => {
   process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
   process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
   process.env.RESEND_API_KEY = 're_test';
-  process.env.CALLE_API_KEY = 'calle_test';
+  process.env.VAPI_API_KEY = 'vapi_test';
+  process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
   process.env.WHATSAPP_API_KEY = 'wa_test';
   process.env.WHATSAPP_WEBHOOK_SECRET = WEBHOOK_SECRET;
 });
@@ -110,6 +111,24 @@ describe('POST /api/webhooks/whatsapp — keamanan', () => {
 
   it('workspace tanpa channel → 404', async () => {
     resolveChannelMock.mockResolvedValue(null);
+    app = await buildApp();
+    const res = await app.request('/api/webhooks/whatsapp/ws-1', {
+      method: 'POST',
+      headers: { 'x-hub-signature-256': sign(validBody()) },
+      body: validBody(),
+    });
+    expect(res.status).toBe(404);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('channel BYO (provider waha) → 404 — webhook 360dialog hanya untuk provider itu', async () => {
+    resolveChannelMock.mockResolvedValue({
+      provider: 'waha',
+      baseUrl: 'http://waha.test:3000',
+      gatewayApiKey: 'gw-key',
+      sessionName: 'ws_ws-1',
+      isActive: true,
+    });
     app = await buildApp();
     const res = await app.request('/api/webhooks/whatsapp/ws-1', {
       method: 'POST',

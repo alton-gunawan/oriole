@@ -6,6 +6,8 @@ vi.mock('./inngest/client.ts', () => ({
     send: vi.fn().mockResolvedValue({ ids: ['mock'] }),
     createFunction: () => ({}),
   },
+  inngestEventBaseUrl: () => 'http://localhost:8288',
+  inngestMode: () => 'dev',
 }));
 
 // Mock jose agar requireAuth tidak perlu JWKS remote (network).
@@ -37,8 +39,9 @@ beforeAll(async () => {
   process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
   process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
   process.env.RESEND_API_KEY = 're_test';
-  process.env.CALLE_API_KEY = 'calle_test';
-  process.env.CALLE_WEBHOOK_SECRET = 'test-calle-webhook-secret';
+  process.env.VAPI_API_KEY = 'vapi_test';
+  process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
+  process.env.VAPI_WEBHOOK_SECRET = 'test-vapi-webhook-secret';
 
   ({ app } = await import('./index.ts'));
 });
@@ -48,6 +51,21 @@ describe('Oriole API', () => {
     const res = await app.request('/api/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'ok', service: 'oriole-api' });
+  });
+
+  it('GET /api/health/inngest → 200 + status pipeline (fetch di-stub)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
+    try {
+      const res = await app.request('/api/health/inngest');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({
+        status: 'ok',
+        mode: 'dev',
+        baseUrl: 'http://localhost:8288',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('GET /api/me tanpa token → 401', async () => {
@@ -64,18 +82,13 @@ describe('Oriole API', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /api/webhooks/calle body tidak valid → 400 (dengan signature sah)', async () => {
-    const { signWebhookBody } = await import('./lib/webhook-signature.ts');
-    const body = JSON.stringify({});
-    const res = await app.request('/api/webhooks/calle', {
+  it('POST /api/webhooks/vapi tanpa secret → 401', async () => {
+    const res = await app.request('/api/webhooks/vapi', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-calle-signature': signWebhookBody(body, 'test-calle-webhook-secret'),
-      },
-      body,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: { type: 'end-of-call-report', call: { id: 'call-1' } } }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
   });
 
   it('POST /api/triggers/welcome-email tanpa auth → 401', async () => {

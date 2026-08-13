@@ -37,18 +37,101 @@ Inngest: sync-subscription → upsert tabel `subscriptions`
 - `userId` di-resolve dari `custom_data.user_id` yang dikirim saat checkout dibuat dari app kita.
 - Status subscription dipetakan ke enum Drizzle (`trialing/active/past_due/canceled/unpaid/paused`).
 
-### Panggilan suara (CALL-E)
+### Payments (Global — payment link Paddle)
 
 ```
-CALL-E ──POST /api/webhooks/calle──(unsigned JSON + CALL-E-Event-Id)──▶ Hono
-   ├─ validasi body (zod), cek header vs body.id
-   ├─ recordWebhookEvent('calle', eventId) — idempotency
-   ├─ inngest.send('calle/event.received')
-   └─ markWebhookProcessed()
-Inngest: upsert `calle_calls` → update `bookings` (status completed) bila terhubung via calle_call_id
+Web ──POST /api/integrations/payments/connect──▶ (one-click, kredensial server-side PADDLE_API_KEY)
+Web ──POST /api/payments──{title, amount, currency, bookingId?}──▶ Hono
+   ├─ gate: integrasi payments aktif + PADDLE_API_KEY terisi (bukan placeholder)
+   ├─ insert `payment_links` (status pending, amountMinor minor units)
+   ├─ paddle.transactions.create(non-catalog price + custom_data.payment_link_id)
+   └─ update row: paddle_transaction_id + checkout_url → URL dibagikan ke customer
+Paddle ──POST /api/webhooks/paddle──transaction.completed/canceled──▶ Hono (verifikasi + idempotency)
+   └─ Inngest sync-payment-link: pending → paid (dengan txn id, email, paidAt) / canceled
 ```
 
-- SDK `@call-e/calle` (server-only, jangan expose `CALLE_API_KEY` di browser).
+- Jumlah bebas per link via **non-catalog price** (`unitPrice` + `product.name`) — tanpa
+  membuat product/price di katalog Paddle. Kode mata uang divalidasi terhadap daftar
+  global Paddle (`CurrencyCode` SDK) sebelum dipanggil.
+- Pembatalan di sisi app memanggil Paddle dulu (`transactions.update status=canceled`)
+  agar URL checkout yang sudah dibagikan mati; gagal → 502 dan link tetap pending.
+- Webhook menaut lewat `custom_data.payment_link_id` + workspace guard
+  (`custom_data.workspace_id`) — event asing tidak bisa mengubah link project lain.
+
+### Slack (notifikasi booking ke channel tim)
+
+```
+Web ──POST /api/integrations/slack/connect──{webhookUrl, channel?}──▶ Hono
+   ├─ validasi URL harus https://hooks.slack.com/services/…
+   ├─ ping uji SEKARANG (deliverSlackMessage ping) — gagal → 502, tidak disimpan
+   └─ upsert workspace_integrations (providerConfig.webhookUrl = SECRET)
+Route bookings / form-booking / webhook Vapi ──emitSlackBookingEvent──▶ inngest.send('slack/booking.event')
+Inngest deliver-slack-notification → dispatchSlackNotification (retry built-in)
+   └─ buildSlackMessage(event, data) → POST blocks ke webhook URL
+```
+
+- Event yang dikirim: `booking.created` / `booking.updated` / `booking.cancelled` /
+  `booking.completed` / `booking.deleted` — payload sama dengan webhook keluar
+  (`integration-events.ts` → `emitSlackBookingEvent` di tiap titik emit).
+- URL webhook adalah **secret** (siapa pun yang memegangnya bisa memposting ke
+  channel) — serializer publik hanya menampilkan host (`hooks.slack.com`) + label
+  channel, nilai aslinya tidak pernah keluar dari server.
+- Format pesan memakai Slack **blocks** (header + section fields: customer, waktu,
+  telepon, status) dengan mrkdwn escaping input user.
+
+### Panggilan suara (Vapi)
+
+```
+Web / Inngest ──placeBookingCall()──▶ Vapi API (asisten transient + nomor tujuan)
+   ├─ RESERVE   calle_calls: insert id deterministik `pending:<callName>` (queued)
+   ├─ RECONCILE retry: cari call Vapi by nama → adopsi (tanpa create ganda)
+   ├─ CREATE    placeVapiCall() — gagal → reservasi dihapus, error dilempar
+   └─ COMMIT    update row → id asli Vapi + bookings.calle_call_id ← call id
+Vapi ──POST /api/webhooks/vapi──(Authorization: Bearer <VAPI_WEBHOOK_SECRET>)──▶ Hono
+   ├─ status-update       → update status live di calle_calls (inline)
+   ├─ end-of-call-report  → validasi (zod) + recordWebhookEvent('vapi', `${callId}:eocr`)
+   │                        + inngest.send('vapi/event.received', id: eventId) — dedup Inngest
+   └─ event lain (hang, transcript) → ack
+Inngest (onVapiEvent): map endedReason → completed/failed/canceled
+   ├─ upsert calle_calls (status + result: transkrip, recording, durasi) —
+   │   row yang hilang (commit DB gagal) dibuat ulang dari nama panggilan
+   └─ status completed → update bookings (status completed, guard panggilan
+      terkini) + emit booking.completed
+```
+
+- SDK `@vapi-ai/server-sdk` (server-only, jangan expose `VAPI_API_KEY` di browser).
+- Asisten dibuat **transient per panggilan** dari prompt goal (`composeCallGoal`),
+  server URL webhook dikonfigurasi di `assistant.server` — tanpa setup dashboard.
+- **Carrier BYO (opsional): Telnyx** — nomor keluar bisa diimpor dari Telnyx
+  (kredensial dibuat sekali di dashboard Vapi, `VAPI_TELNYX_CREDENTIAL_ID`).
+  Provisioning & registrasi otomatis via `scripts/setup-telnyx.ts`
+  (`lib/telnyx-setup.ts` + `services/telnyx.ts`, REST v2 langsung — bukan paket
+  `telnyx` npm, lihat catatan supply-chain di `services/telnyx.ts`). Runtime
+  TIDAK tergantung Telnyx: panggilan tetap lewat `VAPI_PHONE_NUMBER_ID`; ops
+  mengecek status dengan `scripts/telnyx-status.ts`.
+- **Nomor keluar per-workspace (Integrations)** — integrasi `vapi` di
+  `workspace_integrations` menyimpan pilihan nomor (`vapiPhoneNumberId`);
+  kredensial tetap server-side (env). Setiap penempatan panggilan membaca
+  `resolveOutboundPhoneNumber()` (`lib/place-call.ts`): pilihan workspace →
+  fallback `VAPI_PHONE_NUMBER_ID`. UI: halaman Integrations → Voice AI calls.
+- **BYOC (Bring your own carrier) — fase-2** — workspace menempel API key
+  Telnyx miliknya sendiri di kartu Voice AI; `lib/telnyx-byoc.ts` membuat
+  kredensial Telnyx DI SISI Vapi (`services/vapi-credential.ts` — POST
+  /credential via passthrough `vapi.fetch()`, endpoint belum ada di SDK),
+  membeli nomor bila perlu, lalu mendaftarkannya
+  (`registerTelnyxNumberInVapi`). Key Telnyx workspace TIDAK pernah disimpan
+  — dipakai sekali saat request; DB hanya menyimpan referensi non-secret
+  (`vapiCredentialId`, `vapiPhoneNumberId`, nomor, `mode: 'byoc'`). Nomor
+  BYOC disaring dari picker operator (`filterOperatorVapiNumbers`, prefix
+  `oriole-byoc-`). Idempotensi: adopsi credential by nama + list-then-create
+  nomor — retry tidak menggandakan credential/nomor/pembelian.
+- Nama tabel & kolom lama (`calle_calls`, `calle_call_id`) dipertahankan untuk
+  menghindari migrasi DB; id Vapi disimpan di `calle_call_id`.
+- Nama panggilan (`booking:<id>:<goal>:<source>`) jadi jejak audit + dasar
+  reservasi & rekonsiliasi retry (`lib/place-call.ts`): `vapi.calls.create`
+  tidak idempoten, jadi retry Inngest memakai reserve → reconcile → create →
+  commit — tidak menggandakan panggilan, dan crash di tengah tidak
+  menghilangkan panggilan (call ter-orphan dipulihkan webhook via nama).
 
 ### Email (Resend)
 

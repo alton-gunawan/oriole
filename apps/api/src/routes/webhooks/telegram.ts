@@ -70,10 +70,22 @@ export const telegramWebhookRoutes = new Hono().post(
       return c.json({ duplicate: true, eventId }, 200);
     }
 
-    await inngest.send({
-      name: 'telegram/message.received',
-      data: { workspaceId, update: body },
-    });
+    try {
+      await inngest.send({
+        name: 'telegram/message.received',
+        data: { workspaceId, update: body },
+      });
+    } catch (error) {
+      // Inngest tidak tersedia (lokal: `pnpm dev:inngest` belum jalan; cloud:
+      // INNGEST_EVENT_KEY salah/habis). Jangan ack 200 — Telegram me-retry
+      // dengan update_id yang sama (recordWebhookEvent → 'pending') sehingga
+      // pesan tidak hilang permanen begitu Inngest hidup kembali.
+      console.error(
+        '[telegram-webhook] GAGAL mengantre pesan ke Inngest — pastikan `pnpm dev:inngest` berjalan (lokal) atau INNGEST_EVENT_KEY valid (produksi):',
+        (error as Error).message,
+      );
+      return c.json({ error: 'Pesan tidak dapat diantrekan ke Inngest. Coba lagi nanti.' }, 503);
+    }
     await markWebhookProcessed(db, 'telegram', eventId);
 
     return c.json({ received: true, eventId });

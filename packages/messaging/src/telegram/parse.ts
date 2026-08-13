@@ -21,6 +21,13 @@ export interface TelegramUpdate {
     date: number;
     chat: TelegramChat;
     text?: string;
+    /** Pesan kontak — dikirim saat user menekan tombol request_contact. */
+    contact?: {
+      phone_number?: string;
+      first_name?: string;
+      last_name?: string;
+      user_id?: number;
+    };
   };
   callback_query?: {
     id: string;
@@ -127,6 +134,29 @@ export function parseTelegramUpdate(update: TelegramUpdate): CanonicalInboundEve
         receivedAt,
       };
     }
+
+    // 2b. Kontak (tombol request_contact) — nomor VERIFIED dari Telegram,
+    //     dipakai alur linking chat → booking tanpa ketikan manual.
+    //     Kontak tanpa nomor (tidak mungkin dari request_contact, tapi bisa
+    //     dari pesan biasa) → bukan event relevan.
+    if (message.contact && !message.contact.phone_number) return null;
+    if (message.contact?.phone_number) {
+      const contactName = [message.contact.first_name, message.contact.last_name]
+        .filter(Boolean)
+        .join(' ');
+      return {
+        channel: 'telegram',
+        providerEventId: eventId,
+        senderIdentifier: String(message.chat.id),
+        senderName: contactName || message.chat.first_name || null,
+        intent: 'contact',
+        bookingId: null,
+        content: message.contact.phone_number,
+        raw: { chatId: message.chat.id, messageId: message.message_id },
+        receivedAt,
+      };
+    }
+
     return {
       channel: 'telegram',
       providerEventId: eventId,

@@ -263,6 +263,139 @@ describe('POST /api/me/workspaces — avatar project (DiceBear / upload 1:1)', (
   });
 });
 
+describe('PATCH /api/me/workspaces/:id — pengaturan AI chat (toggle + knowledge base)', () => {
+  const WORKSPACE_ID = '22222222-2222-4222-8222-222222222222';
+  const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({
+    id: WORKSPACE_ID,
+    userId: 'test-user-1',
+    name: 'Northside Studio',
+    templateCategory: 'beauty-wellness',
+    aiEnabled: false,
+    aiKnowledge: null,
+    deletedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  const patchAi = (payload: Record<string, unknown>) =>
+    app.request(`/api/me/workspaces/${WORKSPACE_ID}`, {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('toggle aiEnabled → tersimpan di row workspace', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchAi({ aiEnabled: true });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workspace: { aiEnabled?: boolean } };
+    expect(body.workspace.aiEnabled).toBe(true);
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ aiEnabled: true });
+  });
+
+  it('knowledge base lengkap (layanan/jam/lokasi/FAQ) → tersimpan', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const aiKnowledge = {
+      description: 'Salon rambut & perawatan.',
+      services: 'Cuci 50rb\nPoles 150rb',
+      hours: 'Sen–Sab 08.00–20.00',
+      location: 'Jl. Merdeka No. 1, Jakarta',
+      policy: 'Deposit 50% untuk reschedule < 24 jam.',
+      faq: [
+        { q: 'Terima kartu?', a: 'Ya, debit & kredit.' },
+        { q: 'Bisa booking online?', a: 'Ya, lewat WhatsApp.' },
+      ],
+    };
+    const res = await patchAi({ aiEnabled: true, aiKnowledge });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workspace: { aiEnabled?: boolean; aiKnowledge?: unknown } };
+    expect(body.workspace.aiEnabled).toBe(true);
+    expect(body.workspace.aiKnowledge).toEqual(aiKnowledge);
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ aiEnabled: true, aiKnowledge });
+  });
+
+  it('aiKnowledge null → hapus knowledge base', async () => {
+    dbState.tables.set('workspaces', [
+      baseWorkspace({
+        aiEnabled: true,
+        aiKnowledge: { services: 'Cuci 50rb', hours: '08.00–20.00' },
+      }),
+    ]);
+    const res = await patchAi({ aiKnowledge: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workspace: { aiKnowledge?: unknown } };
+    expect(body.workspace.aiKnowledge).toBeNull();
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ aiKnowledge: null });
+  });
+
+  it('FAQ dengan jawaban kosong → 400, row tidak berubah', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchAi({ aiKnowledge: { faq: [{ q: 'Terima kartu?', a: '   ' }] } });
+    expect(res.status).toBe(400);
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ aiEnabled: false, aiKnowledge: null });
+  });
+
+  it('tanpa field AI / field lain → 400 (tidak ada yang diubah)', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchAi({});
+    expect(res.status).toBe(400);
+  });
+
+  it('workspace bukan milik user / tidak ada → 404', async () => {
+    dbState.tables.set('workspaces', []);
+    const res = await patchAi({ aiEnabled: true });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/me/workspaces/:id — bahasa balasan chat (chatLanguage)', () => {
+  const WORKSPACE_ID = '33333333-3333-4333-8333-333333333333';
+  const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({
+    id: WORKSPACE_ID,
+    userId: 'test-user-1',
+    name: 'Northside Studio',
+    templateCategory: 'beauty-wellness',
+    chatLanguage: 'en',
+    deletedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  const patchChat = (payload: Record<string, unknown>) =>
+    app.request(`/api/me/workspaces/${WORKSPACE_ID}`, {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('chatLanguage id → tersimpan di row workspace', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchChat({ chatLanguage: 'id' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workspace: { chatLanguage?: string } };
+    expect(body.workspace.chatLanguage).toBe('id');
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ chatLanguage: 'id' });
+  });
+
+  it('nilai di luar en/id → 400', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchChat({ chatLanguage: 'fr' });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('DELETE /api/me/workspaces/:id — soft delete project', () => {
   const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
   const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({

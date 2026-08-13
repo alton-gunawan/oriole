@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { contacts as contactsTable, workspaceIntegrations } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { decryptSecret } from './crypto.ts';
 
 /* ────────────────────────────────────────────────────────────
  * Notion integration — Notion berfungsi sebagai database
@@ -288,7 +289,10 @@ export async function syncContactsToNotion(workspaceId: string): Promise<NotionS
   if (!integration) throw new NotionApiError('Integrasi Notion belum terhubung', 409);
 
   const config = integration.providerConfig as unknown as NotionConfig;
-  if (!config.token || !config.databaseId) {
+  // Token tersimpan terenkripsi (enc:v1:...) atau plaintext lama — decryptSecret
+  // menangani keduanya (fallback plaintext).
+  const token = decryptSecret(config.token ?? '');
+  if (!token || !config.databaseId) {
     throw new NotionApiError('Konfigurasi Notion tidak lengkap', 400);
   }
 

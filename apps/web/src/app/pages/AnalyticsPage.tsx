@@ -188,10 +188,19 @@ export function AnalyticsPage() {
     status: row.status,
   }));
 
+  // Label kategori (legend) memakai i18n — key data mengikuti agar tremor
+  // menampilkan nama yang benar-benar terbaca, bukan slug Inggris mentah.
+  const inboundLabel = t('analytics.inbound');
+  const outboundLabel = t('analytics.outbound');
   const channelData = (data?.messagesByChannel ?? []).map((row) => ({
-    channel: row.channel === 'whatsapp' ? 'WhatsApp' : row.channel === 'telegram' ? 'Telegram' : row.channel,
-    inbound: row.inbound,
-    outbound: row.outbound,
+    channel:
+      row.channel === 'whatsapp'
+        ? t('channels.whatsapp')
+        : row.channel === 'telegram'
+          ? t('channels.telegram')
+          : row.channel,
+    [inboundLabel]: row.inbound,
+    [outboundLabel]: row.outbound,
   }));
 
   const isEmpty =
@@ -205,6 +214,7 @@ export function AnalyticsPage() {
       <PageHeader
         title={t('analytics.title')}
         description={t('analytics.description')}
+        icon={IconChart}
       />
 
       {/* Stat cards */}
@@ -359,9 +369,12 @@ export function AnalyticsPage() {
               <BarChart
                 data={channelData}
                 index="channel"
-                categories={['inbound', 'outbound']}
-                colors={['blue', 'emerald']}
+                categories={[inboundLabel, outboundLabel]}
+                // Amber = inbound (aksen brand), emerald = outbound (sukses/
+                // terkirim) — selaras dengan palet status & funnel di halaman.
+                colors={['amber', 'emerald']}
                 stack
+                showLegend
                 showGridLines={false}
                 yAxisWidth={40}
                 className="h-56"

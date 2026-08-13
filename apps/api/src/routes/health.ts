@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
 import { db } from '../db/index.ts';
+import { checkInngestPipeline } from '../lib/inngest-health.ts';
 
 export const healthRoutes = new Hono()
   .get('/', (c) =>
@@ -19,4 +20,9 @@ export const healthRoutes = new Hono()
     } catch {
       return c.json({ status: 'unavailable', db: 'unreachable' }, 503);
     }
-  });
+  })
+  // Health pipeline Inngest — UI menampilkan peringatan saat `down` (webhook
+  // pesan membalas 503 diam-diam tanpa Dev Server/cloud). SELALU 200 agar
+  // frontend bisa membaca `status` tanpa error-handling khusus; `down` = 503
+  // internal dijalankan webhook, bukan endpoint ini.
+  .get('/inngest', async (c) => c.json(await checkInngestPipeline()));

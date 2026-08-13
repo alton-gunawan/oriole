@@ -94,6 +94,12 @@ export const workspaces = pgTable(
     /** Bahasa panggilan CALL-E (default en; id = extension point yang belum aktif). */
     callGoalLanguage: text('call_goal_language').default('en').notNull(),
     /**
+     * Bahasa balasan bot chat (Telegram / WhatsApp / email) — default en.
+     * Terpisah dari callGoalLanguage agar bahasa bot bisa diatur independen
+     * dari bahasa panggilan CALL-E.
+     */
+    chatLanguage: text('chat_language').default('en').notNull(),
+    /**
      * Avatar project. null = planet DiceBear deterministik dari nama project;
      * selain itu bisa berupa URL planet DiceBear (hasil pemilihan di picker)
      * atau data URL gambar upload (sudah di-crop 1:1 + di-compress di client).
@@ -103,6 +109,15 @@ export const workspaces = pgTable(
     autoCallEnabled: boolean('auto_call_enabled').default(false).notNull(),
     /** Berapa jam sebelum jadwal auto-call dipicu (default 24). */
     autoCallLeadHours: integer('auto_call_lead_hours').default(24).notNull(),
+    /**
+     * AI chat WhatsApp aktif/mati (default mati — tanpa persetujuan owner,
+     * tidak ada perubahan perilaku bot). Saat aktif + knowledge base terisi,
+     * bot menjawab pertanyaan layanan/harga/jam/lokasi dari KB; di luar KB
+     * tetap handoff ke staf (needsAttention).
+     */
+    aiEnabled: boolean('ai_enabled').default(false).notNull(),
+    /** Knowledge base AI chat: layanan+harga, jam buka, lokasi, kebijakan, FAQ. */
+    aiKnowledge: jsonb('ai_knowledge').$type<AiKnowledge | null>(),
     /**
      * Soft-delete: project dihapus (hilang dari UI) dengan menyetel kolom ini;
      * baris + semua data terkait (booking, kontak, chat, ...) dihapus permanen
@@ -127,6 +142,71 @@ export const workspaces = pgTable(
         WORKSPACE_TEMPLATE_CATEGORY_IDS.map((categoryId) => `'${categoryId}'`).join(', '),
       )})`,
     ),
+  ],
+);
+
+/**
+ * Knowledge base AI chat (WhatsApp) — sumber jawaban bot untuk pertanyaan
+ * layanan / harga / jam buka / lokasi. Disimpan sebagai JSON di kolom
+ * `workspaces.ai_knowledge`. Semua field teks bebas (owner menulis di UI
+ * settings); prompt LLM menyusunnya apa adanya, jadi formatnya sengaja
+ * longgar agar mudah dirawat pemilik bisnis.
+ */
+export interface AiKnowledge {
+  /** Deskripsi singkat usaha (1-2 kalimat) — konteks identitas bot. */
+  description?: string;
+  /** Layanan + harga, bebas format teks ("Cuci mobil 50rb, poles 150rb …"). */
+  services?: string;
+  /** Jam buka ("Sen–Sab 08.00–20.00"). */
+  hours?: string;
+  /** Alamat + patokan / link maps. */
+  location?: string;
+  /** Kebijakan lain (opsional): deposit, pembatalan, dsb. */
+  policy?: string;
+  /** FAQ tambahan di luar field di atas. */
+  faq?: { q: string; a: string }[];
+}
+
+/**
+ * Layanan (service catalog) per workspace — sumber kebenaran nama / durasi /
+ * harga layanan yang ditawarkan bisnis. Dipakai untuk:
+ *  - auto-fill booking (title + durasi + routing staf saat membuat booking),
+ *  - slot engine availabilitas (durasi layanan, bukan tebakan per booking),
+ *  - knowledge base AI chat (generate daftar layanan+harga dari katalog).
+ * `priceMinor` sengaja nullable: banyak bisnis jasa tidak mencantumkan harga
+ * (paket custom / negosiasi) — null = harga belum di-set.
+ */
+export const services = pgTable(
+  'services',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => authUser.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Durasi layanan dalam menit (5..720) — dipakai slot engine & auto-fill booking. */
+    durationMinutes: integer('duration_minutes').default(60).notNull(),
+    /** Harga dalam minor units (sen) — null = harga belum di-set. */
+    priceMinor: integer('price_minor'),
+    /** Kode mata uang ISO 4217 — dipakai bersama priceMinor. */
+    currency: text('currency').default('USD').notNull(),
+    /** Warna aksen (chip/badge) — hex, mis. '#f59e0b'. */
+    color: text('color').default('#f59e0b').notNull(),
+    /** Kategori/tag layanan (bebas teks, mis. ["Perawatan", "Paket"]). */
+    category: text('category').array(),
+    isActive: boolean('is_active').default(true).notNull(),
+    /** Urutan tampilan di dropdown/picker (naik). */
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('services_workspace_id_idx').on(t.workspaceId),
+    index('services_user_id_idx').on(t.userId),
   ],
 );
 
@@ -163,7 +243,9 @@ export const bookings = pgTable(
       .notNull()
       .references(() => authUser.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
-    title: text('title').notNull(),
+    // Title TIDAK disimpan — booking diambil dari layanan katalog: nama layanan
+    // (services.name) selalu menjadi title, diturunkan saat dibaca (lihat
+    // apps/api/src/lib/booking-title.ts).
     description: text('description'),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
     timezone: text('timezone').default('UTC').notNull(),
@@ -188,6 +270,41 @@ export const bookings = pgTable(
     noShowCount: integer('no_show_count').default(0).notNull(),
     /** Customer meminta perubahan jadwal. */
     changeRequested: boolean('change_requested').default(false).notNull(),
+    /**
+     * Staf yang menangani booking (nullable = tanpa staf / mode lama).
+     * Dihapus (set null) bila staf dihapus — booking tetap ada.
+     */
+    staffId: uuid('staff_id').references(() => staffMembers.id, { onDelete: 'set null' }),
+    /**
+     * Layanan katalog terkait (nullable = booking tanpa katalog / mode lama).
+     * Dihapus (set null) bila layanan dihapus — booking tetap ada. Saat layanan
+     * di-set, durasi diisi otomatis dari katalog dan nama layanan menjadi title
+     * (lihat route bookings: resolveServiceDefaults & lib/booking-title.ts).
+     */
+    serviceId: uuid('service_id').references(() => services.id, { onDelete: 'set null' }),
+    /** Durasi layanan dalam menit (5..720). Dipakai slot engine & event kalender. */
+    durationMinutes: integer('duration_minutes').default(60).notNull(),
+    /** Aturan pengulangan — nullable = booking sekali (one-off). */
+    recurrence: jsonb('recurrence').$type<RecurrenceRule | null>(),
+    /**
+     * Id seri pengulangan — semua instance booking dari satu seri berbagi
+     * id ini (untuk cancel/complete seluruh seri). Null = bukan seri.
+     */
+    recurrenceSeriesId: uuid('recurrence_series_id'),
+    /**
+     * Link video call (Zoom join URL / Google Meet hangoutLink) untuk booking
+     * — dihasilkan otomatis saat integrasi video aktif (zoom) atau lewat
+     * sync Google Calendar (meet). Disertakan ke reminder & tampilan detail.
+     */
+    videoLink: text('video_link'),
+    /**
+     * Asal pembuatan booking (mis. 'google-forms' / 'tally' / manual).
+     * Dipakai untuk idempotensi (bersama sourceRef) — retry webhook tidak
+     * membuat booking ganda — dan jejak asal booking.
+     */
+    source: text('source'),
+    /** Referensi unik dari sumber (responseId Google Forms / submissionId Tally). */
+    sourceRef: text('source_ref'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -195,6 +312,13 @@ export const bookings = pgTable(
     index('bookings_user_id_idx').on(t.userId),
     index('bookings_scheduled_at_idx').on(t.scheduledAt),
     index('bookings_contact_id_idx').on(t.contactId),
+    index('bookings_staff_id_idx').on(t.staffId),
+    index('bookings_service_id_idx').on(t.serviceId),
+    index('bookings_recurrence_series_id_idx').on(t.recurrenceSeriesId),
+    // Idempotensi booking dari form: satu (source, sourceRef) per workspace.
+    uniqueIndex('bookings_source_ref_idx')
+      .on(t.workspaceId, t.source, t.sourceRef)
+      .where(sql`${t.source} is not null`),
   ],
 );
 
@@ -224,6 +348,119 @@ export const contacts = pgTable(
     index('contacts_user_id_idx').on(t.userId),
     index('contacts_workspace_id_idx').on(t.workspaceId),
   ],
+);
+
+/* ────────────────────────────────────────────────────────────
+ * Staf / tim (practitioner) per workspace + jadwal & cuti
+ * ──────────────────────────────────────────────────────────── */
+
+/**
+ * Aturan pengulangan booking (recurring appointments). Disimpan sebagai
+ * JSON di kolom `bookings.recurrence`. Semua komputasi waktu memakai UTC.
+ *
+ * - `frequency` + `interval`: berapa sering terjadi (tiap N hari/minggu/bulan).
+ * - `count` / `until`: kapan berhenti (salah satu; count menang bila keduanya).
+ * - `weekdays`: HANYA untuk weekly — hari dalam seminggu (0=Min..6=Sab) yang
+ *   dilayani; kosong/tidak ada = hanya hari pertama (anchor) tiap interval.
+ */
+export interface RecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'monthly';
+  interval: number;
+  count?: number;
+  until?: string;
+  weekdays?: number[];
+}
+
+/** Anggota staf (practitioner) — satu booking dapat ditugaskan ke satu staf. */
+export const staffMembers = pgTable(
+  'staff_members',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => authUser.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    email: text('email'),
+    phone: text('phone'),
+    /** Warna aksen (avatar/chip) — hex, mis. '#f59e0b'. */
+    color: text('color').default('#f59e0b').notNull(),
+    /** Zona waktu jadwal mingguan staf (schedules/day_of_week dihitung di zona ini). */
+    timezone: text('timezone').default('UTC').notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    /** Buffer menit antara dua booking berurutan staf ini (anti back-to-back). */
+    bufferMinutes: integer('buffer_minutes').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('staff_members_workspace_id_idx').on(t.workspaceId),
+    index('staff_members_user_id_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Jadwal mingguan per staf: hari kerja + rentang jam (menit sejak tengah
+ * malam, zona waktu staf). Satu staf boleh punya beberapa rentang per hari
+ * (mis. 09:00-12:00 dan 14:00-18:00).
+ */
+export const staffSchedules = pgTable(
+  'staff_schedules',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staffMembers.id, { onDelete: 'cascade' }),
+    /** 0=Sunday .. 6=Saturday. */
+    dayOfWeek: integer('day_of_week').notNull(),
+    startMinutes: integer('start_minutes').notNull(),
+    endMinutes: integer('end_minutes').notNull(),
+  },
+  (t) => [index('staff_schedules_staff_id_idx').on(t.staffId)],
+);
+
+/**
+ * Staf yang melayani layanan (many-to-many) — routing staf saat booking:
+ * layanan dengan SATU staf ter-assign otomatis memilih staf itu; layanan
+ * dengan banyak staf menyerahkan pilihan ke user. Staff dihapus → tautan
+ * ikut terhapus (cascade); layanan dihapus → tautan ikut terhapus.
+ */
+export const serviceStaff = pgTable(
+  'service_staff',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staffMembers.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    uniqueIndex('service_staff_service_staff_idx').on(t.serviceId, t.staffId),
+    index('service_staff_staff_id_idx').on(t.staffId),
+  ],
+);
+
+/**
+ * Cuti / hari libur per staf (rentang tanggal). Hari penuh — dipakai mesin
+ * availabilitas untuk memblokir slot, dan menimpa jadwal mingguan.
+ */
+export const staffTimeOff = pgTable(
+  'staff_time_off',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staffMembers.id, { onDelete: 'cascade' }),
+    startDate: timestamp('start_date', { withTimezone: true }).notNull(),
+    endDate: timestamp('end_date', { withTimezone: true }).notNull(),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('staff_time_off_staff_id_idx').on(t.staffId)],
 );
 
 /** Panggilan CALL-E yang dijalankan dari aplikasi. */
@@ -339,6 +576,101 @@ export const workspaceIntegrations = pgTable(
   (t) => [
     uniqueIndex('workspace_integrations_ws_type_idx').on(t.workspaceId, t.integrationType),
     index('workspace_integrations_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+/**
+ * Nomor telepon MASUK (inbound) per workspace — customer menelepon nomor ini
+ * dan dilayani agen Voice AI (Vapi). Satu nomor Vapi hanya bisa milik satu
+ * workspace (unique vapiPhoneNumberId) — ini yang dipakai webhook untuk
+ * me-resolve workspace dari sebuah panggilan masuk (`phoneNumber.id`).
+ *
+ * Alur: register → Vapi membuat nomor + serverUrl webhook (assistant-request
+ * mengembalikan asisten transient per-workspace) → customer menelepon → agen
+ * mengumpulkan layanan/jadwal/nama → tool-calls `check_availability` &
+ * `create_booking` membuat booking real-time (source = 'vapi-inbound').
+ */
+export const vapiInboundNumbers = pgTable(
+  'vapi_inbound_numbers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => authUser.id, { onDelete: 'set null' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Id nomor di sisi Vapi (provider 'vapi' / 'byo-phone-number' / dst). */
+    vapiPhoneNumberId: text('vapi_phone_number_id').notNull(),
+    /** Nomor E.164 (contoh +14155550123) — null selama provisioning berjalan. */
+    number: text('number'),
+    /** Label pilihan user (mis. "Cabang Senopati") — hanya referensi. */
+    name: text('name'),
+    /** Provider Vapi dari nomor (vapi / byo-phone-number / telnyx / ...). */
+    provider: text('provider').default('vapi').notNull(),
+    /** Nomor aktif menerima panggilan (false = dijeda, panggilan ditolak Vapi). */
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Satu nomor Vapi → satu workspace (basis resolve webhook inbound).
+    uniqueIndex('vapi_inbound_numbers_vapi_phone_number_id_idx').on(t.vapiPhoneNumberId),
+    index('vapi_inbound_numbers_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+/**
+ * Status payment link (one-time checkout Paddle).
+ * - `pending`: checkout dibuat, belum dibayar customer.
+ * - `paid`: webhook `transaction.completed` terverifikasi (idempotent).
+ * - `canceled`: dibatalkan (via API kami / event `transaction.canceled`).
+ */
+export const paymentLinkStatus = pgEnum('payment_link_status', [
+  'pending',
+  'paid',
+  'canceled',
+]);
+
+/**
+ * Payment link — checkout satu kali (deposit / biaya layanan) yang dibuat
+ * workspace untuk customer, diproses oleh Paddle (Merchant of Record global).
+ * Jumlah disimpan dalam MINOR UNITS (sen) agar aman integer; status final
+ * disinkronkan lewat webhook Paddle terverifikasi (lihat onPaddleEvent).
+ * `bookingId` nullable: link boleh dibuat tanpa booking (pembayaran umum).
+ */
+export const paymentLinks = pgTable(
+  'payment_links',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Booking terkait (set null bila booking dihapus — riwayat tetap ada). */
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+    /** Nama item yang dibayar (mis. "Deposit konsultasi"). */
+    title: text('title').notNull(),
+    description: text('description'),
+    /** Jumlah dalam minor units (sen) — format aman integer, bukan float. */
+    amountMinor: integer('amount_minor').notNull(),
+    /** Kode mata uang ISO 4217 (Paddle: USD, EUR, IDR, ...). */
+    currency: text('currency').default('USD').notNull(),
+    status: paymentLinkStatus('status').default('pending').notNull(),
+    /** Transaksi Paddle (id eksternal) — kunci idempotensi webhook. */
+    paddleTransactionId: text('paddle_transaction_id'),
+    /** URL checkout Paddle (hosted checkout MoR) — dibagikan ke customer. */
+    checkoutUrl: text('checkout_url'),
+    customerName: text('customer_name'),
+    customerEmail: text('customer_email'),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('payment_links_workspace_id_idx').on(t.workspaceId),
+    index('payment_links_booking_id_idx').on(t.bookingId),
+    // Satu transaksi Paddle hanya boleh menaut ke satu payment link.
+    uniqueIndex('payment_links_paddle_transaction_idx')
+      .on(t.paddleTransactionId)
+      .where(sql`${t.paddleTransactionId} is not null`),
   ],
 );
 

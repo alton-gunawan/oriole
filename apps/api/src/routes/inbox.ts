@@ -6,15 +6,12 @@ import { brand } from '@oriole/config';
 import { bookings as bookingsTable, conversations, customerChannels, messages } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { DEFAULT_BOOKING_TITLE, loadServiceNames } from '../lib/booking-title.ts';
+import { decryptMessageContent, encryptMessageContent } from '../lib/message-encryption.ts';
 import { resend } from '../services/email.ts';
 import { TelegramApiError, telegramSendMessage } from '../lib/telegram.ts';
 import { resolveTelegramChannel } from '../lib/telegram-handler.ts';
-import {
-  resolveWhatsAppChannel,
-  WhatsAppApiError,
-  whatsappSendInteractive,
-  whatsappSendText,
-} from '../services/whatsapp.ts';
+import { resolveWhatsAppChannel, sendWhatsAppMessage, WhatsAppApiError } from '../services/whatsapp.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 
@@ -119,7 +116,7 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       for (const message of lastMessages) {
         if (!previews.has(message.conversationId)) {
           previews.set(message.conversationId, {
-            content: message.content,
+            content: decryptMessageContent(workspaceId, message.content),
             direction: message.direction,
             createdAt: message.createdAt,
           });
@@ -130,11 +127,21 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     const bookingTitles = new Map<string, string>();
     const bookingIds = page.map((row) => row.bookingId).filter((id): id is string => Boolean(id));
     if (bookingIds.length > 0) {
+      // Title booking = nama layanan katalog (kolom title sudah dihapus).
       const bookingRows = await db
-        .select({ id: bookingsTable.id, title: bookingsTable.title })
+        .select({ id: bookingsTable.id, serviceId: bookingsTable.serviceId })
         .from(bookingsTable)
         .where(inArray(bookingsTable.id, bookingIds));
-      for (const booking of bookingRows) bookingTitles.set(booking.id, booking.title);
+      const serviceNames = await loadServiceNames(
+        workspaceId,
+        bookingRows.map((booking) => booking.serviceId),
+      );
+      for (const booking of bookingRows) {
+        bookingTitles.set(
+          booking.id,
+          booking.serviceId ? (serviceNames.get(booking.serviceId) ?? DEFAULT_BOOKING_TITLE) : DEFAULT_BOOKING_TITLE,
+        );
+      }
     }
 
     return c.json({
@@ -173,7 +180,8 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
   /* ── Detail percakapan + riwayat pesan ───────────────────── */
   .get('/:id', requireAuth, requireWorkspace, zValidator('param', conversationIdParamSchema), async (c) => {
     const { id } = c.req.valid('param');
-    const conversation = await findConversation(c.get('workspaceId'), id);
+    const workspaceId = c.get('workspaceId');
+    const conversation = await findConversation(workspaceId, id);
     if (!conversation) return c.json({ error: 'Percakapan tidak ditemukan' }, 404);
 
     const messageRows = await db
@@ -188,7 +196,7 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       const [row] = await db
         .select({
           id: bookingsTable.id,
-          title: bookingsTable.title,
+          serviceId: bookingsTable.serviceId,
           status: bookingsTable.status,
           scheduledAt: bookingsTable.scheduledAt,
           timezone: bookingsTable.timezone,
@@ -198,12 +206,16 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .from(bookingsTable)
         .where(eq(bookingsTable.id, conversation.bookingId))
         .limit(1);
-      booking = row
-        ? {
-            ...row,
-            scheduledAt: row.scheduledAt.toISOString(),
-          }
-        : null;
+      if (row) {
+        // Title booking = nama layanan katalog (kolom title sudah dihapus).
+        const serviceNames = await loadServiceNames(workspaceId, [row.serviceId]);
+        const serviceName = row.serviceId ? (serviceNames.get(row.serviceId) ?? null) : null;
+        booking = {
+          ...row,
+          title: serviceName ?? DEFAULT_BOOKING_TITLE,
+          scheduledAt: row.scheduledAt.toISOString(),
+        };
+      }
     }
 
     const state = (conversation.state ?? {}) as { needsAttention?: boolean };
@@ -223,7 +235,7 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .map((message) => ({
           id: message.id,
           direction: message.direction,
-          content: message.content,
+          content: decryptMessageContent(c.get('workspaceId'), message.content),
           status: message.status,
           createdAt: message.createdAt.toISOString(),
         }))
@@ -315,18 +327,14 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           return c.json({ error: 'Channel WhatsApp sedang dijeda — aktifkan dulu di halaman Channels.' }, 400);
         }
         try {
-          const sent = buttons?.length
-            ? await whatsappSendInteractive({
-                token: channel.apiKey,
-                to: conversation.externalId,
-                text,
-                buttons,
-              })
-            : await whatsappSendText({
-                token: channel.apiKey,
-                to: conversation.externalId,
-                text,
-              });
+          // Dispatch provider-aware: 360dialog → interactive/text; BYO (waha)
+          // → sendText polos (tombol reply engine-dependent, fallback teks).
+          const sent = await sendWhatsAppMessage({
+            channel,
+            to: conversation.externalId,
+            text,
+            buttons,
+          });
           providerMessageId = sent.messageId;
         } catch (error) {
           if (error instanceof WhatsAppApiError) {
@@ -357,7 +365,7 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           channelType: conversation.channelType,
           direction: 'outbound',
           providerMessageId: providerMessageId ?? '',
-          content: text,
+          content: encryptMessageContent(workspaceId, text),
           status: 'sent',
         })
         .onConflictDoNothing();

@@ -28,11 +28,28 @@ const { dbState } = vi.hoisted(() => ({
 }));
 
 vi.mock('../db/index.ts', async () => {
-  const { bookings, calleCalls, contacts, workspaces } = await import('@oriole/database');
+  const {
+    bookings,
+    calleCalls,
+    contacts,
+    staffMembers,
+    staffSchedules,
+    staffTimeOff,
+    services,
+    serviceStaff,
+    workspaceIntegrations,
+    workspaces,
+  } = await import('@oriole/database');
   const tableNames = new WeakMap<object, string>();
   tableNames.set(bookings, 'bookings');
   tableNames.set(calleCalls, 'calleCalls');
   tableNames.set(contacts, 'contacts');
+  tableNames.set(staffMembers, 'staff_members');
+  tableNames.set(staffSchedules, 'staff_schedules');
+  tableNames.set(staffTimeOff, 'staff_time_off');
+  tableNames.set(services, 'services');
+  tableNames.set(serviceStaff, 'service_staff');
+  tableNames.set(workspaceIntegrations, 'workspace_integrations');
   tableNames.set(workspaces, 'workspaces');
 
   /** Map nama kolom DB (mis. workspace_id) → kunci baris (workspaceId). */
@@ -95,31 +112,53 @@ vi.mock('../db/index.ts', async () => {
       };
     }
 
-    // Leaf: [op:'', {COL}, {op}, <nilai>, op:''] — ekstrak kolom/op/nilai.
+    // Leaf: [op:'', {COL}, {op}, <nilai...>, op:''] — ekstrak kolom/op/param.
+    // inArray menghasilkan SATU chunk param per nilai (bukan array) — kumpulkan
+    // semua param agar `in (...)` benar-benar memfilter.
     let colName: string | null = null;
-    let op = '';
-    let value: unknown;
+    const stringParts: string[] = [];
+    const params: unknown[] = [];
     for (const chunk of chunks) {
       if (isColumnChunk(chunk)) {
         colName = chunk.name;
         continue;
       }
       if (isStringChunk(chunk)) {
-        const maybeOp = chunk.value.join('').trim();
-        if (maybeOp) op = maybeOp;
+        stringParts.push(chunk.value.join(''));
+        continue;
+      }
+      // Parameter Drizzle: objek {value} (string/date) ATAU satu chunk Array
+      // berisi daftar nilai inArray (Parameter/mentah).
+      if (Array.isArray(chunk)) {
+        for (const item of chunk) {
+          if (item && typeof item === 'object' && 'value' in (item as object)) {
+            params.push((item as { value: unknown }).value);
+          } else if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+            params.push(item);
+          }
+        }
         continue;
       }
       if (chunk && typeof chunk === 'object' && 'value' in (chunk as object)) {
-        value = (chunk as { value: unknown }).value; // param (string/date/array)
+        params.push((chunk as { value: unknown }).value); // param (string/date)
       } else if (typeof chunk === 'string' || typeof chunk === 'number' || typeof chunk === 'boolean') {
-        value = chunk; // param ilike polos (mis. '%andi%')
+        params.push(chunk); // param ilike polos (mis. '%andi%')
       }
     }
     if (!colName) return () => true;
     const key = colKey[colName];
     if (key === undefined) return () => true;
 
+    // Operator = string chunk yang dikenali (paren/koma diabaikan). Ruang
+    // putih dinormalkan agar 'is not null' / ' is not null' cocok sama-sama.
+    const joined = stringParts.join('').replace(/\s+/g, ' ').trim();
+    // inArray dirender sebagai 'in' (tanpa spasi) — ' in ' juga ditangani.
+    const OP_CANDIDATES = ['ilike', ' like ', 'is not null', 'is null', '>=', '<=', '!=', '<>', ' in ', 'in', '>', '<', '='];
+    const op = OP_CANDIDATES.find((candidate) => joined.includes(candidate)) ?? '';
+
     const get = (row: Record<string, unknown>) => row[key];
+    const value = params[0];
+    if (op.includes('!=') || op.includes('<>')) return (row) => get(row) !== value;
     if (op.includes('ilike') || op.includes(' like ')) {
       const needle = String(value ?? '').replace(/^%/, '').replace(/%$/, '').toLowerCase();
       return (row) => String(get(row) ?? '').toLowerCase().includes(needle);
@@ -130,9 +169,9 @@ vi.mock('../db/index.ts', async () => {
     if (op.includes('<=')) return (row) => (get(row) as number) <= (value as number);
     if (op.includes('>')) return (row) => (get(row) as number) > (value as number);
     if (op.includes('<')) return (row) => (get(row) as number) < (value as number);
-    if (op.includes(' in ')) {
-      const list = Array.isArray(value) ? (value as unknown[]) : [];
-      return (row) => list.includes(get(row));
+    if (op === 'in' || op.includes(' in ')) {
+      // inArray: semua chunk param adalah anggota list.
+      return (row) => params.includes(get(row));
     }
     return (row) => get(row) === value;
   }
@@ -251,20 +290,35 @@ vi.mock('../db/index.ts', async () => {
       },
       update: (table: object) => {
         const name = tableNames.get(table) ?? 'unknown';
+        const doUpdate = (values: Record<string, unknown>, conds: unknown[]) => {
+          const colKey = columnKeyMap(table);
+          const matched = (dbState.tables.get(name) ?? []).filter((row) =>
+            conds.every((c) => buildPredicate(c, colKey)(row as Record<string, unknown>)),
+          );
+          if (matched.length === 0) return [];
+          const store = dbState.tables.get(name) as unknown[] | undefined;
+          const updated = [];
+          for (const target of matched as Record<string, unknown>[]) {
+            const index = store?.indexOf(target) ?? -1;
+            if (index < 0) continue;
+            const merged = {
+              ...target,
+              ...values,
+              updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+            };
+            (store as unknown[])[index] = merged;
+            updated.push(merged);
+          }
+          return updated;
+        };
         return {
           set: (values: Record<string, unknown>) => ({
-            where: () => ({
-              returning: async () => {
-                const rows = dbState.tables.get(name) ?? [];
-                const target = rows[0] as Record<string, unknown> | undefined;
-                if (!target) return [];
-                const merged = {
-                  ...target,
-                  ...values,
-                  updatedAt: new Date('2026-01-02T00:00:00.000Z'),
-                };
-                rows[0] = merged;
-                return [merged];
+            where: (...conds: unknown[]) => ({
+              // update().where().returning() — route yang butuh baris balik.
+              returning: async () => doUpdate(values, conds),
+              // update().where() TANPA returning — route cukup await; tulis tetap jalan.
+              then(resolve: (rows: unknown[]) => unknown) {
+                return Promise.resolve(resolve(doUpdate(values, conds)));
               },
             }),
           }),
@@ -312,6 +366,9 @@ function baseBooking(overrides: Record<string, unknown> = {}) {
     noShowCount: 0,
     changeRequested: false,
     calleCallId: null,
+    staffId: null,
+    serviceId: null,
+    durationMinutes: 60,
     userId: 'test-user-1',
     workspaceId: 'ws-1',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -330,7 +387,8 @@ beforeAll(async () => {
   process.env.PADDLE_API_KEY = 'pdl_sdbx_test';
   process.env.PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test';
   process.env.RESEND_API_KEY = 're_test';
-  process.env.CALLE_API_KEY = 'calle_test';
+  process.env.VAPI_API_KEY = 'vapi_test';
+  process.env.VAPI_PHONE_NUMBER_ID = 'phone-number-test';
 
   jwtVerifyMock.mockReset();
   jwtVerifyMock.mockResolvedValue({ payload: { sub: 'test-user-1', email: 'user@example.com' } });
@@ -345,9 +403,25 @@ beforeEach(() => {
   dbState.tables.set('bookings', []);
   dbState.tables.set('contacts', []);
   dbState.tables.set('calleCalls', []);
+  dbState.tables.set('staff_members', []);
+  dbState.tables.set('staff_schedules', []);
+  dbState.tables.set('staff_time_off', []);
+  dbState.tables.set('services', []);
+  dbState.tables.set('service_staff', []);
+  dbState.tables.set('workspace_integrations', []);
 });
 
 function postBooking(payload: Record<string, unknown>) {
+  // Booking WAJIB berasal dari layanan katalog: bila payload tidak menyebut
+  // serviceId, suntik layanan default (dan seed katalog bila kosong) agar test
+  // tetap fokus pada perilaku yang diuji. Payload dengan serviceId eksplisit
+  // (termasuk null) dibiarkan apa adanya.
+  if (payload.serviceId === undefined) {
+    if ((dbState.tables.get('services') ?? []).length === 0) {
+      dbState.tables.set('services', [baseService()]);
+    }
+    payload = { ...payload, serviceId: SERVICE_ID };
+  }
   return app.request('/api/bookings', {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
@@ -442,6 +516,72 @@ describe('POST /api/bookings — integrasi kontak', () => {
   });
 });
 
+describe('POST /api/bookings/:id/ensure-contact — link-on-demand', () => {
+  it('booking tidak ditemukan → 404', async () => {
+    const res = await app.request(`/api/bookings/${BOOKING_ID}/ensure-contact`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('booking dengan nama+telepon, kontak belum ada → kontak dibuat & contactId dikembalikan', async () => {
+    dbState.tables.set('bookings', [baseBooking({ phone: '+628123456789' })]);
+    const res = await app.request(`/api/bookings/${BOOKING_ID}/ensure-contact`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    const contactsRows = dbState.tables.get('contacts') as Record<string, unknown>[];
+    expect(contactsRows).toHaveLength(1);
+    expect(body.contactId).toBe((contactsRows[0] as { id: string }).id);
+    expect(contactsRows[0]).toMatchObject({
+      name: 'Andi Putra',
+      phone: '+628123456789',
+      userId: 'test-user-1',
+      workspaceId: 'ws-1',
+    });
+    // Booking ditautkan ke kontak yang sama.
+    const bookingRow = (dbState.tables.get('bookings') as Record<string, unknown>[])[0];
+    expect(bookingRow.contactId).toBe(body.contactId);
+  });
+
+  it('nomor sudah ada sebagai kontak → contactId sama, tanpa duplikat', async () => {
+    dbState.tables.set('bookings', [baseBooking({ phone: '+628123456789' })]);
+    dbState.tables.set('contacts', [baseContact()]); // phone +628123456789
+    const res = await app.request(`/api/bookings/${BOOKING_ID}/ensure-contact`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.contactId).toBe(EXISTING_CONTACT_ID);
+    expect(dbState.tables.get('contacts')).toHaveLength(1);
+  });
+
+  it('booking tanpa telepon → contactId null, tidak ada kontak dibuat', async () => {
+    dbState.tables.set('bookings', [baseBooking()]); // phone null
+    const res = await app.request(`/api/bookings/${BOOKING_ID}/ensure-contact`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.contactId).toBeNull();
+    expect(dbState.tables.get('contacts')).toHaveLength(0);
+  });
+
+  it('id bukan UUID → 400', async () => {
+    const res = await app.request('/api/bookings/not-a-uuid/ensure-contact', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('GET /api/bookings — filter daftar', () => {
   function listBookings(query: string) {
     return app.request(`/api/bookings${query}`, { headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER } });
@@ -474,11 +614,16 @@ describe('GET /api/bookings — filter daftar', () => {
     expect(names).toEqual(['Andi Putra']);
   });
 
-  it('filter title (kolom Booking): substring case-insensitive', async () => {
+  it('filter title (label UI: Service): substring nama layanan case-insensitive', async () => {
+    dbState.tables.set('services', [
+      baseService({ id: 'svc-teeth-1', name: 'Teeth Whitening — Andi' }),
+      baseService({ id: 'svc-hair', name: 'Haircut' }),
+      baseService({ id: 'svc-clean', name: 'Teeth Cleaning' }),
+    ]);
     dbState.tables.set('bookings', [
-      baseBooking({ id: 'aaaa0001-0000-4000-8000-000000000001', title: 'Teeth Whitening — Andi' }),
-      baseBooking({ id: 'aaaa0002-0000-4000-8000-000000000002', title: 'Haircut' }),
-      baseBooking({ id: 'aaaa0003-0000-4000-8000-000000000003', title: 'Teeth Cleaning' }),
+      baseBooking({ id: 'aaaa0001-0000-4000-8000-000000000001', serviceId: 'svc-teeth-1' }),
+      baseBooking({ id: 'aaaa0002-0000-4000-8000-000000000002', serviceId: 'svc-hair' }),
+      baseBooking({ id: 'aaaa0003-0000-4000-8000-000000000003', serviceId: 'svc-clean' }),
     ]);
 
     const res = await listBookings('?title=teeth');
@@ -488,11 +633,15 @@ describe('GET /api/bookings — filter daftar', () => {
     expect(titles).toEqual(['Teeth Cleaning', 'Teeth Whitening — Andi']);
   });
 
-  it('filter gabungan title + customer', async () => {
+  it('filter gabungan layanan + customer', async () => {
+    dbState.tables.set('services', [
+      baseService({ id: 'svc-teeth', name: 'Teeth Whitening' }),
+      baseService({ id: 'svc-facial', name: 'Facial' }),
+    ]);
     dbState.tables.set('bookings', [
-      baseBooking({ id: 'aaaa0001-0000-4000-8000-000000000001', title: 'Teeth Whitening', customerName: 'Andi Putra' }),
-      baseBooking({ id: 'aaaa0002-0000-4000-8000-000000000002', title: 'Teeth Whitening', customerName: 'Budi Santoso' }),
-      baseBooking({ id: 'aaaa0003-0000-4000-8000-000000000003', title: 'Facial', customerName: 'Andi Putra' }),
+      baseBooking({ id: 'aaaa0001-0000-4000-8000-000000000001', serviceId: 'svc-teeth', customerName: 'Andi Putra' }),
+      baseBooking({ id: 'aaaa0002-0000-4000-8000-000000000002', serviceId: 'svc-teeth', customerName: 'Budi Santoso' }),
+      baseBooking({ id: 'aaaa0003-0000-4000-8000-000000000003', serviceId: 'svc-facial', customerName: 'Andi Putra' }),
     ]);
 
     const res = await listBookings('?title=teeth&customer=andi');
@@ -513,6 +662,39 @@ describe('GET /api/bookings — filter daftar', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.bookings).toHaveLength(2);
+  });
+
+  it('serviceName diisi dari katalog (tenant-scoped) — null bila tidak tertaut', async () => {
+    dbState.tables.set('services', [baseService()]);
+    dbState.tables.set('bookings', [
+      baseBooking({
+        id: 'aaaa0001-0000-4000-8000-000000000001',
+        title: 'Haircut & Styling',
+        serviceId: SERVICE_ID,
+        durationMinutes: 60,
+      }),
+      baseBooking({ id: 'aaaa0002-0000-4000-8000-000000000002', title: 'Manual lama' }),
+    ]);
+
+    const res = await listBookings('');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const byId = new Map((body.bookings as { id: string; serviceName: string | null }[]).map((b) => [b.id, b]));
+    expect(byId.get('aaaa0001-0000-4000-8000-000000000001')).toMatchObject({ serviceName: 'Haircut & Styling' });
+    expect(byId.get('aaaa0002-0000-4000-8000-000000000002')).toMatchObject({ serviceName: null });
+  });
+
+  it('serviceName hanya dari workspace sendiri (cross-tenant tidak bocor)', async () => {
+    // Layanan milik ws-2 — booking ws-1 yang menautkannya harus tetap null.
+    dbState.tables.set('services', [baseService({ workspaceId: 'ws-2' })]);
+    dbState.tables.set('bookings', [
+      baseBooking({ id: 'aaaa0001-0000-4000-8000-000000000001', serviceId: SERVICE_ID }),
+    ]);
+
+    const res = await listBookings('');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect((body.bookings as { serviceName: string | null }[])[0].serviceName).toBeNull();
   });
 });
 
@@ -642,5 +824,471 @@ describe('PATCH /api/bookings/:id — integrasi kontak', () => {
     expect(body.booking.contactId).toBe(EXISTING_CONTACT_ID);
     expect(body.booking.status).toBe('confirmed');
     expect(dbState.tables.get('contacts')).toHaveLength(1);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────
+ * Staf & durasi — assignment, validasi, double-booking, recurrence
+ * ──────────────────────────────────────────────────────────── */
+
+const STAFF_ID = '55555555-5555-4555-8555-555555555555';
+
+function baseStaff(overrides: Record<string, unknown> = {}) {
+  return {
+    id: STAFF_ID,
+    name: 'Dr. Sari',
+    timezone: 'UTC',
+    bufferMinutes: 0,
+    isActive: true,
+    userId: 'test-user-1',
+    workspaceId: 'ws-1',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('POST /api/bookings — assignment staf & durasi', () => {
+  it('dengan staffId valid → booking tertaut + durasi default 60', async () => {
+    dbState.tables.set('staff_members', [baseStaff()]);
+    const res = await postBooking({
+      title: 'Konsultasi Dr. Sari',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.staffId).toBe(STAFF_ID);
+    expect(body.booking.durationMinutes).toBe(60);
+  });
+
+  it('durasi kustom 90 menit disimpan', async () => {
+    const res = await postBooking({
+      title: 'Perawatan panjang',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      durationMinutes: 90,
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.durationMinutes).toBe(90);
+  });
+
+  it('staffId workspace lain → 400', async () => {
+    dbState.tables.set('staff_members', [baseStaff({ workspaceId: 'ws-2' })]);
+    const res = await postBooking({
+      title: 'X',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('staffId tidak dikenal → 400', async () => {
+    const res = await postBooking({
+      title: 'X',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('staffId nonaktif → 400', async () => {
+    dbState.tables.set('staff_members', [baseStaff({ isActive: false })]);
+    const res = await postBooking({
+      title: 'X',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+/* ── Layanan katalog (serviceId) — auto-fill title/durasi/staf ── */
+
+const SERVICE_ID = '66666666-6666-4666-8666-666666666666';
+
+function baseService(overrides: Record<string, unknown> = {}) {
+  return {
+    id: SERVICE_ID,
+    name: 'Haircut & Styling',
+    description: null,
+    // Default 60 menit = durasi lama saat booking tanpa service; test yang
+    // menguji auto-fill durasi meng-override eksplisit (mis. 45).
+    durationMinutes: 60,
+    priceMinor: 50_000,
+    currency: 'IDR',
+    color: '#f59e0b',
+    category: null,
+    isActive: true,
+    sortOrder: 0,
+    userId: 'test-user-1',
+    workspaceId: 'ws-1',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('POST /api/bookings — layanan katalog (serviceId)', () => {
+  it('tanpa title, dengan serviceId → title & durasi auto-fill dari katalog', async () => {
+    dbState.tables.set('services', [baseService({ durationMinutes: 45 })]); // durasi 45 menit
+    const res = await postBooking({
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.title).toBe('Haircut & Styling');
+    expect(body.booking.durationMinutes).toBe(45);
+    expect(body.booking.serviceId).toBe(SERVICE_ID);
+  });
+
+  it('title tidak lagi diterima — title selalu nama layanan katalog', async () => {
+    dbState.tables.set('services', [baseService()]);
+    const res = await postBooking({
+      title: 'Judul custom', // diabaikan (zod strip) — title dari katalog
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.title).toBe('Haircut & Styling');
+    expect(body.booking.serviceId).toBe(SERVICE_ID);
+  });
+
+  it('layanan dengan satu staf → staf auto-assign', async () => {
+    dbState.tables.set('services', [baseService()]);
+    dbState.tables.set('staff_members', [baseStaff()]);
+    dbState.tables.set('service_staff', [
+      { id: 'link-1', serviceId: SERVICE_ID, staffId: STAFF_ID },
+    ]);
+    const res = await postBooking({
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.staffId).toBe(STAFF_ID);
+  });
+
+  it('layanan dengan banyak staf → tidak auto-assign', async () => {
+    const OTHER_STAFF_ID = '77777777-7777-4777-8777-777777777777';
+    dbState.tables.set('services', [baseService()]);
+    dbState.tables.set('staff_members', [
+      baseStaff(),
+      baseStaff({ id: OTHER_STAFF_ID }),
+    ]);
+    dbState.tables.set('service_staff', [
+      { id: 'link-1', serviceId: SERVICE_ID, staffId: STAFF_ID },
+      { id: 'link-2', serviceId: SERVICE_ID, staffId: OTHER_STAFF_ID },
+    ]);
+    const res = await postBooking({
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.staffId).toBeNull();
+  });
+
+  it('serviceId workspace lain → 400 (scoping)', async () => {
+    dbState.tables.set('services', [baseService({ workspaceId: 'ws-2' })]);
+    const res = await postBooking({
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('serviceId tidak dikenal → 400', async () => {
+    const res = await postBooking({
+      serviceId: SERVICE_ID,
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('tanpa serviceId → 400 (booking wajib dari layanan katalog)', async () => {
+    const res = await postBooking({ serviceId: null, scheduledAt: '2026-02-02T10:00:00.000Z' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/bookings — double-booking prevention', () => {
+  it('slot bertabrakan dengan booking aktif → 409, tanpa insert', async () => {
+    dbState.tables.set('bookings', [baseBooking()]); // 2026-02-01T10:00Z, 60 menit
+    const res = await postBooking({
+      title: 'Tabrakan',
+      scheduledAt: '2026-02-01T10:00:00.000Z',
+    });
+    expect(res.status).toBe(409);
+    expect(dbState.tables.get('bookings')).toHaveLength(1);
+  });
+
+  it('slot bersentuhan (mulai tepat saat booking lain selesai) → 201', async () => {
+    dbState.tables.set('bookings', [baseBooking()]); // 10:00-11:00Z
+    const res = await postBooking({
+      title: 'Berurutan',
+      scheduledAt: '2026-02-01T11:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('booking dibatalkan tidak memblokir slot → 201', async () => {
+    dbState.tables.set('bookings', [baseBooking({ status: 'cancelled' })]);
+    const res = await postBooking({
+      title: 'Slot kosong',
+      scheduledAt: '2026-02-01T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('staf berbeda → slot tidak bertabrakan → 201', async () => {
+    dbState.tables.set('bookings', [baseBooking({ staffId: 'staff-A' })]);
+    dbState.tables.set('staff_members', [baseStaff()]);
+    const res = await postBooking({
+      title: 'Staf lain',
+      scheduledAt: '2026-02-01T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('staf sama → slot bertabrakan → 409', async () => {
+    dbState.tables.set('bookings', [baseBooking({ staffId: STAFF_ID })]);
+    dbState.tables.set('staff_members', [baseStaff()]);
+    const res = await postBooking({
+      title: 'Staf sama',
+      scheduledAt: '2026-02-01T10:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('di luar jam kerja staf (ada jadwal) → 409', async () => {
+    dbState.tables.set('staff_members', [baseStaff()]);
+    dbState.tables.set('staff_schedules', [{ staffId: STAFF_ID, dayOfWeek: 0, startMinutes: 9 * 60, endMinutes: 17 * 60 }]);
+    // 2026-02-01 = Minggu → jadwal Minggu 09:00-17:00 UTC; booking 07:00 di luar.
+    const res = await postBooking({
+      title: 'Di luar jam',
+      scheduledAt: '2026-02-01T07:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('staf tanpa jadwal → 24/7, booking diterima', async () => {
+    dbState.tables.set('staff_members', [baseStaff()]);
+    const res = await postBooking({
+      title: 'Staf tanpa jadwal',
+      scheduledAt: '2026-02-01T07:00:00.000Z',
+      staffId: STAFF_ID,
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('POST /api/bookings — recurring appointments', () => {
+  it('weekly [Sen, Rab] count 3 → 3 instance satu seri', async () => {
+    const res = await postBooking({
+      title: 'Fisioterapi mingguan',
+      scheduledAt: '2026-02-02T10:00:00.000Z', // Senin
+      recurrence: { frequency: 'weekly', interval: 1, weekdays: [1, 3], count: 3 },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+
+    const rows = dbState.tables.get('bookings') as Record<string, unknown>[];
+    expect(rows).toHaveLength(3);
+    const seriesIds = new Set(rows.map((r) => r.recurrenceSeriesId));
+    expect(seriesIds.size).toBe(1);
+    expect(seriesIds.has(null)).toBe(false);
+    expect(body.recurrence).toMatchObject({ occurrences: 3 });
+    expect(body.recurrence.seriesId).toBe(rows[0].recurrenceSeriesId);
+
+    // Instance mengikuti ekspansi (Sen 2, Rab 4, Sen 9) — UTC.
+    const starts = rows.map((r) => (r.scheduledAt as Date).toISOString()).sort();
+    expect(starts).toEqual([
+      '2026-02-02T10:00:00.000Z',
+      '2026-02-04T10:00:00.000Z',
+      '2026-02-09T10:00:00.000Z',
+    ]);
+    // Semua instance berbagi recurrence + durasi + status.
+    for (const row of rows) {
+      expect(row.recurrence).toMatchObject({ frequency: 'weekly', count: 3 });
+      expect(row.durationMinutes).toBe(60);
+    }
+  });
+
+  it('tanpa recurrence → satu instance, recurrenceSeriesId null', async () => {
+    const res = await postBooking({
+      title: 'Sekali saja',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.booking.recurrenceSeriesId).toBeNull();
+    expect(body.recurrence).toBeUndefined();
+    expect(dbState.tables.get('bookings')).toHaveLength(1);
+  });
+
+  it('salah satu instance bertabrakan → 409 total, tidak ada insert sama sekali', async () => {
+    dbState.tables.set('bookings', [baseBooking({ scheduledAt: new Date('2026-02-04T10:00:00.000Z') })]);
+    const res = await postBooking({
+      title: 'Seri tabrakan',
+      scheduledAt: '2026-02-02T10:00:00.000Z',
+      recurrence: { frequency: 'weekly', interval: 1, weekdays: [1, 3], count: 3 },
+    });
+    expect(res.status).toBe(409);
+    expect(dbState.tables.get('bookings')).toHaveLength(1); // tidak bertambah
+  });
+});
+
+describe('PATCH /api/bookings/:id — double-booking prevention saat pindah slot', () => {
+  const SECOND_ID = '88888888-8888-4888-8888-888888888888';
+
+  function patchBooking(id: string, payload: Record<string, unknown>) {
+    return app.request(`/api/bookings/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  it('pindah ke slot yang sudah terisi → 409', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking(), // 10:00-11:00Z
+      baseBooking({ id: SECOND_ID, scheduledAt: new Date('2026-02-01T12:00:00.000Z') }),
+    ]);
+    const res = await patchBooking(SECOND_ID, { scheduledAt: '2026-02-01T10:30:00.000Z' });
+    expect(res.status).toBe(409);
+    // Tidak berubah.
+    const rows = dbState.tables.get('bookings') as Record<string, unknown>[];
+    expect((rows[1] as { scheduledAt: Date }).scheduledAt.toISOString()).toBe('2026-02-01T12:00:00.000Z');
+  });
+
+  it('pindah ke slot kosong → 200', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking(), // 10:00-11:00Z
+      baseBooking({ id: SECOND_ID, scheduledAt: new Date('2026-02-01T12:00:00.000Z') }),
+    ]);
+    const res = await patchBooking(SECOND_ID, { scheduledAt: '2026-02-01T14:00:00.000Z' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.booking.scheduledAt).toBe('2026-02-01T14:00:00.000Z');
+  });
+
+  it('ubah durasi ke nilai yang membuat tabrakan → 409', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking({ scheduledAt: new Date('2026-02-01T10:30:00.000Z') }), // 10:30-11:30
+      baseBooking({ id: SECOND_ID, scheduledAt: new Date('2026-02-01T11:00:00.000Z'), durationMinutes: 30 }),
+    ]);
+    const res = await patchBooking(SECOND_ID, { durationMinutes: 60 }); // 11:00-12:00 menabrak 10:30-11:30
+    expect(res.status).toBe(409);
+  });
+
+  it('pindah ke slot sendiri (exclude self) → 200', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking(),
+      baseBooking({ id: SECOND_ID, scheduledAt: new Date('2026-02-01T12:00:00.000Z') }),
+    ]);
+    const res = await patchBooking(SECOND_ID, { scheduledAt: '2026-02-01T12:00:00.000Z' });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('PATCH /api/bookings/:id — ganti layanan katalog (serviceId)', () => {
+  function patchBooking(id: string, payload: Record<string, unknown>) {
+    return app.request(`/api/bookings/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  it('ganti serviceId → title & durasi mengikuti layanan baru (tanpa override)', async () => {
+    dbState.tables.set('bookings', [baseBooking()]); // title 'Teeth Whitening', 60 mnt
+    dbState.tables.set('services', [baseService({ name: 'Haircut Premium', durationMinutes: 75 })]);
+    const res = await patchBooking(BOOKING_ID, { serviceId: SERVICE_ID });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.booking.serviceId).toBe(SERVICE_ID);
+    expect(body.booking.title).toBe('Haircut Premium');
+    expect(body.booking.durationMinutes).toBe(75);
+  });
+
+  it('ganti serviceId → title selalu mengikuti layanan baru (title tidak dikirim lagi)', async () => {
+    dbState.tables.set('bookings', [baseBooking()]);
+    dbState.tables.set('services', [baseService({ name: 'Haircut Premium' })]);
+    const res = await patchBooking(BOOKING_ID, {
+      serviceId: SERVICE_ID,
+      title: 'Paket spesial', // diabaikan (zod strip)
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.booking.serviceId).toBe(SERVICE_ID);
+    expect(body.booking.title).toBe('Haircut Premium');
+  });
+
+  it('serviceId null → lepas dari katalog; title fallback, durasi tetap', async () => {
+    dbState.tables.set('bookings', [baseBooking({ serviceId: SERVICE_ID })]);
+    dbState.tables.set('services', [baseService()]);
+    const res = await patchBooking(BOOKING_ID, { serviceId: null });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.booking.serviceId).toBeNull();
+    // Tanpa layanan → title memakai fallback netral (Appointment).
+    expect(body.booking.title).toBe('Appointment');
+    expect(body.booking.durationMinutes).toBe(60);
+  });
+
+  it('serviceId tidak dikenal → 400', async () => {
+    dbState.tables.set('bookings', [baseBooking()]);
+    const res = await patchBooking(BOOKING_ID, { serviceId: SERVICE_ID });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /api/bookings/:id — cancel seluruh seri pengulangan', () => {
+  const SERIES_ID = '77777777-7777-4777-8777-777777777777';
+  const INSTANCE_2 = '88888888-8888-4888-8888-888888888888';
+
+  it('applyToSeries + status cancelled membatalkan semua instance', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking({ recurrenceSeriesId: SERIES_ID }),
+      baseBooking({ id: INSTANCE_2, scheduledAt: new Date('2026-02-04T10:00:00.000Z'), recurrenceSeriesId: SERIES_ID }),
+      baseBooking({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', scheduledAt: new Date('2026-02-05T10:00:00.000Z') }),
+    ]);
+    const res = await app.request(`/api/bookings/${BOOKING_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify({ status: 'cancelled', applyToSeries: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.seriesCancelled).toBe(1);
+
+    const rows = dbState.tables.get('bookings') as Record<string, unknown>[];
+    const seriesRows = rows.filter((r) => r.recurrenceSeriesId === SERIES_ID);
+    expect(seriesRows).toHaveLength(2);
+    expect(seriesRows.every((r) => r.status === 'cancelled')).toBe(true);
+    // Booking di luar seri tetap utuh.
+    expect((rows[2] as { status: string }).status).toBe('pending');
+  });
+
+  it('tanpa applyToSeries → hanya instance yang dibatalkan', async () => {
+    dbState.tables.set('bookings', [
+      baseBooking({ recurrenceSeriesId: SERIES_ID }),
+      baseBooking({ id: INSTANCE_2, scheduledAt: new Date('2026-02-04T10:00:00.000Z'), recurrenceSeriesId: SERIES_ID }),
+    ]);
+    const res = await app.request(`/api/bookings/${BOOKING_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify({ status: 'cancelled' }),
+    });
+    expect(res.status).toBe(200);
+    const rows = dbState.tables.get('bookings') as Record<string, unknown>[];
+    expect(rows[0].status).toBe('cancelled');
+    expect(rows[1].status).toBe('pending');
   });
 });

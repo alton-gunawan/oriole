@@ -1,0 +1,51 @@
+# WAHA spike — WhatsApp HTTP API (unofficial WhatsApp integration research)
+#
+# Run:
+#   cp .env.example .env        # then edit credentials
+#   docker compose up -d
+#   docker compose logs -f waha
+#   node scripts/spike.mjs
+#
+# Engine: NOWEB (browserless — light, pairing-code + QR supported).
+# GOWS is the other lightweight option (Go, highest session density);
+# WEBJS/WPP need the chrome image and are NOT needed here.
+#
+# NOTE: unofficial WhatsApp violates Meta ToS — use only with a number you
+# are willing to lose. See README.md → "Risk & safety".
+services:
+  waha:
+    # `dev` = current dev build (no Chrome — enough for NOWEB/GOWS).
+    # Pin to a stable tag (e.g. 2026.7.2) for anything longer-lived.
+    image: devlikeapro/waha:dev
+    container_name: oriole-waha-spike
+    restart: unless-stopped
+    ports:
+      - "3000:3000" # REST API + Swagger + Dashboard
+    environment:
+      # Credentials — WAHA v2026+ requires an API key for everything.
+      # Values fall back to insecure defaults if .env is missing: change them!
+      WAHA_API_KEY: ${WAHA_API_KEY:-spike-waha-change-me-00000000000000000000000000000000}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-spike-admin-change-me-11111111111111111111111111111111}
+
+      # Engine selection (NOWEB or GOWS; GOWS supports custom device names)
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+
+      # Print QR to container logs so you can pair a headless server
+      WAHA_PRINT_QR: "true"
+      WAHA_LOG_LEVEL: INFO
+
+      # ── Global webhook config (commented: the spike configures webhooks
+      #    per-session in the script body instead — avoids double delivery).
+      #    Keep this commented while running the spike.
+      # WHATSAPP_HOOK_URL: http://host.docker.internal:5055/events
+      # WHATSAPP_HOOK_EVENTS: message,message.any,message.ack,session.status
+      # WHATSAPP_HOOK_HMAC_KEY: change-me
+    volumes:
+      # Persist authenticated sessions across restarts
+      - ./sessions:/app/.sessions
+    extra_hosts:
+      # Lets WAHA (inside Docker) reach the spike's webhook listener on the
+      # host. Docker Desktop (macOS/Windows) resolves host.docker.internal
+      # natively; this line makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
