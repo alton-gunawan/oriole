@@ -9,7 +9,7 @@ export interface WorkspaceChannel {
   webhookUrl: string;
   createdAt: string;
   updatedAt: string;
-  /** true = bot bersama dari server (env TELEGRAM_BOT_TOKEN), belum terhubung ke project. */
+  /** true = bot bersama dari server (env TELEGRAM_BOT_TOKEN), belum terhubung ke bisnis. */
   isEnvShared?: boolean;
   /** Provider channel WhatsApp: 'waha' = BYO (unofficial); selain itu official 360dialog. */
   provider?: string;
@@ -45,7 +45,7 @@ export interface InboxListResponse {
   hasMore: boolean;
 }
 
-/** Ringkasan unread per project — untuk badge di project switcher sidebar. */
+/** Ringkasan unread per bisnis — untuk badge di switcher bisnis sidebar. */
 export interface UnreadSummaryResponse {
   unreadByWorkspace: Record<string, number>;
 }
@@ -89,6 +89,12 @@ export function channelLabel(channelType: string): string {
       return 'WhatsApp';
     case 'email':
       return 'Email';
+    case 'instagram':
+      return 'Instagram';
+    case 'facebook':
+      return 'Facebook';
+    case 'line':
+      return 'Line';
     default:
       return channelType;
   }

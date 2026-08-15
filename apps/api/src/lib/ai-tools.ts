@@ -8,10 +8,12 @@ import { assertSlotAvailable, getAvailableSlots, loadStaffAvailability, schedule
 import type { ServiceSnapshot } from './service-catalog.ts';
 import { syncBookingContact } from './contact-sync.ts';
 import { emitAutoCallCancelled, emitAutoCallScheduled, emitBookingCancelled, emitBookingCreated } from './reminders.ts';
+import { emitWaitlistSlotFreed, joinWaitlist } from './waitlist.ts';
 import {
   emitCalendarBookingEvent,
   emitOutgoingWebhookEvent,
   emitSlackBookingEvent,
+  emitTelegramBookingAlert,
 } from './integration-events.ts';
 import { formatLocalTime, matchService, parseYmd, resolveInboundStaffAndTimezone } from './vapi-inbound.ts';
 import { zonedDayStart, zonedTimeToUtc } from './timezone.ts';
@@ -72,6 +74,9 @@ function toolDescription(name: string, language: 'en' | 'id'): string {
     cancel_booking: id
       ? 'Batalkan booking customer yang sudah ada setelah ia meminta pembatalan dengan jelas.'
       : 'Cancel the customer\'s existing booking after they clearly ask to cancel.',
+    join_waitlist: id
+      ? 'Daftarkan customer ke daftar tunggu bila slot/layanan yang diinginkan belum tersedia. Panggil SETELAH customer setuju masuk daftar tunggu.'
+      : 'Add the customer to the waitlist when their requested slot/service is unavailable. Call AFTER the customer agrees to join the waitlist.',
   };
   return map[name] ?? '';
 }
@@ -172,6 +177,21 @@ export function buildAiBookingTools(language: 'en' | 'id') {
         parameters: { type: 'object' as const, properties: {} },
       },
     },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'join_waitlist',
+        description: toolDescription('join_waitlist', language),
+        parameters: {
+          type: 'object' as const,
+          properties: {
+            serviceName: { type: 'string', description: 'Nama layanan yang diinginkan (opsional)' },
+            date: { type: 'string', description: dateDesc },
+            timePreference: { type: 'string', description: 'Preferensi waktu bebas (mis. sore / setelah jam 3) — opsional' },
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -206,6 +226,8 @@ export async function executeAiTool(
       return rescheduleBookingTool(ctx, args);
     case 'cancel_booking':
       return cancelBookingTool(ctx);
+    case 'join_waitlist':
+      return joinWaitlistTool(ctx, args);
     default:
       return { ok: false, error: `Tool tidak dikenal: ${name}` };
   }
@@ -518,6 +540,17 @@ async function createBookingTool(
     title: matched.service.name,
     status: row.status,
   });
+  // Telegram alerts — kartu lengkap (customer/waktu/telepon) untuk bisnis.
+  await emitTelegramBookingAlert(ctx.workspaceId, 'booking.created', {
+    id: row.id,
+    workspaceId: ctx.workspaceId,
+    title: matched.service.name,
+    status: row.status,
+    scheduledAt: row.scheduledAt.toISOString(),
+    timezone: row.timezone,
+    customerName: row.customerName,
+    phone: row.phone,
+  });
 
   return {
     ok: true,
@@ -671,6 +704,16 @@ async function cancelBookingTool(ctx: AiToolContext): Promise<AiToolOutcome> {
     .where(eq(bookings.id, booking.id));
   await emitBookingCancelled(ctx.workspaceId, booking.id);
   await emitAutoCallCancelled(ctx.workspaceId, booking.id);
+  // Slot dilepas → tawarkan ke customer daftar tunggu berikutnya (best-effort).
+  await emitWaitlistSlotFreed({
+    workspaceId: ctx.workspaceId,
+    bookingId: booking.id,
+    serviceId: booking.serviceId,
+    staffId: booking.staffId,
+    scheduledAt: booking.scheduledAt,
+    durationMinutes: booking.durationMinutes ?? 60,
+    timezone: booking.timezone,
+  });
   await emitCalendarBookingEvent(ctx.workspaceId, booking.id, 'delete');
   await emitOutgoingWebhookEvent(ctx.workspaceId, 'booking.cancelled', {
     id: booking.id,
@@ -690,6 +733,57 @@ async function cancelBookingTool(ctx: AiToolContext): Promise<AiToolOutcome> {
       bookingId: booking.id,
       title: booking.title,
       message: `Booking "${booking.title}" telah dibatalkan.`,
+    },
+  };
+}
+
+async function joinWaitlistTool(
+  ctx: AiToolContext,
+  args: Record<string, unknown>,
+): Promise<AiToolOutcome> {
+  const serviceName = typeof args.serviceName === 'string' ? args.serviceName.trim() : '';
+  const date = typeof args.date === 'string' ? args.date : '';
+  const timePreference = typeof args.timePreference === 'string' ? args.timePreference.trim() : '';
+
+  let serviceId: string | null = null;
+  if (serviceName) {
+    const matched = await matchService(ctx.workspaceId, serviceName);
+    if ('error' in matched) return { ok: false, error: matched.error };
+    serviceId = matched.service.id;
+  }
+
+  // Resolve channel chat (agar tawaran bisa dikirim balik ke chat ini).
+  const [conversation] = await db
+    .select({ channelType: conversations.channelType, externalId: conversations.externalId })
+    .from(conversations)
+    .where(eq(conversations.id, ctx.conversationId))
+    .limit(1);
+  if (!conversation) return { ok: false, error: 'Percakapan tidak ditemukan.' };
+
+  const phone = ctx.customerPhone ?? null;
+  if (!phone && !conversation.externalId) {
+    return { ok: false, error: 'Kontak customer belum diketahui. Minta nama dan nomor telepon terlebih dahulu.' };
+  }
+
+  const { entry, created } = await joinWaitlist({
+    workspaceId: ctx.workspaceId,
+    serviceId,
+    customerName: ctx.customerName ?? null,
+    contactPhone: phone,
+    channelType: conversation.channelType,
+    channelIdentifier: conversation.externalId,
+    preferredDate: date || null,
+    timePreference: timePreference || null,
+  });
+
+  return {
+    ok: true,
+    result: {
+      waitlistEntryId: entry.id,
+      created,
+      message: created
+        ? 'Customer berhasil masuk daftar tunggu. Sampaikan bahwa ia akan dihubungi bila slot kosong.'
+        : 'Customer sudah terdaftar di daftar tunggu sebelumnya.',
     },
   };
 }

@@ -8,7 +8,7 @@ import type { GoalType } from '@oriole/call-goals';
  * adapter yang butuh env/network hidup di apps/api.
  */
 
-export const CHANNEL_TYPES = ['whatsapp', 'telegram', 'instagram', 'facebook', 'sms', 'email', 'voice'] as const;
+export const CHANNEL_TYPES = ['whatsapp', 'telegram', 'instagram', 'facebook', 'sms', 'email', 'voice', 'line'] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 /** Bahasa balasan bot ke customer — default `en`. */

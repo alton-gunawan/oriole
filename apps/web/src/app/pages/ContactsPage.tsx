@@ -177,10 +177,10 @@ export function ContactsPage() {
               {contact.name.slice(0, 1).toUpperCase()}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-base font-semibold text-zinc-900 transition group-hover:text-amber-600">
+              <span className="block truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 transition group-hover:text-amber-600">
                 {contact.name}
               </span>
-              <span className="block truncate text-xs text-zinc-500">
+              <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
                 {contact.phone}
                 {contact.email ? ` · ${contact.email}` : ''}
               </span>
@@ -193,7 +193,7 @@ export function ContactsPage() {
         header: t('common.notes'),
         width: proportional(2),
         renderCell: (contact) => (
-          <span className="block truncate text-base text-zinc-600">
+          <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
             {contact.notes ?? <span className="text-zinc-300">—</span>}
           </span>
         ),
@@ -203,7 +203,7 @@ export function ContactsPage() {
         header: t('contacts.colCreated'),
         width: pixel(150),
         renderCell: (contact) => (
-          <span className="block truncate text-base text-zinc-600">
+          <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
             {formatDateTime(contact.createdAt)}
           </span>
         ),
@@ -363,7 +363,7 @@ export function ContactsPage() {
       {deleteError && (
         <p
           role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
         >
           {deleteError}
         </p>
@@ -371,12 +371,12 @@ export function ContactsPage() {
 
       {showError && (
         <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
             <IconAlertTriangle className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.contactsLoadTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.contactsLoadTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {error instanceof ApiError
                 ? t('errors.apiStatus', { status: error.status })
                 : t('errors.apiConnection')}
@@ -391,7 +391,7 @@ export function ContactsPage() {
           {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
-              className="flex items-center gap-6 border-b border-zinc-100 px-5 py-4 last:border-b-0"
+              className="flex items-center gap-6 border-b border-zinc-100 dark:border-zinc-800 px-5 py-4 last:border-b-0"
             >
               <Skeleton width="28%" height={14} />
               <Skeleton width="18%" height={12} />
@@ -459,7 +459,7 @@ export function ContactsPage() {
                   <Trans
                     i18nKey="contacts.showingCount"
                     values={{ shown: contacts.length }}
-                    components={{ strong: <strong className="font-bold text-black" /> }}
+                    components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
                   />
                 </p>
                 {hasNextPage && (

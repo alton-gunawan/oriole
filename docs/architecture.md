@@ -56,7 +56,7 @@ Paddle ──POST /api/webhooks/paddle──transaction.completed/canceled──
 - Pembatalan di sisi app memanggil Paddle dulu (`transactions.update status=canceled`)
   agar URL checkout yang sudah dibagikan mati; gagal → 502 dan link tetap pending.
 - Webhook menaut lewat `custom_data.payment_link_id` + workspace guard
-  (`custom_data.workspace_id`) — event asing tidak bisa mengubah link project lain.
+  (`custom_data.workspace_id`) — event asing tidak bisa mengubah link bisnis lain.
 
 ### Slack (notifikasi booking ke channel tim)
 

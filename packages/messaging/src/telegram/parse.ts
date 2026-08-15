@@ -71,6 +71,36 @@ export function isOptOutText(text: string | undefined): boolean {
 }
 
 /**
+ * Keyword permintaan booking baru — mirror daftar `booking-request` di
+ * whatsapp/parse.ts (jaga keduanya sinkron). Dipakai alur Telegram agar
+ * customer yang ingin booking dari awal tidak diminta nomor untuk
+ * "menghubungkan booking" (mereka belum punya booking).
+ */
+const BOOKING_REQUEST_PATTERNS = [
+  /^(mau booking|minta booking|ingin booking|buat booking|booking dong|mau booking dong|booking yuk|booking)$/,
+  /^(pesan jadwal|mau pesan|mau pesan jadwal|buat janji|mau janji|janji temu|ingin janji)$/,
+  /^(book|make a booking|make booking|book an appointment|book appointment|schedule an appointment|make an appointment)$/,
+];
+
+/** Normalisasi teks keyword: lowercase, buang emoji/markdown/tanda baca. */
+export function normalizeKeywordText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\p{Extended_Pictographic}/gu, '') // emoji
+    .replace(/[*_`~#]/g, '') // markdown
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ') // tanda baca → spasi
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** true bila teks adalah permintaan booking baru (intent `booking-request`). */
+export function isBookingRequestText(text: string | undefined): boolean {
+  if (!text) return false;
+  const normalized = normalizeKeywordText(text);
+  return BOOKING_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
  * Parse satu Update Telegram.
  * Return null untuk update yang tidak mengandung event yang relevan
  * (mis. group chat, edited message, non-kick my_chat_member).
@@ -128,6 +158,23 @@ export function parseTelegramUpdate(update: TelegramUpdate): CanonicalInboundEve
         senderIdentifier: String(message.chat.id),
         senderName: message.chat.first_name ?? null,
         intent: 'opt-out',
+        bookingId: null,
+        content: text ?? '',
+        raw: { chatId: message.chat.id, messageId: message.message_id },
+        receivedAt,
+      };
+    }
+
+    // 2a. Permintaan booking baru ("mau booking" / "book") — intent eksplisit
+    //     supaya handler mengarahkan ke form booking, bukan ke alur "minta
+    //     nomor untuk menghubungkan booking".
+    if (isBookingRequestText(text)) {
+      return {
+        channel: 'telegram',
+        providerEventId: eventId,
+        senderIdentifier: String(message.chat.id),
+        senderName: message.chat.first_name ?? null,
+        intent: 'booking-request',
         bookingId: null,
         content: text ?? '',
         raw: { chatId: message.chat.id, messageId: message.message_id },

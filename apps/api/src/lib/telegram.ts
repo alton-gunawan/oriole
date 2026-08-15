@@ -127,3 +127,21 @@ export async function telegramSetWebhook(params: {
 export async function telegramDeleteWebhook(token: string): Promise<void> {
   await telegramCall(token, 'deleteWebhook', { drop_pending_updates: false });
 }
+
+/**
+ * Info webhook Telegram saat ini (getWebhookInfo) — dipakai rekonsiliasi saat
+ * boot untuk memutuskan apakah webhook perlu didaftarkan ulang (URL berganti /
+ * terhapus) tanpa memanggil setWebhook secara membabi buta tiap restart.
+ */
+export async function telegramGetWebhookInfo(token: string): Promise<{
+  url: string | null;
+  pendingUpdateCount: number;
+  lastError: string | null;
+}> {
+  const result = await telegramCall(token, 'getWebhookInfo', {});
+  return {
+    url: typeof result.url === 'string' && result.url.length > 0 ? result.url : null,
+    pendingUpdateCount: Number(result.pending_update_count ?? 0),
+    lastError: typeof result.last_error_message === 'string' ? result.last_error_message : null,
+  };
+}

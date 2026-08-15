@@ -8,6 +8,7 @@ import { serve as serveInngest } from 'inngest/hono';
 
 import { env } from './lib/env.ts';
 import { captureException, flushAnalytics, shutdownAnalytics } from './lib/analytics.ts';
+import { reconcileTelegramWebhooks } from './lib/telegram-reconcile.ts';
 import { analyticsFlushMiddleware } from './middleware/analytics.ts';
 import { createRateLimiter } from './middleware/rate-limit.ts';
 import { inngest } from './inngest/client.ts';
@@ -34,8 +35,11 @@ import { metaWebhookRoutes } from './routes/webhooks/meta.ts';
 import { paddleWebhookRoutes } from './routes/webhooks/paddle.ts';
 import { tallyWebhookRoutes } from './routes/webhooks/tally.ts';
 import { telegramWebhookRoutes } from './routes/webhooks/telegram.ts';
+import { lineWebhookRoutes } from './routes/webhooks/line.ts';
 import { wahaWebhookRoutes } from './routes/webhooks/waha.ts';
 import { whatsappWebhookRoutes } from './routes/webhooks/whatsapp.ts';
+import { whatsappBusinessWebhookRoutes } from './routes/webhooks/whatsapp-business.ts';
+import { whatsappBusinessRoutes } from './routes/whatsapp-business.ts';
 
 export const app = new Hono();
 
@@ -126,8 +130,11 @@ app.route('/api/webhooks/meta', metaWebhookRoutes);
 app.route('/api/webhooks/vapi', vapiWebhookRoutes);
 app.route('/api/webhooks/tally', tallyWebhookRoutes);
 app.route('/api/webhooks/telegram', telegramWebhookRoutes);
+app.route('/api/webhooks/line', lineWebhookRoutes);
 app.route('/api/webhooks/waha', wahaWebhookRoutes);
 app.route('/api/webhooks/whatsapp', whatsappWebhookRoutes);
+app.route('/api/webhooks/whatsapp-business', whatsappBusinessWebhookRoutes);
+app.route('/api/whatsapp-business', whatsappBusinessRoutes);
 
 // Jangan mount Inngest / mulai server saat di-import oleh test (NODE_ENV=test).
 if (env.NODE_ENV !== 'test') {
@@ -152,6 +159,12 @@ if (env.NODE_ENV !== 'test') {
   serveHttp({ fetch: app.fetch, port: env.PORT }, (info) => {
     console.log(`🪶 Oriole API listening on http://localhost:${info.port}`);
   });
+
+  // ── Self-healing webhook Telegram: setelah restart/deploy, pastikan URL
+  // webhook di sisi Telegram cocok dengan WEBHOOK_BASE_URL saat ini (tanpa
+  // ini bot bisa berhenti merespons karena webhook masih menunjuk URL lama).
+  // Non-blocking — tidak menunda boot; kegagalan hanya dicatat sebagai log.
+  void reconcileTelegramWebhooks();
 
   // ── Shutdown graceful: flush event PostHog yang masih antri. ──
   const shutdown = () => {

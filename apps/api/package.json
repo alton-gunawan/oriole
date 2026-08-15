@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "setup:telegram": "tsx src/scripts/setup-telegram.ts",
     "setup:telnyx": "tsx src/scripts/setup-telnyx.ts",
+    "setup:whatsapp": "tsx src/scripts/setup-meta-whatsapp.ts",
     "telnyx:status": "tsx src/scripts/telnyx-status.ts",
     "seed:bookings": "tsx src/scripts/seed-bookings.ts",
     "seed:unread": "tsx src/scripts/seed-unread.ts",

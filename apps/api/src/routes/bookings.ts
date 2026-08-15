@@ -39,6 +39,7 @@ import {
   emitCalendarBookingEvent,
   emitOutgoingWebhookEvent,
   emitSlackBookingEvent,
+  emitTelegramBookingAlert,
   emitVideoLinkEvent,
 } from '../lib/integration-events.ts';
 import { captureBookingEvent } from '../lib/analytics.ts';
@@ -669,6 +670,7 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     }
     await emitOutgoingWebhookEvent(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
     await emitSlackBookingEvent(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
+    await emitTelegramBookingAlert(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
     await emitVideoLinkEvent(workspaceId, primary.id);
 
     // Analitik: hanya instance utama (satu event per seri, mirror webhook).

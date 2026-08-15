@@ -27,13 +27,42 @@ interface SessionState {
   setError: () => void;
 }
 
+/**
+ * Snapshot status sesi terakhir (localStorage) — dipakai landing page agar
+ * CTA "Go to dashboard" vs "Sign in / Get started" tampil benar SECEPATNYA,
+ * tanpa menunggu round-trip `/api/me` saat boot. Status asli di store tetap
+ * 'loading' dulu (RequireAuth butuh itu untuk splash + redirect yang benar);
+ * snapshot ini hanya sinyal optimis untuk UI publik.
+ */
+const SESSION_STATUS_KEY = 'oriole.session-status';
+
+export function getCachedSessionStatus(): 'authenticated' | 'unauthenticated' | null {
+  if (typeof window === 'undefined') return null;
+  const value = window.localStorage.getItem(SESSION_STATUS_KEY);
+  return value === 'authenticated' || value === 'unauthenticated' ? value : null;
+}
+
+function persistSessionStatus(status: 'authenticated' | 'unauthenticated'): void {
+  try {
+    window.localStorage.setItem(SESSION_STATUS_KEY, status);
+  } catch {
+    // localStorage diblokir (private mode) — bukan fatal, abaikan.
+  }
+}
+
 /** State client ringan — sesi dibaca dari JWT / API (lib/auth + lib/api). */
 export const useSessionStore = create<SessionState>()((set) => ({
   status: 'loading',
   user: null,
-  setStatus: (status) => set({ status }),
+  setStatus: (status) => {
+    if (status === 'authenticated' || status === 'unauthenticated') {
+      persistSessionStatus(status);
+    }
+    set({ status });
+  },
   setUser: (user) => set({ user }),
   clear: () => {
+    persistSessionStatus('unauthenticated');
     set({ status: 'unauthenticated', user: null });
     useWorkspaceStore.getState().clear();
   },

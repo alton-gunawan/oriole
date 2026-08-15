@@ -40,6 +40,10 @@ import {
   webhookUrlFor,
 } from '../lib/webhook-url.ts';
 import { MetaApiError, metaGetPageIdentity, META_WEBHOOK_PATH } from '../lib/meta.ts';
+import { LineApiError, lineGetBotInfo, lineSetWebhookEndpoint } from '../lib/line.ts';
+import { encryptSecret } from '../lib/crypto.ts';
+import { resolveLineChannel } from '../lib/line-handler.ts';
+import { checkTelegramWebhookHealth } from '../lib/telegram-health.ts';
 
 /**
  * Manajemen channel komunikasi per workspace (Telegram, WhatsApp, ...).
@@ -245,6 +249,13 @@ const metaSetupSchema = z.object({
   accessToken: z.string().trim().min(20, 'Access token Meta tidak valid').max(600),
 });
 
+/** Setup Line Messaging API: channel access token + channel secret (Console →
+ *  https://developers.line.biz — provider Messaging API, bukan LINE Login). */
+const lineSetupSchema = z.object({
+  channelAccessToken: z.string().trim().min(10, 'Channel access token tidak valid').max(500),
+  channelSecret: z.string().trim().min(8, 'Channel secret tidak valid').max(300),
+});
+
 const whatsappWahaSetupSchema = z.object({
   // Kredensial gateway TIDAK lagi diterima dari klien — gateway selalu
   // ter-managed server (env WAHA_GATEWAY_URL + WAHA_GATEWAY_API_KEY).
@@ -293,6 +304,88 @@ function gatewayUnreachableMessage(baseUrl: string): string {
  * berbeda dari yang baru, konfigurasi lama masuk riwayat; re-setup sesama
  * provider tidak menambah entri.
  */
+/**
+ * Validasi kredensial Line ke API sungguhan (GET /v2/bot/info) → daftarkan
+ * webhook endpoint → simpan/upsert channel. Access token & channel secret
+ * dienkripsi at-rest (AES-256-GCM) sebelum masuk providerConfig.
+ */
+async function registerLineChannel(input: {
+  workspaceId: string;
+  channelAccessToken: string;
+  channelSecret: string;
+}): Promise<
+  | { ok: true; channel: typeof workspaceChannels.$inferSelect }
+  | { ok: false; status: 400 | 500; error: string }
+> {
+  // Webhook Line harus HTTPS publik — gagal cepat dengan pesan jelas.
+  try {
+    assertPublicHttpsWebhookUrl(webhookUrlFor(input.workspaceId, 'line'));
+  } catch (error) {
+    if (error instanceof WebhookUrlError) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    throw error;
+  }
+
+  // Validasi token ke Line API sungguhan — token salah / tidak punya scope
+  // Messaging API ditolak di sini (401 dari Line).
+  let botInfo: { userId: string; displayName: string | null };
+  try {
+    botInfo = await lineGetBotInfo(input.channelAccessToken);
+  } catch (error) {
+    if (error instanceof LineApiError) {
+      return { ok: false, status: 400, error: `Channel access token ditolak: ${error.message}` };
+    }
+    throw error;
+  }
+  if (!botInfo.userId) {
+    return { ok: false, status: 400, error: 'Token bukan milik bot Line Messaging API (periksa provider di Line Developers Console).' };
+  }
+
+  try {
+    await lineSetWebhookEndpoint(input.channelAccessToken, webhookUrlFor(input.workspaceId, 'line'));
+  } catch (error) {
+    if (error instanceof LineApiError) {
+      return { ok: false, status: 400, error: `Gagal mendaftarkan webhook: ${error.message}` };
+    }
+    throw error;
+  }
+
+  const [channel] = await db
+    .insert(workspaceChannels)
+    .values({
+      workspaceId: input.workspaceId,
+      channelType: 'line',
+      identifier: botInfo.displayName ?? botInfo.userId,
+      providerConfig: {
+        // Kredensial dienkripsi at-rest (AES-256-GCM).
+        channelAccessToken: encryptSecret(input.channelAccessToken),
+        channelSecret: encryptSecret(input.channelSecret),
+        lineUserId: botInfo.userId,
+      },
+      isActive: true,
+    })
+    .onConflictDoUpdate({
+      target: [workspaceChannels.workspaceId, workspaceChannels.channelType],
+      set: {
+        identifier: botInfo.displayName ?? botInfo.userId,
+        providerConfig: {
+          channelAccessToken: encryptSecret(input.channelAccessToken),
+          channelSecret: encryptSecret(input.channelSecret),
+          lineUserId: botInfo.userId,
+        },
+        isActive: true,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  if (!channel) {
+    return { ok: false, status: 500, error: 'Gagal menyimpan channel Line.' };
+  }
+  return { ok: true, channel };
+}
+
 function pushProviderHistory(
   prevConfig: Record<string, unknown>,
   newProvider: string,
@@ -325,10 +418,10 @@ export const channelsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     const channels: PublicChannel[] = rows.map((ch) => toPublicChannel(ch, workspaceId));
 
     // One-click mode (single-tenant / development): bila server menyediakan bot
-    // bersama via env TELEGRAM_BOT_TOKEN dan project ini belum punya channel
+    // bersama via env TELEGRAM_BOT_TOKEN dan bisnis ini belum punya channel
     // Telegram sendiri, tampilkan virtual channel agar UI bisa menghubungkannya
     // sekali klik tanpa input token BotFather. isActive=false karena webhook
-    // untuk project ini belum didaftarkan sampai connect ditekan.
+    // untuk bisnis ini belum didaftarkan sampai connect ditekan.
     if (!rows.some((r) => r.channelType === 'telegram') && env.TELEGRAM_BOT_TOKEN) {
       const identity = await resolveEnvBotIdentity();
       const now = new Date();
@@ -449,6 +542,55 @@ export const channelsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       throw error;
     }
     return c.json({ ok: true, webhookUrl: webhookUrlFor(workspaceId, 'telegram') });
+  })
+
+  /* ── Health webhook Telegram: URL terdaftar + update tertunda ──
+   * UI memakainya untuk menampilkan apakah webhook masih menunjuk URL yang
+   * benar (mis. setelah restart/tunnel berganti) tanpa harus cek dashboard
+   * Telegram manual. Selalu 200 — status dibaca dari body, bukan kode HTTP.
+   */
+  .get('/telegram/webhook-health', requireAuth, requireWorkspace, async (c) => {
+    const health = await checkTelegramWebhookHealth(c.get('workspaceId'));
+    return c.json(health);
+  })
+
+  /* ── Setup Line: validasi channel access token (GET /v2/bot/info) + daftarkan webhook ── */
+  .post(
+    '/line/setup',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', lineSetupSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      const { channelAccessToken, channelSecret } = c.req.valid('json');
+
+      const result = await registerLineChannel({ workspaceId, channelAccessToken, channelSecret });
+      if (!result.ok) return c.json({ error: result.error }, result.status);
+
+      return c.json({ channel: toPublicChannel(result.channel, workspaceId) }, 201);
+    },
+  )
+
+  /* ── Re-register webhook Line (mis. setelah deploy domain baru) ── */
+  .post('/line/rewebhook', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const channel = await resolveLineChannel(workspaceId);
+    if (!channel) return c.json({ error: 'Channel Line belum dikonfigurasi.' }, 404);
+
+    try {
+      // HTTPS publik wajib — gagal cepat sebelum memanggil Line.
+      assertPublicHttpsWebhookUrl(webhookUrlFor(workspaceId, 'line'));
+      await lineSetWebhookEndpoint(channel.accessToken, webhookUrlFor(workspaceId, 'line'));
+    } catch (error) {
+      if (error instanceof WebhookUrlError) {
+        return c.json({ error: error.message }, 400);
+      }
+      if (error instanceof LineApiError) {
+        return c.json({ error: `Gagal mendaftarkan webhook: ${error.message}` }, 400);
+      }
+      throw error;
+    }
+    return c.json({ ok: true, webhookUrl: webhookUrlFor(workspaceId, 'line') });
   })
 
   /* ── Setup WhatsApp: validasi API key 360dialog + simpan konfigurasi ── */

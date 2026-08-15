@@ -42,3 +42,10 @@ spikes/waha/sessions/
 deploy/waha/.env
 deploy/waha/data/
 deploy/waha/backups/
+
+# Tooling lokal / artefak sementara (bukan bagian repo)
+.commandcode/
+apps/api/src/routes/*.bak
+apps/api/test-qr-tmp.ts
+apps/api/src/scripts/_debug-sql2.ts
+apps/web/vite.local.config.ts

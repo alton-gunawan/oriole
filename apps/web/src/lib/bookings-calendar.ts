@@ -44,12 +44,16 @@ const STATUS_COLOR: Record<BookingRecord['status'], string> = {
   cancelled: '#ef4444',    // red-500
 };
 
-/** Background variant per status — lebih pucat dari foreground. */
+/**
+ * Background variant per status — tint pucat di light mode. Dipakai lewat
+ * custom property (fallback hex) agar dark mode bisa menukarnya ke tint
+ * gelap (lihat html[data-theme='dark'] di index.css) tanpa mengubah data.
+ */
 const STATUS_BG: Record<BookingRecord['status'], string> = {
-  pending: '#fef3c7',      // amber-100
-  confirmed: '#d1fae5',    // emerald-100
-  completed: '#f4f4f5',    // zinc-100
-  cancelled: '#fee2e2',    // red-100
+  pending: 'var(--booking-bg-pending, #fef3c7)',      // amber-100
+  confirmed: 'var(--booking-bg-confirmed, #d1fae5)',  // emerald-100
+  completed: 'var(--booking-bg-completed, #f4f4f5)',  // zinc-100
+  cancelled: 'var(--booking-bg-cancelled, #fee2e2)',  // red-100
 };
 
 /**

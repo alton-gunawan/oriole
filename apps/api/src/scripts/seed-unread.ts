@@ -9,8 +9,8 @@ import { bookings, conversations, createDb, messages, workspaces } from '@oriole
  *
  * - Tanpa --workspace: dipakai workspace pertama milik user pertama.
  * - Membuat 3 percakapan (2 belum dibaca: 3 & 1 unread; 1 sudah dibaca: 0)
- *   lengkap dengan pesan inbound, supaya badge unread di project switcher
- *   dan daftar inbox terlihat berisi.
+ *   lengkap dengan pesan inbound, supaya badge unread di switcher bisnis di
+ *   sidebar dan daftar inbox terlihat berisi.
  * - Idempoten: percakapan dengan (workspace, channel, externalId) yang sama
  *   dilewati — aman dijalankan ulang kapan saja.
  */
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
       .orderBy(workspaces.createdAt)
       .limit(1);
     if (!first) {
-      console.error('Belum ada workspace. Buat project dulu lewat UI (onboarding).');
+      console.error('Belum ada workspace. Buat bisnis dulu lewat UI (onboarding).');
       process.exit(1);
     }
     workspaceId = first.id;
@@ -161,7 +161,7 @@ async function main(): Promise<void> {
 
   console.log(
     `\nSelesai: ${created} percakapan dibuat, ${skipped} dilewati (sudah ada). ` +
-      `Badge unread kini tampil di project switcher sidebar.`,
+      `Badge unread kini tampil di switcher bisnis sidebar.`,
   );
 }
 

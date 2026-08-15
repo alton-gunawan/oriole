@@ -32,16 +32,18 @@ const CHANNEL_DOT: Record<string, string> = {
   telegram: '#0284c7',
   whatsapp: '#059669',
   email: '#d97706',
+  line: '#06C755',
 };
 
 /** Urutan item menu filter channel (All tampil terpisah di atas). */
-const CHANNEL_ORDER: InboxConversation['channelType'][] = ['telegram', 'whatsapp', 'email'];
+const CHANNEL_ORDER: InboxConversation['channelType'][] = ['telegram', 'whatsapp', 'email', 'line'];
 
 /** Ikon merek per channel (dari svgl.app) — dipakai item menu filter. */
 const CHANNEL_ICON: Record<InboxConversation['channelType'], ReactNode> = {
   telegram: <IconTelegram className="size-4" />,
   whatsapp: <IconWhatsApp className="size-4" />,
   email: <IconGmail className="size-4" />,
+  line: <IconChat className="size-4 text-[#06C755]" />,
 };
 
 /** Logo channel dalam lingkaran kecil di pojok kanan bawah avatar — pengganti
@@ -49,7 +51,7 @@ const CHANNEL_ICON: Record<InboxConversation['channelType'], ReactNode> = {
 function ChannelAvatarBadge({ channelType }: { channelType: string }) {
   return (
     <span
-      className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-zinc-200"
+      className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-200"
       aria-hidden="true"
     >
       {CHANNEL_ICON[channelType] ?? null}
@@ -209,14 +211,14 @@ export function InboxPage() {
           kartu biasa dalam alur halaman. ── */}
       <aside
         aria-label={t('inbox.title')}
-        className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-60 lg:z-30 lg:w-[calc(38vw-9rem)] lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-y-0 lg:border-l-0 lg:border-r lg:border-zinc-200"
+        className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden !rounded-none border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 lg:fixed lg:inset-y-0 lg:left-60 lg:z-30 lg:w-[calc(38vw-9rem)] lg:max-h-none lg:min-h-0 lg:border-y-0 lg:border-l-0 lg:border-r lg:border-zinc-200 dark:lg:border-zinc-700"
       >
           {/* Header halaman — di atas inputan search name/number. */}
-          <div className="border-b border-zinc-100 px-4 py-4">
+          <div className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-4">
             {pageHeader}
           </div>
 
-          <div className="border-b border-zinc-100 px-4 py-3">
+          <div className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
                 <input
@@ -224,7 +226,7 @@ export function InboxPage() {
                   placeholder={t('inbox.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-500/10"
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-200 outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-amber-500/10"
                 />
               </div>
               {/* Tombol filter channel — membuka menu pilihan channel (ikon
@@ -245,7 +247,7 @@ export function InboxPage() {
                       <IconFilter className="size-4" />
                       {channelFilter && (
                         <span
-                          className="absolute -right-1.5 -top-1.5 size-2.5 rounded-full ring-2 ring-white"
+                          className="absolute -right-1.5 -top-1.5 size-2.5 rounded-full ring-2 ring-white dark:ring-zinc-900"
                           style={{ backgroundColor: CHANNEL_DOT[channelFilter] }}
                           aria-hidden="true"
                         />
@@ -258,15 +260,15 @@ export function InboxPage() {
                     width: 36,
                     height: 36,
                     borderRadius: '0.5rem',
-                    border: '1px solid #e4e4e7',
-                    backgroundColor: '#fafafa',
+                    border: '1px solid var(--color-border-emphasized)',
+                    backgroundColor: 'var(--color-background-muted)',
                   },
                 }}
               >
                 <DropdownMenuItem
                   icon={<IconFilter className="size-4" />}
                   label={
-                    <span className={channelFilter === null ? 'font-medium text-zinc-900' : ''}>
+                    <span className={channelFilter === null ? 'font-medium text-zinc-900 dark:text-zinc-100' : ''}>
                       {t('inbox.allChannels')}
                     </span>
                   }
@@ -282,7 +284,7 @@ export function InboxPage() {
                     key={channel}
                     icon={CHANNEL_ICON[channel]}
                     label={
-                      <span className={channelFilter === channel ? 'font-medium text-zinc-900' : ''}>
+                      <span className={channelFilter === channel ? 'font-medium text-zinc-900 dark:text-zinc-100' : ''}>
                         {channelLabel(channel)}
                       </span>
                     }
@@ -302,7 +304,7 @@ export function InboxPage() {
             {!loaded && <p className="p-6 text-center text-sm text-zinc-400">{t('inbox.loading')}</p>}
             {loaded && conversations.length === 0 && (
               <div className="p-6 text-center">
-                <p className="text-sm font-medium text-zinc-600">{t('inbox.emptyListTitle')}</p>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{t('inbox.emptyListTitle')}</p>
                 <p className="mt-1 text-xs text-zinc-400">
                   {t('inbox.emptyListDesc')}
                 </p>
@@ -315,7 +317,7 @@ export function InboxPage() {
             )}
             {listError && <p className="p-6 text-center text-xs text-red-600">{listError}</p>}
 
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {visibleConversations.map((conversation) => {
                 const selected = conversation.id === selectedId;
                 return (
@@ -327,10 +329,10 @@ export function InboxPage() {
                         selected ? 'border-amber-500' : 'border-transparent'
                       } ${
                         conversation.needsAttention
-                          ? 'bg-orange-50 hover:bg-orange-100'
+                          ? 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-950/60'
                           : selected
                             ? 'bg-amber-500/5'
-                            : 'hover:bg-zinc-50'
+                            : 'hover:bg-zinc-50 dark:hover:bg-zinc-900'
                       }`}
                     >
                       <span className="relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
@@ -339,7 +341,7 @@ export function InboxPage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-semibold text-zinc-800">
+                          <span className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-200">
                             {conversation.customerName ?? conversation.externalId}
                           </span>
                           {conversation.lastMessageAt && (
@@ -353,7 +355,7 @@ export function InboxPage() {
                             {conversation.bookingTitle}
                           </span>
                         )}
-                        <span className="mt-1 block truncate text-xs text-zinc-500">
+                        <span className="mt-1 block truncate text-xs text-zinc-500 dark:text-zinc-400">
                           {conversation.preview
                             ? `${conversation.preview.direction === 'outbound' ? t('inbox.youPrefix') : ''}${conversation.preview.content}`
                             : t('inbox.noMessages')}
@@ -373,7 +375,7 @@ export function InboxPage() {
             </ul>
 
             {nextCursor && (
-              <div className="border-t border-zinc-100 p-3 text-center">
+              <div className="border-t border-zinc-100 dark:border-zinc-800 p-3 text-center">
                 <Button label={t('common.loadMore')} variant="ghost" size="sm" onClick={() => void loadMore()} />
               </div>
             )}
@@ -386,15 +388,15 @@ export function InboxPage() {
           Mobile: kartu tetap berada dalam alur halaman biasa. ── */}
       <div className="min-w-0 lg:pl-[calc(38vw-11rem)]">
         {/* ── Thread ── */}
-        <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white lg:fixed lg:inset-y-0 lg:left-[calc(38vw+6rem)] lg:right-0 lg:z-20 lg:max-h-none lg:min-h-0 lg:rounded-none lg:border-0">
+        <Card className="flex max-h-[calc(100vh-220px)] min-h-[420px] flex-col overflow-hidden !rounded-none border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 lg:fixed lg:inset-y-0 lg:left-[calc(38vw+6rem)] lg:right-0 lg:z-20 lg:max-h-none lg:min-h-0 lg:border-0">
           {!selectedId ? (
             <div className="flex flex-1 items-center justify-center p-10">
               <div className="text-center">
-                <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400">
+                <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
                   <IconChat className="size-7" />
                 </span>
-                <h3 className="mt-5 text-base font-semibold text-zinc-900">{t('inbox.selectTitle')}</h3>
-                <p className="mt-1.5 max-w-sm text-sm text-zinc-500">
+                <h3 className="mt-5 text-base font-semibold text-zinc-900 dark:text-zinc-100">{t('inbox.selectTitle')}</h3>
+                <p className="mt-1.5 max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
                   {t('inbox.selectDesc')}
                 </p>
               </div>
@@ -410,14 +412,14 @@ export function InboxPage() {
           ) : thread ? (
             <>
               {/* Header thread */}
-              <div className="border-b border-zinc-100 px-5 py-3.5">
+              <div className="border-b border-zinc-100 dark:border-zinc-800 px-5 py-3.5">
                 <div className="flex items-center gap-3">
                   <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-bold text-amber-400">
                     {(thread.conversation.customerName ?? thread.conversation.externalId ?? '?').slice(0, 1).toUpperCase()}
                     <ChannelAvatarBadge channelType={thread.conversation.channelType} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-zinc-900">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                       {thread.conversation.customerName ?? thread.conversation.externalId}
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
@@ -427,22 +429,22 @@ export function InboxPage() {
                 </div>
 
                 {thread.booking && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2">
-                    <span className="text-xs font-medium text-zinc-700">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2">
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       📅 {thread.booking.title}
                     </span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
                       {formatDateTimeFull(thread.booking.scheduledAt, thread.booking.timezone)}
                     </span>
                     <span
                       className={`ml-auto rounded-md px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${
                         thread.booking.status === 'confirmed'
-                          ? 'bg-emerald-50 text-emerald-600'
+                          ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400'
                           : thread.booking.status === 'cancelled'
-                            ? 'bg-red-50 text-red-600'
+                            ? 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400'
                             : thread.booking.status === 'completed'
-                              ? 'bg-zinc-100 text-zinc-500'
-                              : 'bg-amber-50 text-amber-600'
+                              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                              : 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400'
                       }`}
                     >
                       {(() => {
@@ -455,7 +457,7 @@ export function InboxPage() {
               </div>
 
               {/* Pesan */}
-              <div className="flex-1 space-y-3 overflow-y-auto bg-zinc-50/60 p-5">
+              <div className="flex-1 space-y-3 overflow-y-auto bg-zinc-50/60 dark:bg-zinc-900/60 p-5">
                 {thread.messages.length === 0 && (
                   <p className="py-10 text-center text-sm text-zinc-400">{t('inbox.noMessagesInThread')}</p>
                 )}
@@ -466,7 +468,7 @@ export function InboxPage() {
               </div>
 
               {/* Komposer */}
-              <div className="border-t border-zinc-100 bg-white p-4">
+              <div className="border-t border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
                 {threadError && <p className="mb-2 text-xs text-red-600">{threadError}</p>}
                 <form onSubmit={sendReply} className="flex items-end gap-2">
                   <div className="flex-1">
@@ -530,14 +532,14 @@ function MessageBubble({ message }: { message: InboxMessage }) {
       <div
         className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
           inbound
-            ? 'rounded-tl-sm bg-white text-zinc-800'
+            ? 'rounded-tl-sm bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
             : 'rounded-tr-sm bg-amber-500 text-zinc-950'
         }`}
       >
         {/* `ph-no-capture`: isi pesan inbox = PII customer — jangan pernah
             ter-capture autocapture/session replay PostHog. */}
         <p className="whitespace-pre-wrap break-words ph-no-capture">{message.content}</p>
-        <p className={`mt-1 text-right text-xs ${inbound ? 'text-zinc-400' : 'text-zinc-900/60'}`}>
+        <p className={`mt-1 text-right text-xs ${inbound ? 'text-zinc-400' : 'text-zinc-900/60 dark:text-zinc-100/60'}`}>
           {formatMessageTime(message.createdAt)}
         </p>
       </div>

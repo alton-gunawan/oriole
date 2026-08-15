@@ -229,17 +229,17 @@ export function PaymentsDialog({
           <LayoutContent>
             <div className="space-y-6">
               {/* Provider tetap — detail hanya di dalam dialog, bukan di kartu. */}
-              <p className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+              <p className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
                 <IconCreditCard className="size-3.5 shrink-0 text-zinc-400" />
                 <span className="font-medium uppercase tracking-wider text-zinc-400">{t('payments.providerLabel')}</span>
-                <span className="text-zinc-700">{t('payments.providerValue')}</span>
+                <span className="text-zinc-700 dark:text-zinc-300">{t('payments.providerValue')}</span>
               </p>
 
               {/* Form create */}
-              <form onSubmit={createPayment} className="space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4">
+              <form onSubmit={createPayment} className="space-y-4 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-900/60 p-4">
                 <div className="flex items-center gap-2">
                   <IconCreditCard className="size-4 text-amber-600" />
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('payments.createTitle')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('payments.createTitle')}</h3>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <TextInput
@@ -305,17 +305,17 @@ export function PaymentsDialog({
               </form>
 
               {createdOk && (
-                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                   {createdOk}
                 </p>
               )}
               {actionError && (
-                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
                   {actionError}
                 </p>
               )}
               {loadError && (
-                <p role="alert" className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                <p role="alert" className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400">
                   <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
                   {loadError}
                 </p>
@@ -323,7 +323,7 @@ export function PaymentsDialog({
 
               {/* Daftar payment link */}
               <section>
-                <h3 className="text-sm font-semibold text-zinc-900">{t('payments.listTitle')}</h3>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('payments.listTitle')}</h3>
                 <p className="mt-0.5 text-xs text-zinc-400">
                   {bookingId ? t('payments.listDescBooking') : t('payments.listDesc')}
                 </p>
@@ -331,15 +331,15 @@ export function PaymentsDialog({
                 {payments === null ? (
                   <div className="mt-4 space-y-3">
                     {[0, 1].map((i) => (
-                      <div key={i} className="rounded-xl border border-zinc-100 p-4">
+                      <div key={i} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-4">
                         <Skeleton width="40%" height={14} />
                         <Skeleton className="mt-3" width="25%" height={14} />
                       </div>
                     ))}
                   </div>
                 ) : list.length === 0 ? (
-                  <div className="mt-4 rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center">
-                    <p className="text-sm text-zinc-500">{t('payments.empty')}</p>
+                  <div className="mt-4 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-8 text-center">
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('payments.empty')}</p>
                     <p className="mt-1 text-xs text-zinc-400">{t('payments.emptyHint')}</p>
                   </div>
                 ) : (
@@ -347,14 +347,14 @@ export function PaymentsDialog({
                     {list.map((payment) => {
                       const badge = STATUS_BADGE[payment.status];
                       return (
-                        <li key={payment.id} className="rounded-xl border border-zinc-100 p-4">
+                        <li key={payment.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-semibold text-zinc-900">{payment.title}</p>
+                                <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{payment.title}</p>
                                 <Badge variant={badge.variant} label={t(badge.labelKey)} />
                               </div>
-                              <p className="mt-1 text-sm font-bold text-zinc-800">
+                              <p className="mt-1 text-sm font-bold text-zinc-800 dark:text-zinc-200">
                                 {formatPaymentAmount(payment.amountMinor, payment.currency)}
                               </p>
                               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">

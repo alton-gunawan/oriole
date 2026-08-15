@@ -63,6 +63,25 @@ vi.mock('./telegram.ts', () => ({
   TelegramApiError: TelegramApiErrorMock,
 }));
 
+const { linePushMessageMock, LineApiErrorMock } = vi.hoisted(() => ({
+  linePushMessageMock: vi.fn(),
+  LineApiErrorMock: class extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'LineApiError';
+    }
+  },
+}));
+
+vi.mock('./line.ts', () => ({
+  linePushMessage: linePushMessageMock,
+  lineBuildMessages: (text: string) => [{ type: 'text', text }],
+  LineApiError: LineApiErrorMock,
+}));
+
+const { resolveLineChannelMock } = vi.hoisted(() => ({ resolveLineChannelMock: vi.fn() }));
+vi.mock('./line-handler.ts', () => ({ resolveLineChannel: resolveLineChannelMock }));
+
 const { resendSendMock } = vi.hoisted(() => ({
   resendSendMock: vi.fn(),
 }));
@@ -207,6 +226,14 @@ beforeEach(() => {
   sendWhatsAppMessageMock.mockResolvedValue({ messageId: 'wamid-1' });
   telegramSendMessageMock.mockReset();
   telegramSendMessageMock.mockResolvedValue({ messageId: 42 });
+  linePushMessageMock.mockReset();
+  linePushMessageMock.mockResolvedValue(undefined);
+  resolveLineChannelMock.mockReset();
+  resolveLineChannelMock.mockResolvedValue({
+    accessToken: 'line-token-1',
+    channelSecret: 'line-secret-1',
+    isActive: true,
+  });
   resendSendMock.mockReset();
   resendSendMock.mockResolvedValue({ data: { id: 'resend-1' }, error: null });
 });
@@ -320,6 +347,80 @@ describe('dispatchFormInvitation', () => {
     });
   });
 
+  it('line sukses → push message ke userId terhubung + tercatat sent', async () => {
+    dbState.tables.set('contacts', [contact()]);
+    dbState.tables.set('customerChannels', [
+      optedInChannel({ channelType: 'line', identifier: 'U4af4980629abcdef', contactPhone: '081234567890' }),
+    ]);
+
+    const result = await dispatchFormInvitation({ ...baseInput, channel: 'line' });
+
+    expect(result).toMatchObject({ sent: true, channel: 'line' });
+    expect(linePushMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accessToken: 'line-token-1',
+        to: 'U4af4980629abcdef',
+        messages: [{ type: 'text', text: expect.stringContaining('Lead Form') }],
+      }),
+    );
+    const messages = dbState.tables.get('messages') ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ status: 'sent', channelType: 'line', direction: 'outbound' });
+  });
+
+  it('line kontak tanpa nomor telepon → 400', async () => {
+    dbState.tables.set('contacts', [contact({ phone: null })]);
+    await expect(dispatchFormInvitation({ ...baseInput, channel: 'line' })).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(linePushMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('line channel belum dikonfigurasi → 409', async () => {
+    dbState.tables.set('contacts', [contact()]);
+    resolveLineChannelMock.mockResolvedValue(null);
+    await expect(dispatchFormInvitation({ ...baseInput, channel: 'line' })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(linePushMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('line channel dijeda → 409', async () => {
+    dbState.tables.set('contacts', [contact()]);
+    resolveLineChannelMock.mockResolvedValue({
+      accessToken: 'line-token-1',
+      channelSecret: 'line-secret-1',
+      isActive: false,
+    });
+    await expect(dispatchFormInvitation({ ...baseInput, channel: 'line' })).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it('line customer belum opt-in → 409', async () => {
+    dbState.tables.set('contacts', [contact()]);
+    dbState.tables.set('customerChannels', []);
+    await expect(dispatchFormInvitation({ ...baseInput, channel: 'line' })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(linePushMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('line ditolak API → 502 + pesan ditandai failed', async () => {
+    dbState.tables.set('contacts', [contact()]);
+    dbState.tables.set('customerChannels', [
+      optedInChannel({ channelType: 'line', identifier: 'U4af4980629abcdef', contactPhone: '081234567890' }),
+    ]);
+    linePushMessageMock.mockRejectedValue(new LineApiErrorMock('Invalid token'));
+
+    await expect(dispatchFormInvitation({ ...baseInput, channel: 'line' })).rejects.toMatchObject({
+      name: 'FormSendError',
+      status: 502,
+    });
+    const messages = dbState.tables.get('messages') ?? [];
+    expect(messages[0]).toMatchObject({ status: 'failed' });
+  });
+
   it('email tanpa alamat kontak → 400', async () => {
     dbState.tables.set('contacts', [contact({ email: null })]);
     await expect(dispatchFormInvitation({ ...baseInput, channel: 'email' })).rejects.toMatchObject({
@@ -350,7 +451,7 @@ describe('dispatchFormInvitation', () => {
     expect(messages[0]).toMatchObject({ status: 'failed' });
   });
 
-  it('tally → formUrl tally.so/r/{id}', async () => {
+  it('tally → formUrl tally.so/r/{id} dengan nomor HP terisi otomatis (prefill phone)', async () => {
     dbState.tables.set('contacts', [contact()]);
     dbState.tables.set('customerChannels', [optedInChannel()]);
     resolveWhatsAppChannelMock.mockResolvedValue({ provider: '360dialog', apiKey: 'key-1', webhookSecret: null, phoneNumberId: null, isActive: true });
@@ -360,7 +461,9 @@ describe('dispatchFormInvitation', () => {
       integrationType: 'tally',
       formId: 'xyz123',
     });
-    expect(result.formUrl).toBe('https://tally.so/r/xyz123');
+    // Nomor kontak dikanonikalisasi (0812… → 62812…) + nama kontak
+    // disuntikkan ke URL (prefill phone + name).
+    expect(result.formUrl).toBe('https://tally.so/r/xyz123?phone=6281234567890&name=Budi');
   });
 
   it('dedup: panggilan kedua tidak mengirim ulang', async () => {

@@ -233,18 +233,18 @@ export function BookingDetailPage() {
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
 
   if (isPending) {
-    return <div className="h-40 animate-pulse rounded-2xl bg-zinc-200/70" />;
+    return <div className="h-40 animate-pulse rounded-2xl bg-zinc-200/70 dark:bg-zinc-700/70" />;
   }
 
   if (isError && !isAuthExpiry && !data) {
     return (
       <Card className="flex flex-col items-center gap-4 p-10 text-center">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+        <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
           <IconAlertTriangle className="size-6" />
         </span>
         <div>
-          <h3 className="text-sm font-semibold text-zinc-900">{t('errors.bookingNotFoundTitle')}</h3>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.bookingNotFoundTitle')}</h3>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             {error instanceof Error ? error.message : t('errors.bookingLoadBody')}
           </p>
         </div>
@@ -272,7 +272,7 @@ export function BookingDetailPage() {
       >
         <Link
           to="/app/bookings"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
         >
           <IconChevronLeft className="size-4" />
           {t('common.back')}
@@ -293,19 +293,19 @@ export function BookingDetailPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.schedule')}</p>
-                <p className="mt-1 text-sm font-medium text-zinc-900">{formatDateTime(booking.scheduledAt)}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">{t('bookingDetail.timezone', { timezone: booking.timezone })}</p>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(booking.scheduledAt)}</p>
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{t('bookingDetail.timezone', { timezone: booking.timezone })}</p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   {t('bookingDetail.duration', { count: booking.durationMinutes })}
                 </p>
                 {booking.serviceId && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600">
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     <IconServices className="size-3.5 text-zinc-400" aria-hidden="true" />
                     <span className="truncate">{serviceName ?? t('bookingDetail.unknownService')}</span>
                   </p>
                 )}
                 {booking.staffId && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600">
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     <IconUsers className="size-3.5 text-zinc-400" aria-hidden="true" />
                     <span className="truncate">{staffName ?? t('bookingDetail.unknownStaff')}</span>
                   </p>
@@ -319,8 +319,8 @@ export function BookingDetailPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.customer')}</p>
-                <p className="mt-1 text-sm font-medium text-zinc-900">{booking.customerName ?? '—'}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">{booking.phone ?? t('bookingDetail.noPhoneYet')}</p>
+                <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">{booking.customerName ?? '—'}</p>
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{booking.phone ?? t('bookingDetail.noPhoneYet')}</p>
                 {booking.contactId && (
                   <Link
                     to="/app/contacts"
@@ -333,7 +333,7 @@ export function BookingDetailPage() {
               </div>
             </div>
             {booking.description && (
-              <p className="mt-4 border-t border-zinc-100 pt-4 text-sm leading-relaxed text-zinc-600">
+              <p className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
                 {booking.description}
               </p>
             )}
@@ -341,9 +341,9 @@ export function BookingDetailPage() {
 
           {/* Form edit booking (toggle) */}
           {isEditing && (
-            <Card className="border-amber-200 bg-amber-50/30 p-5">
+            <Card className="border-amber-200 bg-amber-50/30 p-5 dark:border-amber-900/60 dark:bg-amber-950/20">
               <form onSubmit={submitEdit} className="space-y-4">
-                <h2 className="text-sm font-semibold text-zinc-900">{t('bookingDetail.editHeading')}</h2>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('bookingDetail.editHeading')}</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <TextInput
                     label={t('bookingNew.customerName')}
@@ -389,7 +389,7 @@ export function BookingDetailPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     {confirmDelete ? (
-                      <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/60 dark:bg-red-950/40">
                         <p className="text-xs font-medium text-red-700">
                           {t('bookingDetail.deleteQuestion')}
                         </p>
@@ -450,7 +450,7 @@ export function BookingDetailPage() {
 
           {/* Progressive disclosure goal CALL-E */}
           <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               {t('bookingDetail.aiCallHeading')}
             </h2>
             <GoalCustomizer
@@ -469,7 +469,7 @@ export function BookingDetailPage() {
         <div className="space-y-6">
           <Card className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('bookingDetail.goalToSend')}</p>
-            <p className="mt-2 text-sm font-semibold text-zinc-900">{effectiveGoal?.title ?? t('common.noCall')}</p>
+            <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{effectiveGoal?.title ?? t('common.noCall')}</p>
             {effectiveGoal && (
               // `ph-no-capture`: prompt goal bisa memuat data customer —
               // jangan pernah ter-capture analitik/session replay.
@@ -484,17 +484,17 @@ export function BookingDetailPage() {
               {t('bookingDetail.callHistory', { count: calls.length })}
             </p>
             {calls.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500">{t('bookingDetail.noCalls')}</p>
+              <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{t('bookingDetail.noCalls')}</p>
             ) : (
               <div className="mt-3 space-y-3">
                 {calls.map((call: CallRecord) => (
-                  <div key={call.id} className="rounded-xl border border-zinc-100 p-3">
+                  <div key={call.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-zinc-800">{formatDateTime(call.createdAt)}</p>
+                      <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{formatDateTime(call.createdAt)}</p>
                       <Badge variant={callStatusBadge(call.status)} label={statusLabel(call.status, t)} />
                     </div>
                     {call.goalType && <p className="mt-1 text-xs font-medium text-amber-600">{call.goalType}</p>}
-                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">{resultSnippet(call.result, t)}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{resultSnippet(call.result, t)}</p>
                   </div>
                 ))}
               </div>
@@ -502,7 +502,7 @@ export function BookingDetailPage() {
           </Card>
 
           <Card className="p-5">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
               <IconCalendar className="size-4 text-zinc-400" />
               <span>
                 {t('bookingDetail.attempts', {
@@ -533,29 +533,29 @@ export function BookingDetailPage() {
             </div>
 
             {paymentsError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {paymentsError}
               </p>
             )}
 
             {paymentsData && !paymentsData.configured && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                 {t('payments.bookingNotConfigured')}
               </p>
             )}
 
             {!paymentsData ? (
-              <div className="mt-3 h-12 animate-pulse rounded-lg bg-zinc-100" />
+              <div className="mt-3 h-12 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
             ) : paymentsData.payments.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500">{t('payments.bookingEmpty')}</p>
+              <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{t('payments.bookingEmpty')}</p>
             ) : (
               <div className="mt-3 space-y-2.5">
                 {paymentsData.payments.map((payment) => (
-                  <div key={payment.id} className="rounded-xl border border-zinc-100 p-3">
+                  <div key={payment.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-900">{payment.title}</p>
-                        <p className="mt-0.5 text-sm font-bold text-zinc-800">
+                        <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{payment.title}</p>
+                        <p className="mt-0.5 text-sm font-bold text-zinc-800 dark:text-zinc-200">
                           {formatPaymentAmount(payment.amountMinor, payment.currency)}
                         </p>
                       </div>

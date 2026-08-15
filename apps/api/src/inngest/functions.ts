@@ -1,14 +1,16 @@
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { bookings, calleCalls, paymentLinks, subscriptions, workspaces } from '@oriole/database';
 import { brand } from '@oriole/config';
-import type { TelegramUpdate, WhatsAppWebhookPayload } from '@oriole/messaging';
+import type { LineWebhookPayload, TelegramUpdate, WhatsAppWebhookPayload } from '@oriole/messaging';
 
 import { db } from '../db/index.ts';
 import { resend } from '../services/email.ts';
 import { handleTelegramUpdate } from '../lib/telegram-handler.ts';
 import { handleWhatsAppUpdate } from '../lib/whatsapp-handler.ts';
-import { dispatchTelegramReminder, TelegramDispatchError } from '../lib/telegram-handler.ts';
+import { handleLineUpdate } from '../lib/line-handler.ts';
+import { dispatchTelegramReminder, dispatchTelegramReview, TelegramDispatchError } from '../lib/telegram-handler.ts';
 import { dispatchWhatsAppReminder, WhatsAppDispatchError } from '../lib/whatsapp-handler.ts';
+import { dispatchLineReminder, LineDispatchError } from '../lib/line-handler.ts';
 import { dispatchEmailReminder, EmailDispatchError } from '../lib/email-reminder.ts';
 import {
   computeAutoCallAt,
@@ -21,18 +23,24 @@ import { withBookingTitle } from '../lib/booking-title.ts';
 import { purgeExpiredWorkspaces } from '../lib/workspace-lifecycle.ts';
 import { listActiveFormIntegrations, syncFormResponsesToContacts } from '../lib/google-forms.ts';
 import {
-  syncTallySubmissionToContacts,
-  type TallyWebhookPayload,
-} from '../lib/tally.ts';
-import {
   deleteBookingCalendarEvent,
   upsertBookingCalendarEvent,
 } from '../lib/google-calendar.ts';
 import { dispatchOutgoingWebhook } from '../lib/outgoing-webhooks.ts';
 import { dispatchSlackNotification } from '../lib/slack.ts';
+import { deliverTelegramBusinessAlert } from '../lib/telegram-alerts.ts';
 import { emitOutgoingWebhookEvent, emitSlackBookingEvent } from '../lib/integration-events.ts';
 import { createZoomLinkForBooking } from '../lib/video.ts';
 import { handleMetaMessagingEvent } from '../lib/meta-handler.ts';
+import {
+  claimNextWaiting,
+  releaseWaitlistOffer,
+  type FreedSlot,
+} from '../lib/waitlist.ts';
+import { dispatchTelegramText } from '../lib/telegram-handler.ts';
+import { reengageWorkspaceCustomers } from '../lib/reengagement.ts';
+import { renderWaitlistOffer } from '@oriole/messaging';
+import { customerChannels, services } from '@oriole/database';
 import type { MetaMessagingEvent } from '@oriole/messaging';
 import { listWahaChannels, probeWahaChannelHealth } from '../lib/waha-health.ts';
 import { mapEndedReason } from '../services/vapi.ts';
@@ -459,32 +467,29 @@ export const onTelegramEvent = inngest.createFunction(
   },
 );
 
-/* ────────────────────────────────────────────────────────────
- * Tally — submission webhook → kontak (real-time)
- * Dipicu `tally/form.response` (route /api/webhooks/tally
- * sudah memverifikasi signature + dedup idempotency). Handler
- * idempotent (find-or-create by nomor) — retry aman.
- * ──────────────────────────────────────────────────────────── */
-
-interface TallyEventData {
-  workspaceId: string;
-  payload: TallyWebhookPayload;
-}
-
-export const onTallySubmission = inngest.createFunction(
-  { id: 'tally-form-response', triggers: { event: 'tally/form.response' } },
+export const onLineEvent = inngest.createFunction(
+  { id: 'line-message-received', triggers: { event: 'line/message.received' } },
   async ({ event, step }) => {
-    const { workspaceId, payload } = event.data as TallyEventData;
-    const submissionId = payload?.data?.submissionId ?? payload?.data?.responseId;
-    if (!workspaceId || !submissionId) {
-      return { skipped: 'invalid-event' };
-    }
-    const result = await step.run('sync-tally-contact', () =>
-      syncTallySubmissionToContacts(workspaceId, payload),
-    );
-    return result;
+    const { workspaceId, payload } = event.data as LineEventData;
+
+    await step.run('handle-line-update', async () => {
+      await handleLineUpdate(workspaceId, payload);
+    });
   },
 );
+
+/* ────────────────────────────────────────────────────────────
+ * Tally — submission webhook → kontak + booking (REAL-TIME, sinkron)
+ * Diproses langsung di route /api/webhooks/tally (bukan Inngest) agar
+ * alur inti tidak bergantung pada worker yang berjalan; kegagalan
+ * di-retry oleh Tally (webhook at-least-once). Tidak ada fungsi Inngest
+ * untuk event ini.
+ * ──────────────────────────────────────────────────────────── */
+
+interface LineEventData {
+  workspaceId: string;
+  payload: LineWebhookPayload;
+}
 
 /* ────────────────────────────────────────────────────────────
  * Automatic booking reminders (P1)
@@ -535,8 +540,8 @@ export const remindBooking = inngest.createFunction(
       return { skipped: 'rescheduled' };
     }
 
-    // Workspace soft-deleted (project dihapus user) → jangan kirim reminder
-    // dari run lama; project sedang menunggu penghapusan permanen.
+    // Workspace soft-deleted (bisnis dihapus user) → jangan kirim reminder
+    // dari run lama; bisnis sedang menunggu penghapusan permanen.
     const workspace = await step.run('load-business-name', async () => {
       const [ws] = await db
         .select({ name: workspaces.name, chatLanguage: workspaces.chatLanguage })
@@ -611,6 +616,23 @@ export const remindBooking = inngest.createFunction(
       } catch (error) {
         if (error instanceof WhatsAppDispatchError) {
           console.warn(`[reminder] whatsapp skip: ${error.message}`);
+          return;
+        }
+        throw error;
+      }
+    });
+
+    await step.run('dispatch-line-reminder', async () => {
+      try {
+        await dispatchLineReminder({
+          workspaceId,
+          booking: bookingInput,
+          businessName,
+          language: reminderLanguage,
+        });
+      } catch (error) {
+        if (error instanceof LineDispatchError) {
+          console.warn(`[reminder] line skip: ${error.message}`);
           return;
         }
         throw error;
@@ -723,6 +745,242 @@ export const autoCallBooking = inngest.createFunction(
     }
 
     return { called: true, bookingId, callId: result.callId, goalType: result.goalType };
+  },
+);
+
+/* ────────────────────────────────────────────────────────────
+ * Waitlist — tawarkan slot yang dilepas (booking dibatalkan)
+ * Dipicu `waitlist/slot-freed` (dikirim jalur pembatalan booking).
+ * Klaim entri berikutnya yang cocok, lalu tawarkan via Telegram.
+ * ──────────────────────────────────────────────────────────── */
+
+interface WaitlistSlotFreedData {
+  workspaceId: string;
+  bookingId: string;
+  serviceId?: string | null;
+  staffId?: string | null;
+  scheduledAt: string;
+  durationMinutes: number;
+  timezone: string;
+}
+
+export const fillWaitlistSlot = inngest.createFunction(
+  { id: 'fill-waitlist-slot', triggers: { event: 'waitlist/slot-freed' } },
+  async ({ event, step }) => {
+    const data = event.data as WaitlistSlotFreedData;
+    if (!data.workspaceId || !data.scheduledAt) return { skipped: 'invalid-event' };
+
+    // Workspace soft-deleted → jangan tawarkan slot dari run lama.
+    const workspace = await step.run('load-workspace', async () => {
+      const [ws] = await db
+        .select({ chatLanguage: workspaces.chatLanguage })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, data.workspaceId), isNull(workspaces.deletedAt)))
+        .limit(1);
+      return ws ?? null;
+    });
+    if (!workspace) return { skipped: 'workspace-deleted' };
+    const language = workspace.chatLanguage === 'id' ? 'id' : 'en';
+
+    const freed: FreedSlot = {
+      serviceId: data.serviceId ?? null,
+      staffId: data.staffId ?? null,
+      scheduledAt: new Date(data.scheduledAt),
+      durationMinutes: data.durationMinutes || 60,
+      timezone: data.timezone || 'UTC',
+    };
+
+    const entry = await step.run('claim-next-waiting', () =>
+      claimNextWaiting(data.workspaceId, freed),
+    );
+    if (!entry) return { skipped: 'no-waiting-entry' };
+
+    // Resolve chat identifier: dari entri, atau fallback customerChannels by phone.
+    const chatId = await step.run('resolve-chat-id', async () => {
+      if (entry.channelIdentifier) return entry.channelIdentifier;
+      if (entry.contactPhone) {
+        const [row] = await db
+          .select({ identifier: customerChannels.identifier })
+          .from(customerChannels)
+          .where(
+            and(
+              eq(customerChannels.workspaceId, data.workspaceId),
+              eq(customerChannels.channelType, 'telegram'),
+              eq(customerChannels.contactPhone, entry.contactPhone),
+              eq(customerChannels.isOptedIn, true),
+            ),
+          )
+          .limit(1);
+        return row?.identifier ?? null;
+      }
+      return null;
+    });
+
+    if (!chatId) {
+      await step.run('release-unreachable', () => releaseWaitlistOffer(entry.id));
+      return { skipped: 'no-chat-identifier' };
+    }
+
+    const serviceName = await step.run('load-service-name', async () => {
+      const serviceId = freed.serviceId ?? entry.serviceId;
+      if (!serviceId) return null;
+      const [svc] = await db
+        .select({ name: services.name })
+        .from(services)
+        .where(eq(services.id, serviceId))
+        .limit(1);
+      return svc?.name ?? null;
+    });
+
+    const text = renderWaitlistOffer(
+      { serviceName, scheduledAt: data.scheduledAt, timezone: data.timezone },
+      language,
+    );
+
+    const result = await step.run('dispatch-telegram-offer', async () => {
+      try {
+        return await dispatchTelegramText(data.workspaceId, chatId, text);
+      } catch (error) {
+        // Kembalikan klaim ke 'waiting' agar retry menawari entri yang SAMA.
+        await releaseWaitlistOffer(entry.id);
+        if (error instanceof TelegramDispatchError) {
+          return { skipped: error.message };
+        }
+        // Provider error → lempar agar Inngest me-retry (entri sudah dikembalikan).
+        throw error;
+      }
+    });
+
+    return { offered: true, entryId: entry.id, ...result };
+  },
+);
+
+/* ────────────────────────────────────────────────────────────
+ * Review — minta ulasan customer setelah booking selesai
+ * Dipicu `booking/completed` (dikirim emitBookingCompleted), tidur sampai
+ * 2 jam setelah jadwal appointment, lalu kirim permintaan ulasan ke Telegram.
+ * ──────────────────────────────────────────────────────────── */
+
+/** Jeda ulasan setelah jadwal appointment (ms) — 2 jam. */
+const REVIEW_DELAY_MS = 2 * 3_600_000;
+
+export const requestBookingReview = inngest.createFunction(
+  {
+    id: 'request-booking-review',
+    triggers: { event: 'booking/completed' },
+    // Serialisasi per booking — complete ganda tidak mengirim ulasan ganda.
+    concurrency: [{ key: 'event.data.bookingId', limit: 1 }],
+  },
+  async ({ event, step }) => {
+    const { bookingId, workspaceId } = event.data as { bookingId: string; workspaceId: string };
+    if (!bookingId || !workspaceId) return { skipped: 'invalid-event' };
+
+    const booking = await step.run('load-booking', async () => {
+      const [row] = await db
+        .select()
+        .from(bookings)
+        .where(eq(bookings.id, bookingId))
+        .limit(1);
+      return row ? await withBookingTitle(workspaceId, row) : null;
+    });
+    if (!booking || booking.workspaceId !== workspaceId) return { skipped: 'booking-not-found' };
+    if (booking.status !== 'completed') return { skipped: `status-${booking.status}` };
+
+    const workspace = await step.run('load-workspace', async () => {
+      const [ws] = await db
+        .select({ name: workspaces.name, chatLanguage: workspaces.chatLanguage })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
+        .limit(1);
+      return ws ?? null;
+    });
+    if (!workspace) return { skipped: 'workspace-deleted' };
+
+    // Tunda sampai 2 jam setelah jadwal appointment — completed bisa disetel
+    // lebih awal oleh konfirmasi auto-call (bukan momen layanan selesai).
+    const reviewAt = new Date(new Date(booking.scheduledAt).getTime() + REVIEW_DELAY_MS);
+    if (reviewAt.getTime() > Date.now()) {
+      await step.sleepUntil('wait-for-review', reviewAt);
+    }
+
+    // Re-guard pasca-tidur: booking bisa dibuka kembali / dihapus / dibatalkan.
+    const current = await step.run('recheck-status', async () => {
+      const [row] = await db
+        .select({ status: bookings.status })
+        .from(bookings)
+        .where(eq(bookings.id, bookingId))
+        .limit(1);
+      return row?.status ?? null;
+    });
+    if (current !== 'completed') return { skipped: `status-${current}` };
+
+    const bookingInput = {
+      id: booking.id,
+      title: booking.title,
+      customerName: booking.customerName,
+      phone: booking.phone,
+      scheduledAt: new Date(booking.scheduledAt),
+      timezone: booking.timezone,
+      videoLink: booking.videoLink,
+    };
+
+    await step.run('dispatch-telegram-review', async () => {
+      try {
+        await dispatchTelegramReview({
+          workspaceId,
+          booking: bookingInput,
+          businessName: workspace.name ?? null,
+          language: workspace.chatLanguage === 'id' ? 'id' : 'en',
+        });
+      } catch (error) {
+        if (error instanceof TelegramDispatchError) {
+          console.warn(`[review] telegram skip: ${error.message}`);
+          return;
+        }
+        throw error;
+      }
+    });
+
+    return { sent: true, bookingId };
+  },
+);
+
+/* ────────────────────────────────────────────────────────────
+ * Re-engagement — hubungi pelanggan dorman / no-show via Telegram
+ * Cron harian 08:00. Per-workspace: klasifikasi kandidat → kirim →
+ * tandai lastReEngagedAt (cooldown anti-spam). Kegagalan satu workspace
+ * tidak menggagalkan run keseluruhan.
+ * ──────────────────────────────────────────────────────────── */
+
+export const reengageCustomers = inngest.createFunction(
+  { id: 'reengage-customers', triggers: { cron: '0 8 * * *' } },
+  async ({ step }) => {
+    const workspaceIds = await step.run('list-active-workspaces', async () => {
+      const rows = await db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(isNull(workspaces.deletedAt))
+        .limit(500);
+      return rows.map((row) => row.id);
+    });
+
+    for (const workspaceId of workspaceIds) {
+      await step.run(`reengage-${workspaceId}`, async () => {
+        try {
+          const result = await reengageWorkspaceCustomers(workspaceId);
+          if (result.contacted > 0 || result.skipped > 0) {
+            console.warn(
+              `[reengage] ws ${workspaceId}: ${result.contacted} dihubungi, ${result.skipped} dilewati`,
+            );
+          }
+        } catch (error) {
+          // Kegagalan satu workspace tidak menggagalkan run keseluruhan.
+          console.error(`[reengage] gagal ws ${workspaceId}:`, error);
+        }
+      });
+    }
+
+    return { workspaces: workspaceIds.length };
   },
 );
 
@@ -850,6 +1108,30 @@ export const deliverSlackNotification = inngest.createFunction(
 );
 
 /* ────────────────────────────────────────────────────────────
+ * Telegram alerts — notifikasi booking ke chat bisnis (deep-link bind)
+ * Dipicu `telegram-alert/booking.event` (emitTelegramBookingAlert).
+ * Kegagalan pengiriman dilempar → retry built-in Inngest.
+ * ──────────────────────────────────────────────────────────── */
+
+interface TelegramAlertEventData {
+  workspaceId: string;
+  event: string;
+  data: Record<string, unknown>;
+}
+
+export const deliverTelegramBookingAlert = inngest.createFunction(
+  { id: 'deliver-telegram-booking-alert', triggers: { event: 'telegram-alert/booking.event' } },
+  async ({ event, step }) => {
+    const { workspaceId, event: alertEvent, data } = event.data as TelegramAlertEventData;
+    if (!workspaceId || !alertEvent) return { skipped: 'invalid-event' };
+    const result = await step.run('dispatch-telegram-alert', () =>
+      deliverTelegramBusinessAlert(workspaceId, alertEvent, data),
+    );
+    return result;
+  },
+);
+
+/* ────────────────────────────────────────────────────────────
  * Video calls — buat link Zoom untuk booking (provider zoom)
  * Dipicu `video/link.required` (route bookings / form-booking).
  * Provider meet ditangani sync Google Calendar (hangoutLink).
@@ -945,7 +1227,7 @@ export const wahaHealthWatchdog = inngest.createFunction(
 );
 
 /* ────────────────────────────────────────────────────────────
- * Purge project soft-deleted (P1)
+ * Purge bisnis soft-deleted (P1)
  * Cron harian: hapus permanen workspace yang sudah melewati masa tenggang
  * (WORKSPACE_DELETE_GRACE_DAYS) sejak soft-delete. Menghapus baris workspace
  * → FK cascade membersihkan booking, kontak, chat, channel, integrasi, dll.
@@ -957,7 +1239,7 @@ export const purgeDeletedWorkspaces = inngest.createFunction(
   async ({ step }) => {
     const purged = await step.run('purge-expired-workspaces', () => purgeExpiredWorkspaces());
     if (purged > 0) {
-      console.warn(`[workspace-lifecycle] ${purged} project dihapus permanen (masa tenggang lewat)`);
+      console.warn(`[workspace-lifecycle] ${purged} bisnis dihapus permanen (masa tenggang lewat)`);
     }
     return { purged };
   },
@@ -967,15 +1249,19 @@ export const inngestFunctions = [
   onVapiEvent,
   onPaddleEvent,
   onTelegramEvent,
-  onTallySubmission,
+  onLineEvent,
   onWhatsAppEvent,
   remindBooking,
   autoCallBooking,
+  fillWaitlistSlot,
+  requestBookingReview,
+  reengageCustomers,
   syncGoogleForms,
   syncCalendarBooking,
   wahaHealthWatchdog,
   deliverOutgoingWebhook,
   deliverSlackNotification,
+  deliverTelegramBookingAlert,
   createBookingVideoLink,
   onMetaMessage,
   sendWelcomeEmail,

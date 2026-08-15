@@ -32,7 +32,12 @@ import {
   workspaces,
 } from '@oriole/database';
 
-import { formPublicUrl, FORM_INTEGRATION_TYPES, type FormIntegrationType } from './form-links.ts';
+import {
+  formPublicUrl,
+  formPublicUrlForCustomer,
+  FORM_INTEGRATION_TYPES,
+  type FormIntegrationType,
+} from './form-links.ts';
 import { tryAiChatReply } from './ai-chat.ts';
 import { encryptMessageContent } from './message-encryption.ts';
 
@@ -491,13 +496,29 @@ async function handleBookingRequest(
     return { text: renderNoFormReply(language) };
   }
   const businessName = await findBusinessName(workspaceId);
+  if (form.integrationType === 'tally') {
+    // Self-heal: form Tally yang belum punya hidden field token chat
+    // diperbarui otomatis saat tautan dikirim (fire-and-forget).
+    void import('./tally.ts')
+      .then((m) => m.ensureTallyFormEnhanced(workspaceId))
+      .catch(() => {});
+  }
   return {
     text: renderFormInvitation(
       {
         businessName,
         customerName: conversation.customerName ?? event.senderName ?? null,
         formName: form.formName?.trim() || 'formulir',
-        formUrl: formPublicUrl(form.integrationType, form.formId),
+        // Tally: prefill nomor dari wa_id pengirim (WhatsApp = nomor HP) +
+        // nama customer (bila dikenal) + token chat asal → konfirmasi
+        // otomatis setelah submission (kanal Telegram dikirim via webhook).
+        formUrl: formPublicUrlForCustomer(
+          form.integrationType,
+          form.formId,
+          event.senderIdentifier,
+          conversation.customerName ?? event.senderName ?? null,
+          event.senderIdentifier,
+        ),
       },
       language,
     ),

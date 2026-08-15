@@ -71,12 +71,12 @@ export function RequireAuth({ children }: { children: ReactNode }) {
           <AppLogo />
         </span>
         <div className="max-w-md">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">{t('auth.offlineTitle')}</h1>
-          <p className="mt-3 text-base leading-relaxed text-zinc-500">{t('auth.offlineBody')}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{t('auth.offlineTitle')}</h1>
+          <p className="mt-3 text-base leading-relaxed text-zinc-500 dark:text-zinc-400">{t('auth.offlineBody')}</p>
           <p className="mt-4 inline-flex items-center gap-2 text-sm text-zinc-400">
             <span
               aria-hidden
-              className="inline-block size-3.5 animate-spin rounded-full border-2 border-zinc-300 border-t-amber-500"
+              className="inline-block size-3.5 animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-600 border-t-amber-500"
             />
             {t('auth.offlineRetrying')}
           </p>
@@ -110,7 +110,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
           </span>
           <span
             aria-hidden
-            className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-300 border-t-amber-500"
+            className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-600 border-t-amber-500"
           />
         </div>
       </main>

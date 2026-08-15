@@ -182,7 +182,7 @@ afterEach(() => {
 // ── buildAiBookingTools ─────────────────────────────────────────
 
 describe('buildAiBookingTools', () => {
-  it('mendefinisikan 7 tool booking dengan nama arsitektur existing', () => {
+  it('mendefinisikan 8 tool booking dengan nama arsitektur existing', () => {
     const names = buildAiBookingTools('id').map((t) => t.function.name);
     expect(names).toEqual([
       'get_available_slots',
@@ -192,6 +192,7 @@ describe('buildAiBookingTools', () => {
       'create_booking',
       'reschedule_booking',
       'cancel_booking',
+      'join_waitlist',
     ]);
   });
 });

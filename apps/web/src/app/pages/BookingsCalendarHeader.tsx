@@ -146,10 +146,10 @@ export function CalendarEventBar({ event }: { event: CalendarEvent }) {
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="block truncate text-[11px] font-bold leading-tight tracking-[-0.01em] text-zinc-900">
+      <span className="block truncate text-[11px] font-bold leading-tight tracking-[-0.01em] text-zinc-900 dark:text-zinc-100">
         {event.title}
       </span>
-      <span className="mt-0.5 block truncate text-[10px] font-medium leading-tight text-zinc-600">
+      <span className="mt-0.5 block truncate text-[10px] font-medium leading-tight text-zinc-600 dark:text-zinc-400">
         {startStr}–{endStr}{attendee ? ` · ${attendee}` : ''}
       </span>
     </Link>

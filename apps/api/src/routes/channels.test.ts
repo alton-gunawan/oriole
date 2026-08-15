@@ -76,9 +76,10 @@ vi.mock('../lib/env.ts', () => ({
 }));
 
 // Mock Telegram API — semua panggilan network (getMe/setWebhook) di-stub.
-const { getMeMock, setWebhookMock, TelegramApiErrorMock } = vi.hoisted(() => ({
+const { getMeMock, setWebhookMock, getWebhookInfoMock, TelegramApiErrorMock } = vi.hoisted(() => ({
   getMeMock: vi.fn(),
   setWebhookMock: vi.fn(),
+  getWebhookInfoMock: vi.fn(),
   TelegramApiErrorMock: class extends Error {
     constructor(
       message: string,
@@ -93,7 +94,43 @@ vi.mock('../lib/telegram.ts', () => ({
   TelegramApiError: TelegramApiErrorMock,
   telegramGetMe: getMeMock,
   telegramSetWebhook: setWebhookMock,
+  telegramGetWebhookInfo: getWebhookInfoMock,
   telegramDeleteWebhook: vi.fn(),
+}));
+
+// Mock Line API — semua panggilan network di-stub.
+const { lineGetBotInfoMock, lineSetWebhookMock, LineApiErrorMock } = vi.hoisted(() => ({
+  lineGetBotInfoMock: vi.fn(),
+  lineSetWebhookMock: vi.fn(),
+  LineApiErrorMock: class extends Error {
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+    }
+  },
+}));
+
+vi.mock('../lib/line.ts', () => ({
+  LineApiError: LineApiErrorMock,
+  lineGetBotInfo: lineGetBotInfoMock,
+  lineSetWebhookEndpoint: lineSetWebhookMock,
+  lineSendReply: vi.fn(),
+  linePushMessage: vi.fn(),
+  lineBuildMessages: vi.fn(),
+  verifyLineSignature: vi.fn(),
+}));
+
+// resolveLineChannel dipakai /line/rewebhook.
+const { resolveLineChannelMock } = vi.hoisted(() => ({ resolveLineChannelMock: vi.fn() }));
+vi.mock('../lib/line-handler.ts', () => ({ resolveLineChannel: resolveLineChannelMock }));
+
+// Crypto — marker enc: membuktikan kredensial dienkripsi at-rest sebelum
+// masuk providerConfig (dan didekripsi saat resolve).
+vi.mock('../lib/crypto.ts', () => ({
+  encryptSecret: (value: string) => `enc:${value}`,
+  decryptSecret: (value: string) => value.replace(/^enc:/, ''),
 }));
 
 // Mock layanan WAHA (gateway unofficial) — semua network di-stub.
@@ -252,6 +289,10 @@ beforeEach(() => {
   dbState.tables.set('workspaceChannels', []);
   getMeMock.mockReset();
   setWebhookMock.mockReset();
+  getWebhookInfoMock.mockReset();
+  lineGetBotInfoMock.mockReset();
+  lineSetWebhookMock.mockReset();
+  resolveLineChannelMock.mockReset();
   wahaListSessionsMock.mockReset();
   wahaCreateSessionMock.mockReset();
   wahaUpdateSessionMock.mockReset();
@@ -457,6 +498,207 @@ describe('POST /api/channels/telegram/setup — token manual', () => {
     expect(body.error).toContain('WEBHOOK_BASE_URL');
     expect(getMeMock).not.toHaveBeenCalled();
     expect(setWebhookMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/channels/telegram/webhook-health — health webhook', () => {
+  it('tanpa token → 401', async () => {
+    const res = await app.request('/api/channels/telegram/webhook-health');
+    expect(res.status).toBe(401);
+    expect(getWebhookInfoMock).not.toHaveBeenCalled();
+  });
+
+  it('channel belum dikonfigurasi → 200 configured:false, tanpa panggilan Telegram', async () => {
+    const res = await app.request('/api/channels/telegram/webhook-health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ configured: false });
+    expect(getWebhookInfoMock).not.toHaveBeenCalled();
+  });
+
+  it('channel aktif + URL cocok → 200 dengan urlMatches + pending count', async () => {
+    dbState.tables.set('workspaceChannels', [baseTelegramChannel()]);
+    getWebhookInfoMock.mockResolvedValue({
+      url: 'http://localhost:3000/api/webhooks/telegram/ws-1',
+      pendingUpdateCount: 5,
+      lastError: null,
+    });
+
+    const res = await app.request('/api/channels/telegram/webhook-health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      configured: true,
+      isActive: true,
+      urlMatches: true,
+      pendingUpdateCount: 5,
+    });
+    // Kredensial privat tidak boleh keluar di payload.
+    expect(JSON.stringify(body)).not.toContain('custom-token');
+  });
+
+  it('provider error → 200 dengan providerError, tidak throw', async () => {
+    dbState.tables.set('workspaceChannels', [baseTelegramChannel()]);
+    getWebhookInfoMock.mockRejectedValue(new Error('Telegram down'));
+
+    const res = await app.request('/api/channels/telegram/webhook-health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { providerError: string };
+    expect(body.providerError).toContain('Telegram down');
+  });
+});
+
+describe('POST /api/channels/line/setup — channel access token + secret', () => {
+  const LINE_BODY = {
+    channelAccessToken: 'line-token-1234567890',
+    channelSecret: 'line-secret-12345678',
+  };
+
+  it('kredensial valid + base HTTPS → 201, webhook didaftarkan, token terenkripsi', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    lineGetBotInfoMock.mockResolvedValue({ userId: 'Ubot123', displayName: 'Klinik Bot' });
+    lineSetWebhookMock.mockResolvedValue(undefined);
+
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(LINE_BODY),
+    });
+    expect(res.status).toBe(201);
+
+    // Validasi token ke Line API sungguhan dulu.
+    expect(lineGetBotInfoMock).toHaveBeenCalledWith('line-token-1234567890');
+    // Webhook didaftarkan dengan URL workspace yang benar.
+    expect(lineSetWebhookMock).toHaveBeenCalledWith(
+      'line-token-1234567890',
+      'https://api.example.com/api/webhooks/line/ws-1',
+    );
+
+    const rows = dbState.tables.get('workspaceChannels') ?? [];
+    expect(rows).toHaveLength(1);
+    const config = rows[0].providerConfig as {
+      channelAccessToken: string;
+      channelSecret: string;
+      lineUserId: string;
+    };
+    // Kredensial dienkripsi at-rest (marker enc: dari mock crypto).
+    expect(config.channelAccessToken).toBe('enc:line-token-1234567890');
+    expect(config.channelSecret).toBe('enc:line-secret-12345678');
+    expect(config.lineUserId).toBe('Ubot123');
+
+    // Payload publik: identifier = display name bot, tanpa kredensial.
+    const body = (await res.json()) as { channel: Record<string, unknown> };
+    expect(body.channel.identifier).toBe('Klinik Bot');
+    expect(body.channel.providerConfig).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('line-token');
+  });
+
+  it('base HTTP (localhost) → 400 pesan jelas, Line API tidak dipanggil', async () => {
+    envState.setWebhookBase('');
+
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(LINE_BODY),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('HTTPS');
+    expect(lineGetBotInfoMock).not.toHaveBeenCalled();
+    expect(lineSetWebhookMock).not.toHaveBeenCalled();
+  });
+
+  it('token ditolak Line (401) → 400 pesan jelas', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    lineGetBotInfoMock.mockRejectedValue(new LineApiErrorMock('Invalid token', 401));
+
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(LINE_BODY),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('ditolak');
+    expect(lineSetWebhookMock).not.toHaveBeenCalled();
+  });
+
+  it('token bukan bot Line Messaging API (tanpa userId) → 400', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    lineGetBotInfoMock.mockResolvedValue({ userId: '', displayName: null });
+
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(LINE_BODY),
+    });
+    expect(res.status).toBe(400);
+    expect(lineSetWebhookMock).not.toHaveBeenCalled();
+  });
+
+  it('gagal mendaftarkan webhook → 400', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    lineGetBotInfoMock.mockResolvedValue({ userId: 'Ubot123', displayName: null });
+    lineSetWebhookMock.mockRejectedValue(new LineApiErrorMock('endpoint invalid', 400));
+
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify(LINE_BODY),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('webhook');
+  });
+
+  it('field wajib tidak lengkap → 400 validasi', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    const res = await app.request('/api/channels/line/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AUTH_HEADER, ...WORKSPACE_HEADER },
+      body: JSON.stringify({ channelAccessToken: 'short' }),
+    });
+    expect(res.status).toBe(400);
+    expect(lineGetBotInfoMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/channels/line/rewebhook — re-register webhook', () => {
+  it('channel terkonfigurasi → webhook didaftarkan ulang', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    resolveLineChannelMock.mockResolvedValue({
+      accessToken: 'line-token-1234567890',
+      channelSecret: 'line-secret-12345678',
+      isActive: true,
+    });
+    lineSetWebhookMock.mockResolvedValue(undefined);
+
+    const res = await app.request('/api/channels/line/rewebhook', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(lineSetWebhookMock).toHaveBeenCalledWith(
+      'line-token-1234567890',
+      'https://api.example.com/api/webhooks/line/ws-1',
+    );
+  });
+
+  it('channel belum dikonfigurasi → 404', async () => {
+    envState.setWebhookBase('https://api.example.com');
+    resolveLineChannelMock.mockResolvedValue(null);
+
+    const res = await app.request('/api/channels/line/rewebhook', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(404);
+    expect(lineSetWebhookMock).not.toHaveBeenCalled();
   });
 });
 

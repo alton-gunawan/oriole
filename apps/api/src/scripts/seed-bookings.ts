@@ -79,7 +79,7 @@ async function main(): Promise<void> {
       .orderBy(workspaces.createdAt)
       .limit(1);
     if (!first) {
-      console.error('Belum ada workspace. Buat project dulu lewat UI (onboarding).');
+      console.error('Belum ada workspace. Buat bisnis dulu lewat UI (onboarding).');
       process.exit(1);
     }
     workspaceId = first.id;

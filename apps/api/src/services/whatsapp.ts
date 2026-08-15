@@ -1,8 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import { workspaceChannels } from '@oriole/database';
+import { whatsappConnections, workspaceChannels } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { decryptSecret } from '../lib/crypto.ts';
 import { env } from '../lib/env.ts';
+import { metaSendMessage } from './meta-whatsapp.ts';
 import {
   countTodayNewContactWahaOutbound,
   countTodayWahaOutbound,
@@ -46,6 +48,16 @@ export interface WhatsApp360DialogChannelConfig {
   isActive: boolean;
 }
 
+/** Konfigurasi channel Meta (provider 'meta' — Embedded Signup, Tech Provider). */
+export interface MetaWhatsAppChannelConfig {
+  provider: 'meta';
+  /** Business integration system user access token (per tenant). */
+  businessToken: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
+  isActive: boolean;
+}
+
 /** Konfigurasi channel BYO (provider 'waha' — unofficial, WAHA gateway). */
 export interface WahaOutboundChannelConfig {
   provider: 'waha';
@@ -75,7 +87,10 @@ export class WhatsAppOutboundBlockedError extends WhatsAppApiError {
 }
 
 /** Channel WhatsApp ter-resolve — pemanggil memilah provider saat mengirim. */
-export type WhatsAppChannelConfig = WhatsApp360DialogChannelConfig | WahaOutboundChannelConfig;
+export type WhatsAppChannelConfig =
+  | WhatsApp360DialogChannelConfig
+  | WahaOutboundChannelConfig
+  | MetaWhatsAppChannelConfig;
 
 /**
  * Resolve channel WhatsApp untuk workspace: providerConfig → env fallback.
@@ -134,6 +149,31 @@ export async function resolveWhatsAppChannel(
       phoneNumberId: typeof phoneNumberId === 'string' ? phoneNumberId : null,
       isActive: channel?.isActive ?? true,
     };
+  }
+
+  // Meta Embedded Signup (Tech Provider) — koneksi per tenant di tabel
+  // whatsapp_connections. Token didekripsi server-side, tidak pernah keluar.
+  const [meta] = await db
+    .select()
+    .from(whatsappConnections)
+    .where(
+      and(
+        eq(whatsappConnections.workspaceId, workspaceId),
+        eq(whatsappConnections.status, 'connected'),
+      ),
+    )
+    .limit(1);
+  if (meta?.accessTokenEncrypted && meta.phoneNumberId) {
+    const businessToken = decryptSecret(meta.accessTokenEncrypted);
+    if (businessToken.length > 0) {
+      return {
+        provider: 'meta',
+        businessToken,
+        phoneNumberId: meta.phoneNumberId,
+        displayPhoneNumber: meta.displayPhoneNumber,
+        isActive: true,
+      };
+    }
   }
 
   if (env.WHATSAPP_API_KEY) {
@@ -306,9 +346,57 @@ async function recordWahaSendFailure(channel: WahaOutboundChannelConfig, error: 
   }
 }
 
+/** Body Messages API Meta (Cloud API) — shape sama dengan 360dialog (BSP). */
+function metaOutboundBody(params: {
+  to: string;
+  text: string;
+  buttons?: { id: string; label: string }[];
+  template?: { name: string; language?: string; components?: Record<string, unknown>[] };
+}): Record<string, unknown> {
+  if (params.template) {
+    return {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: params.to,
+      type: 'template',
+      template: {
+        name: params.template.name,
+        language: { code: params.template.language ?? 'id' },
+        components: params.template.components ?? [],
+      },
+    };
+  }
+  if (params.buttons && params.buttons.length > 0) {
+    return {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: params.to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: params.text },
+        action: {
+          buttons: params.buttons.slice(0, 3).map((button) => ({
+            type: 'reply',
+            reply: { id: button.id, title: button.label },
+          })),
+        },
+      },
+    };
+  }
+  return {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: params.to,
+    type: 'text',
+    text: { body: params.text },
+  };
+}
+
 /**
  * Dispatch outbound WhatsApp provider-aware: channel BYO (waha) → WAHA
- * sendText; channel 360dialog → text / interactive / template (sesuai opsi).
+ * sendText; channel 360dialog → text / interactive / template (sesuai opsi);
+ * channel meta (Embedded Signup) → Messages API langsung.
  *
  * WAHA tidak punya Message Template atau interactive buttons yang 1:1 dengan
  * Meta (spikes/waha/README.md §mapping): tombol/tipe lain di-fallback ke
@@ -333,6 +421,19 @@ export async function sendWhatsAppMessage(params: WhatsAppMessageOptions): Promi
       await recordWahaSendFailure(params.channel, error);
       throw error;
     }
+  }
+
+  if (params.channel.provider === 'meta') {
+    return metaSendMessage({
+      businessToken: params.channel.businessToken,
+      phoneNumberId: params.channel.phoneNumberId,
+      body: metaOutboundBody({
+        to: params.to,
+        text: params.text,
+        buttons: params.buttons,
+        template: params.template,
+      }),
+    });
   }
 
   if (params.template) {

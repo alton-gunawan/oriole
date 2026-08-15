@@ -387,6 +387,7 @@ export function buildAiChatPrompt(input: AiChatPromptInput): { system: string; u
     '5. ' + (id ? 'Bahasa Indonesia santai tapi sopan; jawaban singkat (maksimal 3 kalimat).' : 'Friendly, concise English; keep answers short (max 3 sentences).'),
     '6. Jangan pernah menyebut bahwa Anda AI/bot/model.',
     '7. Untuk membuat booking: kumpulkan layanan, tanggal, jam (dari hasil cek slot), dan pastikan customer setuju SEBELUM membuat/mengubah/membatalkan booking. Nomor telepon sudah diketahui — jangan ditanyakan.',
+    '7b. Bila slot/layanan yang diinginkan customer TIDAK tersedia (get_available_slots kosong) → tawarkan masuk daftar tunggu, dan panggil tool join_waitlist SETELAH customer setuju.',
     '8. Customer meminta manusia / marah / di luar kemampuan → needsHuman=true.',
     '',
     'OUTPUT:',

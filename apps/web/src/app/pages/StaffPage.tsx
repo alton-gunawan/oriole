@@ -139,7 +139,7 @@ function TimezoneClock({ timezone }: { timezone: string }) {
     }).format(now);
 
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-zinc-500">
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-zinc-500 dark:text-zinc-400">
       <IconClock className="size-3" aria-hidden="true" />
       <span>{t('staff.timezoneLocalNow', { time: timeIn(timezone) })}</span>
       <span aria-hidden="true" className="text-zinc-300">·</span>
@@ -217,9 +217,9 @@ type StaffTableRow = StaffRecord & Record<string, unknown>;
 
 /** Warna teks opsi filter status — selaras dengan variant StatusDot-nya. */
 const STATUS_TEXT: Record<string, string> = {
-  '': 'text-zinc-500',
+  '': 'text-zinc-500 dark:text-zinc-400',
   active: 'text-emerald-600',
-  inactive: 'text-zinc-500',
+  inactive: 'text-zinc-500 dark:text-zinc-400',
 };
 
 export function StaffPage() {
@@ -672,10 +672,10 @@ export function StaffPage() {
           </span>
           <span className="min-w-0">
             <span className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-zinc-900">{staff.name}</span>
+              <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{staff.name}</span>
               {!staff.isActive && <Badge variant="neutral" label={t('staff.inactive')} />}
             </span>
-            <span className="mt-0.5 block truncate text-xs text-zinc-500">
+            <span className="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">
               {[staff.email, staff.phone].filter(Boolean).join(' · ') || '—'}
             </span>
           </span>
@@ -688,7 +688,7 @@ export function StaffPage() {
       width: proportional(2),
       renderCell: (staff) => (
         <span className="block min-w-0">
-          <span className="flex items-center gap-1.5 text-sm text-zinc-600">
+          <span className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
             <IconClock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
             <span className="truncate">{staff.timezone}</span>
           </span>
@@ -712,7 +712,7 @@ export function StaffPage() {
             {staff.schedules.map((entry) => (
               <span
                 key={entry.id}
-                className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600"
+                className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400"
               >
                 {t(WEEKDAY_LABEL_KEYS[entry.dayOfWeek] ?? WEEKDAY_LABEL_KEYS[0]).slice(0, 3)}
                 <span className="text-zinc-400">{rangeLabel(entry.startMinutes, entry.endMinutes)}</span>
@@ -729,7 +729,7 @@ export function StaffPage() {
         staff.timeOff.length === 0 ? (
           <span className="text-sm text-zinc-300">—</span>
         ) : (
-          <span className="block min-w-0 text-sm text-zinc-600">
+          <span className="block min-w-0 text-sm text-zinc-600 dark:text-zinc-400">
             <span className="block truncate">
               {t('staff.timeOffCount', { count: staff.timeOff.length })}
             </span>
@@ -817,7 +817,7 @@ export function StaffPage() {
                   <SelectorOption
                     icon={option.icon}
                     label={
-                      <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500'}>
+                      <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500 dark:text-zinc-400'}>
                         {option.label}
                       </span>
                     }
@@ -854,19 +854,19 @@ export function StaffPage() {
       )}
 
       {deleteError && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
           {deleteError}
         </p>
       )}
 
       {showError && (
         <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
             <IconAlertTriangle className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.staffLoadTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.staffLoadTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {error instanceof ApiError ? t('errors.apiStatus', { status: error.status }) : t('errors.apiConnection')}
             </p>
           </div>
@@ -875,7 +875,7 @@ export function StaffPage() {
       )}
 
       {isPending && (
-        <Card className="divide-y divide-zinc-100">
+        <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-3 p-4">
               <Skeleton width={40} height={40} radius={4} />
@@ -907,9 +907,9 @@ export function StaffPage() {
           ) : (
             <>
               {selectedKeys.size > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-medium text-zinc-800">
+                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                       {t('staff.selectedCount', { count: selectedKeys.size })}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -986,7 +986,7 @@ export function StaffPage() {
               {/* Footer: rows-per-page (kiri) + info jumlah baris terlihat */}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-500">
+                  <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                     {t('staff.rowsPerPage')}
                   </span>
                   <Selector
@@ -1006,7 +1006,7 @@ export function StaffPage() {
                   <Trans
                     i18nKey="staff.showingRows"
                     values={{ shown: visibleRows.length, total: filteredList.length }}
-                    components={{ strong: <strong className="font-bold text-black" /> }}
+                    components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
                   />
                 </p>
                 <Pagination
@@ -1080,7 +1080,7 @@ export function StaffPage() {
                   width="100%"
                 />
                 <div>
-                  <p className="mb-1.5 text-xs font-medium text-zinc-600">{t('staff.color')}</p>
+                  <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('staff.color')}</p>
                   <div className="flex items-center gap-1.5">
                     {STAFF_COLORS.map((color) => (
                       <button
@@ -1174,7 +1174,7 @@ export function StaffPage() {
                     />
                   </div>
                   <div>
-                    <p className="mb-1.5 text-xs font-medium text-zinc-600">{t('staff.color')}</p>
+                    <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('staff.color')}</p>
                     <div className="flex items-center gap-1.5">
                       {STAFF_COLORS.map((color) => (
                         <button
@@ -1238,13 +1238,13 @@ export function StaffPage() {
             <LayoutContent>
               <div className="space-y-4">
                 {scheduleDraft.map((dayRanges, day) => (
-                  <div key={day} className="rounded-xl border border-zinc-100 p-3">
+                  <div key={day} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-zinc-800">{t(WEEKDAY_LABEL_KEYS[day])}</p>
+                      <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t(WEEKDAY_LABEL_KEYS[day])}</p>
                       <button
                         type="button"
                         onClick={() => addRange(day)}
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-amber-600 transition hover:bg-amber-50"
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-amber-600 transition hover:bg-amber-50 dark:hover:bg-amber-950/40"
                       >
                         <IconPlus className="size-3" />
                         {t('staff.addRange')}
@@ -1322,7 +1322,7 @@ export function StaffPage() {
           content={
             <LayoutContent>
               <div className="space-y-5">
-                <form id="add-time-off-form" onSubmit={submitTimeOff} className="space-y-4 rounded-xl border border-zinc-100 p-3">
+                <form id="add-time-off-form" onSubmit={submitTimeOff} className="space-y-4 rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
                   <div className="grid grid-cols-2 gap-3">
                     <DateInput
                       label={t('staff.startDate')}
@@ -1361,16 +1361,16 @@ export function StaffPage() {
                 </form>
 
                 {(timeOffStaff?.timeOff.length ?? 0) === 0 ? (
-                  <p className="text-sm text-zinc-500">{t('staff.noTimeOff')}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('staff.noTimeOff')}</p>
                 ) : (
                   <div className="space-y-2">
                     {timeOffStaff?.timeOff.map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 px-3 py-2">
+                      <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-zinc-800">
+                          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                             {dateOnly(entry.startDate)} → {dateOnly(entry.endDate)}
                           </p>
-                          {entry.reason && <p className="truncate text-xs text-zinc-500">{entry.reason}</p>}
+                          {entry.reason && <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.reason}</p>}
                         </div>
                         <IconButton
                           icon={<IconTrash className="size-4" />}

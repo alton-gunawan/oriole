@@ -151,6 +151,31 @@ describe('extractBookingFromTally', () => {
     expect(booking.scheduledAt).toBe('2026-12-21T03:30:00.000Z');
   });
 
+  it('dropdown layanan → teks option (nilai bisa ID string untuk single-select)', () => {
+    const p = payload({
+      data: {
+        responseId: 'resp-2b',
+        submissionId: 'sub-2b',
+        formId: 'form-abc',
+        fields: [
+          {
+            key: 'q-service',
+            label: 'Layanan',
+            type: 'DROPDOWN',
+            // DROPDOWN single-select: Tally bisa mengirim ID option (string).
+            value: 'opt-scaling',
+            options: [{ id: 'opt-scaling', text: 'Scaling Gigi' }],
+          },
+          { key: 'q-date', label: 'Tanggal', type: 'INPUT_DATE', value: '2026-12-21' },
+          { key: 'q-time', label: 'Jam', type: 'INPUT_TIME', value: '10:30' },
+        ],
+      },
+    });
+    const booking = extractBookingFromTally(p);
+    expect(booking.title).toBe('Scaling Gigi');
+    expect(booking.scheduledAt).toBe('2026-12-21T03:30:00.000Z');
+  });
+
   it('submission tanpa layanan/tanggal → bukan booking', () => {
     const p = payload({
       data: {

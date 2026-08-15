@@ -167,7 +167,7 @@ export async function identifyAnalyticsUser(input: {
   if (input.workspaceId) ph.group('workspace', input.workspaceId);
 }
 
-/** Pindahkan group workspace aktif (dipanggil saat switch project). */
+/** Pindahkan group workspace aktif (dipanggil saat switch bisnis). */
 export async function groupAnalyticsWorkspace(workspaceId: string): Promise<void> {
   const ph = await getClient();
   if (!ph) return;

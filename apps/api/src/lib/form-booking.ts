@@ -12,10 +12,11 @@ import {
   emitCalendarBookingEvent,
   emitOutgoingWebhookEvent,
   emitSlackBookingEvent,
+  emitTelegramBookingAlert,
   emitVideoLinkEvent,
 } from './integration-events.ts';
 import type { GoogleFormQuestion } from './google-forms.ts';
-import type { TallyField, TallyWebhookPayload } from './tally.ts';
+import { tallyFieldText, type TallyWebhookPayload } from './tally.ts';
 
 /* ────────────────────────────────────────────────────────────
  * Booking dari submisi form (Google Forms / Tally).
@@ -24,7 +25,7 @@ import type { TallyField, TallyWebhookPayload } from './tally.ts';
  * yang memuat data booking (layanan + tanggal/jam + nama + telepon) otomatis
  * menjadi booking `pending` di workspace. Idempoten per (source, sourceRef) —
  * retry webhook / crash di tengah batch tidak membuat booking ganda. Owner
- * project diberi tahu lewat email (authUser pemilik workspace).
+ * bisnis diberi tahu lewat email (authUser pemilik workspace).
  *
  * Mapping field → booking (heuristic judul pertanyaan, sama seperti
  * extractContact*):
@@ -258,26 +259,6 @@ export function extractBookingFromTally(payload: TallyWebhookPayload): FormBooki
   };
 }
 
-/** Nilai jawaban Tally apa adanya (teks/angka langsung, pilihan → teks option). */
-function tallyFieldText(field: TallyField): string | null {
-  const value = field.value;
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (typeof value === 'number') return String(value);
-  if (Array.isArray(value)) {
-    // Choice/checkbox: value = array ID → resolve ke teks option.
-    const texts = value
-      .map((id) => (typeof id === 'string' ? field.options?.find((o) => o.id === id)?.text : undefined))
-      .filter((text): text is string => Boolean(text));
-    if (texts.length > 0) return texts.join(', ');
-    const ids = value.filter((id): id is string => typeof id === 'string');
-    return ids.length > 0 ? ids.join(', ') : null;
-  }
-  return null;
-}
-
 /* ────────────────────────────────────────────────────────────
  * Pembuatan booking + notifikasi owner
  * ──────────────────────────────────────────────────────────── */
@@ -404,7 +385,9 @@ export async function createBookingFromFormSubmission(
     source: row.source,
     sourceRef: row.sourceRef,
   });
-  await emitSlackBookingEvent(input.workspaceId, 'booking.created', {
+  // Snapshot notifikasi tim (Slack + Telegram alerts) — payload konsisten
+  // agar kartu di kedua channel menampilkan data yang sama.
+  const teamAlertPayload = {
     id: row.id,
     workspaceId: input.workspaceId,
     title,
@@ -413,7 +396,9 @@ export async function createBookingFromFormSubmission(
     timezone: row.timezone,
     customerName: row.customerName,
     phone: row.phone,
-  });
+  };
+  await emitSlackBookingEvent(input.workspaceId, 'booking.created', teamAlertPayload);
+  await emitTelegramBookingAlert(input.workspaceId, 'booking.created', teamAlertPayload);
   await emitVideoLinkEvent(input.workspaceId, row.id);
 
   captureBookingEvent('booking.created', {

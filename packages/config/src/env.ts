@@ -151,6 +151,19 @@ export const apiEnvSchema = z.object({
   META_VERIFY_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   META_APP_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
 
+  // Meta WhatsApp Business — Embedded Signup (Tech Provider).
+  // Meta App milik PLATFORM (bukan tenant): app id/secret + config_id
+  // (konfigurasi Embedded Signup di App Dashboard → WhatsApp → Embedded
+  // Signup) + verify token (hub.challenge webhook) + system user token
+  // (long-lived, untuk GET /debug_token saat resolve WABA ID pasca-signup).
+  // Semua opsional — tanpa config lengkap fitur menampilkan "belum dikonfigurasi".
+  META_WHATSAPP_APP_ID: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  META_WHATSAPP_APP_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  META_WHATSAPP_CONFIG_ID: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+  META_WHATSAPP_VERIFY_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  META_WHATSAPP_SYSTEM_USER_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  META_GRAPH_API_VERSION: z.string().default('v21.0'),
+
   // PostHog analytics — server-side event capture (product analytics).
   // Opsional: tanpa POSTHOG_PUBLIC_KEY semua capture di-skip dan API tetap
   // berjalan normal (no-op sink). Nilainya = project API key (`phc_...`,

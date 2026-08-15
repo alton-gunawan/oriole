@@ -23,7 +23,7 @@ import { isWorkspaceActive } from '../../lib/workspace-lifecycle.ts';
 export const whatsappWebhookRoutes = new Hono().post('/:workspaceId', async (c) => {
   const workspaceId = c.req.param('workspaceId');
 
-  // Project soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
+  // Bisnis soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
   // Meta tidak me-retry; pesan tidak akan pernah diproses).
   if (!(await isWorkspaceActive(workspaceId))) {
     return c.json({ received: true, disabled: true });
@@ -36,7 +36,9 @@ export const whatsappWebhookRoutes = new Hono().post('/:workspaceId', async (c) 
   // Route ini hanya untuk 360dialog (HMAC-SHA256 + payload Meta). Channel BYO
   // (provider 'waha') menerima webhook di /api/webhooks/waha/:workspaceId
   // (HMAC-SHA512) — jangan verifikasi secret 360dialog terhadapnya.
-  if (channel.provider === 'waha') {
+  if (channel.provider === 'waha' || channel.provider === 'meta') {
+    // BYO (WAHA) punya webhook sendiri; Meta Embedded Signup diterima di
+    // /api/webhooks/whatsapp-business (routing per phone_number_id).
     return c.text('WhatsApp channel tidak dikonfigurasi untuk workspace ini', 404);
   }
   if (!channel.isActive) {

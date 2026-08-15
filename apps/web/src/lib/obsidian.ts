@@ -2,7 +2,7 @@ import { apiFetch } from './api';
 import type { ContactRecord, ContactsListResponse } from './contacts';
 
 /**
- * Integrasi Obsidian — mirror kontak project ke vault Obsidian lokal sebagai
+ * Integrasi Obsidian — mirror kontak bisnis ke vault Obsidian lokal sebagai
  * catatan markdown (plugin "Local REST API"). Sinkronisasi berjalan dari
  * BROWSER (localhost vault tidak bisa dijangkau API server di production),
  * jadi konfigurasi disimpan per-perangkat di localStorage.

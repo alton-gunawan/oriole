@@ -40,7 +40,7 @@ export interface Workspace {
   /** Knowledge base AI chat (null = belum diisi). */
   aiKnowledge?: AiKnowledge | null;
   /**
-   * Avatar project: URL planet DiceBear / data URL upload. null = planet
+   * Avatar bisnis: URL planet DiceBear / data URL upload. null = planet
    * deterministik dari nama (default lama).
    */
   avatarUrl?: string | null;

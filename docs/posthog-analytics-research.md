@@ -412,7 +412,7 @@ Fase 1–3 + error tracking dieksekusi penuh (API + web + docs + tests hijau). K
 - **Deps:** `posthog-js` + `@posthog/react`; init di `main.tsx` dengan `defaults` + `capture_pageview: 'history_change'` — pageview SPA React Router v7 data mode **otomatis**, tanpa kode router.
 - **Env:** `VITE_POSTHOG_PROJECT_TOKEN` / `VITE_POSTHOG_HOST` di `config/env.ts` + `.env.example`; **token opsional** → tanpa token PostHog tidak di-init (no-op).
 - **Wrapper:** `lib/analytics.ts` — lazy `import('posthog-js')`, aman dipakai di test node; helper `initAnalytics` / `identifyAnalyticsUser` / `groupAnalyticsWorkspace` / `resetAnalytics` / `trackEvent` / `captureClientError`.
-- **Identitas:** `identify(userId)` setelah `restoreSession()` (id stabil dari `/me`, bukan email), `group('workspace', id)` saat boot/switch project, `reset()` di `signOut()`.
+- **Identitas:** `identify(userId)` setelah `restoreSession()` (id stabil dari `/me`, bukan email), `group('workspace', id)` saat boot/switch bisnis, `reset()` di `signOut()`.
 
 ### 14.2 Deviasi #1 — event client dipangkas (hindari double-count)
 
@@ -452,7 +452,7 @@ Riset §4.5 menyarankan `workspace_created`, `booking_created`, `call_triggered`
 
 ### 15.1 Product analytics
 
-**Already flowing** (from the earlier implementation): pageviews auto-captured via `capture_pageview: 'history_change'` (React Router v7 data mode — zero router code), auth events (`signin_started`/`signup_started`), and the full domain taxonomy (`booking.*`, `payment.*`, `subscription.*`, `workspace.created`, `integration.connected`). All events bind to the `workspace` **group**, so every chart can be broken down per project.
+**Already flowing** (from the earlier implementation): pageviews auto-captured via `capture_pageview: 'history_change'` (React Router v7 data mode — zero router code), auth events (`signin_started`/`signup_started`), and the full domain taxonomy (`booking.*`, `payment.*`, `subscription.*`, `workspace.created`, `integration.connected`). All events bind to the `workspace` **group**, so every chart can be broken down per business.
 
 **New in this round (client):**
 
@@ -517,7 +517,7 @@ Already wired on both sides (§5.4, §13) and now hardened:
 
 - **Client:** `capture_exceptions: true` in the init config (autocaptures uncaught exceptions in addition to the manual `RootErrorBoundary` / `RouteErrorElement` captures); `posthog.captureException` on every routed error.
 - **Server:** Hono `onError` → `captureException(err, userId, { path, method, url })` + flush, best-effort (never breaks the response).
-- **Best practice now enabled:** use *Error tracking* in PostHog to group by stack trace; because every event carries the `workspace` group, you can see which projects are affected. Combine with *Replay* (event trigger on `exception` events) to watch the exact user session around a crash.
+- **Best practice now enabled:** use *Error tracking* in PostHog to group by stack trace; because every event carries the `workspace` group, you can see which businesses are affected. Combine with *Replay* (event trigger on `exception` events) to watch the exact user session around a crash.
 
 ### 15.6 Surveys
 

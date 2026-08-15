@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCallbackData, parseCallbackData, parseTelegramUpdate, isOptOutText } from './parse.ts';
+import { buildCallbackData, parseCallbackData, parseTelegramUpdate, isOptOutText, isBookingRequestText } from './parse.ts';
 import type { TelegramUpdate } from './parse.ts';
 
 const BOOKING_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -42,6 +42,22 @@ describe('isOptOutText', () => {
   it('tidak mengenali teks biasa', () => {
     expect(isOptOutText('Saya hadir')).toBe(false);
     expect(isOptOutText(undefined)).toBe(false);
+  });
+});
+
+describe('isBookingRequestText', () => {
+  it('mengenali permintaan booking EN & ID', () => {
+    expect(isBookingRequestText('mau booking')).toBe(true);
+    expect(isBookingRequestText('Mau booking dong')).toBe(true);
+    expect(isBookingRequestText('buat janji')).toBe(true);
+    expect(isBookingRequestText('book')).toBe(true);
+    expect(isBookingRequestText('Make a booking')).toBe(true);
+  });
+
+  it('tidak mengenali teks biasa / nomor', () => {
+    expect(isBookingRequestText('Halo')).toBe(false);
+    expect(isBookingRequestText('081234567890')).toBe(false);
+    expect(isBookingRequestText(undefined)).toBe(false);
   });
 });
 
@@ -123,6 +139,11 @@ describe('parseTelegramUpdate', () => {
   it('meng-parse pesan STOP → intent opt-out', () => {
     const event = parseTelegramUpdate(messageUpdate('STOP'));
     expect(event?.intent).toBe('opt-out');
+  });
+
+  it('meng-parse permintaan booking baru → intent booking-request', () => {
+    const event = parseTelegramUpdate(messageUpdate('mau booking'));
+    expect(event).toMatchObject({ intent: 'booking-request', bookingId: null, content: 'mau booking' });
   });
 
   it('meng-parse user yang memblokir bot → opt-out', () => {

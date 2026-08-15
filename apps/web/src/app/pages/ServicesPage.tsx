@@ -103,9 +103,9 @@ type ServiceTableRow = ServiceRecord & Record<string, unknown>;
 
 /** Warna teks opsi filter status — selaras dengan variant StatusDot-nya. */
 const STATUS_TEXT: Record<string, string> = {
-  '': 'text-zinc-500',
+  '': 'text-zinc-500 dark:text-zinc-400',
   active: 'text-emerald-600',
-  inactive: 'text-zinc-500',
+  inactive: 'text-zinc-500 dark:text-zinc-400',
 };
 
 export function ServicesPage() {
@@ -466,7 +466,7 @@ export function ServicesPage() {
       header: t('services.colService'),
       width: proportional(3),
       renderCell: (service) => (
-        <span className="block min-w-0 truncate text-base font-semibold text-zinc-900">
+        <span className="block min-w-0 truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">
           {service.name}
         </span>
       ),
@@ -476,7 +476,7 @@ export function ServicesPage() {
       header: t('services.colDuration'),
       width: pixel(110),
       renderCell: (service) => (
-        <span className="block min-w-0 text-base text-zinc-600">
+        <span className="block min-w-0 text-base text-zinc-600 dark:text-zinc-400">
           {formatServiceDuration(service.durationMinutes)}
         </span>
       ),
@@ -488,7 +488,7 @@ export function ServicesPage() {
       renderCell: (service) => {
         const price = formatServicePrice(service.priceMinor, service.currency);
         return (
-          <span className="block min-w-0 text-base text-zinc-600">
+          <span className="block min-w-0 text-base text-zinc-600 dark:text-zinc-400">
             {price ?? <span className="text-zinc-300">—</span>}
           </span>
         );
@@ -500,7 +500,7 @@ export function ServicesPage() {
       width: proportional(2),
       renderCell: (service) =>
         service.category && service.category.length > 0 ? (
-          <span className="inline-flex max-w-full items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-sm font-medium text-zinc-600">
+          <span className="inline-flex max-w-full items-center rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-sm font-medium text-zinc-600 dark:text-zinc-400">
             <span className="truncate">{service.category.join(', ')}</span>
           </span>
         ) : (
@@ -519,7 +519,7 @@ export function ServicesPage() {
             {service.staffIds.map((staffId) => (
               <span
                 key={staffId}
-                className="inline-flex max-w-[10rem] items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-sm font-medium text-zinc-600"
+                className="inline-flex max-w-[10rem] items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-sm font-medium text-zinc-600 dark:text-zinc-400"
               >
                 <span className="truncate">{staffNameById.get(staffId) ?? '?'}</span>
               </span>
@@ -600,7 +600,7 @@ export function ServicesPage() {
                   <SelectorOption
                     icon={option.icon}
                     label={
-                      <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500'}>
+                      <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500 dark:text-zinc-400'}>
                         {option.label}
                       </span>
                     }
@@ -641,19 +641,19 @@ export function ServicesPage() {
       )}
 
       {deleteError && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
           {deleteError}
         </p>
       )}
 
       {showError && (
         <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
             <IconAlertTriangle className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.servicesLoadTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.servicesLoadTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {error instanceof ApiError ? t('errors.apiStatus', { status: error.status }) : t('errors.apiConnection')}
             </p>
           </div>
@@ -662,7 +662,7 @@ export function ServicesPage() {
       )}
 
       {isPending && (
-        <Card className="divide-y divide-zinc-100">
+        <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-3 p-4">
               <Skeleton width={40} height={40} radius={4} />
@@ -694,9 +694,9 @@ export function ServicesPage() {
           ) : (
             <>
               {selectedKeys.size > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-medium text-zinc-800">
+                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                       {t('services.selectedCount', { count: selectedKeys.size })}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -765,7 +765,7 @@ export function ServicesPage() {
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-500">
+                  <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                     {t('services.rowsPerPage')}
                   </span>
                   <Selector
@@ -785,7 +785,7 @@ export function ServicesPage() {
                   <Trans
                     i18nKey="services.showingRows"
                     values={{ shown: visibleRows.length, total: filteredList.length }}
-                    components={{ strong: <strong className="font-bold text-black" /> }}
+                    components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
                   />
                 </p>
                 <Pagination

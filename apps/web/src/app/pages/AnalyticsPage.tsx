@@ -93,15 +93,15 @@ function FunnelChart({ data, t }: { data: AnalyticsOverview['funnel']; t: TFunct
         return (
           <div key={step}>
             <div className="mb-1.5 flex items-baseline justify-between text-xs">
-              <span className="flex items-center gap-1.5 font-medium text-zinc-700">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300">
                 <span className="inline-block size-2 rounded-full" style={{ backgroundColor: color }} />
                 {label}
               </span>
-              <span className="tabular-nums text-zinc-500">
+              <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
                 {formatNumber(count)} <span className="text-zinc-400">· {pct}%</span>
               </span>
             </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${width}%`, backgroundColor: color }}
@@ -136,8 +136,8 @@ function ChartCard({
     <Card className={`p-5 sm:p-6 ${className}`}>
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
-          {subtitle && <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p>}
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
+          {subtitle && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</p>}
         </div>
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
           {icon}
@@ -248,12 +248,12 @@ export function AnalyticsPage() {
       {/* Error state */}
       {showError && (
         <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
             <IconAlertTriangle className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('analytics.errorTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('analytics.errorTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {error instanceof ApiError
                 ? t('errors.apiStatus', { status: error.status })
                 : t('errors.apiConnection')}
@@ -275,12 +275,12 @@ export function AnalyticsPage() {
       {isPending && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card className="animate-pulse p-5 sm:p-6 lg:col-span-2">
-            <div className="mb-5 h-4 w-40 rounded bg-zinc-100" />
-            <div className="h-56 rounded-lg bg-zinc-100" />
+            <div className="mb-5 h-4 w-40 rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="h-56 rounded-lg bg-zinc-100 dark:bg-zinc-800" />
           </Card>
           <Card className="animate-pulse p-5 sm:p-6">
-            <div className="mb-5 h-4 w-32 rounded bg-zinc-100" />
-            <div className="h-56 rounded-full bg-zinc-100" />
+            <div className="mb-5 h-4 w-32 rounded bg-zinc-100 dark:bg-zinc-800" />
+            <div className="h-56 rounded-full bg-zinc-100 dark:bg-zinc-800" />
           </Card>
         </div>
       )}

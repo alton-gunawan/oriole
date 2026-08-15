@@ -7,9 +7,7 @@ import { Link } from 'react-router';
 import { AppLogo } from '../components/AppLogo';
 import {
   IconAlertTriangle,
-  IconArrowRight,
   IconBattery,
-  IconCalendar,
   IconCheck,
   IconClock,
   IconCreditCard,
@@ -19,34 +17,43 @@ import {
   IconEyeOff,
   IconHelp,
   IconHourglass,
-  IconHouseLine,
   IconMail,
+  IconMenu,
   IconMicOff,
   IconPhone,
+  IconPhonePhosphor,
   IconPlug,
   IconRefreshCw,
   IconRepeat,
   IconSearchX,
   IconSignal,
+  IconSquaresFour,
   IconUsers,
   IconVideo,
   IconWebhook,
   IconWifi,
+  IconX,
   type IconProps,
 } from '../shell/icons';
 import type { TranslationKey } from '../../i18n';
-import { LocaleSwitcher } from '../shell/LocaleSwitcher';
 import { apiFetch } from '../../lib/api';
 import { getAccessToken } from '../../lib/token';
 import { type ChannelListResponse } from '../../lib/messaging';
 import { type IntegrationListResponse } from '../../lib/integrations';
 import { loadObsidianConfig } from '../../lib/obsidian';
-import { useSessionStore } from '../../stores/session';
+import { getCachedSessionStatus, useSessionStore } from '../../stores/session';
 
 type FooterLink = {
   labelKey: TranslationKey;
   href: string;
 };
+
+/** Menu navigasi header landing — tautan ke seksi-seksi halaman. */
+const landingNavLinks: FooterLink[] = [
+  { labelKey: 'landing.footerHowItWorks', href: '#how-it-works' },
+  { labelKey: 'landing.footerIntegrations', href: '#integrations' },
+  { labelKey: 'landing.footerFaq', href: '#faq' },
+];
 
 const footerColumns: { titleKey: TranslationKey; links: FooterLink[] }[] = [
   {
@@ -84,51 +91,6 @@ function FooterColumn({ column }: { column: (typeof footerColumns)[number] }) {
         ))}
       </ul>
     </nav>
-  );
-}
-
-/** Ilustrasi hero — alur conversation → booking: pesan customer, balasan AI,
- * lalu kartu booking terkonfirmasi. Statis (tanpa animasi) agar konsisten
- * dengan gaya kartu landing lain dan aman untuk prefers-reduced-motion. */
-function HeroFlowIllustration() {
-  const { t } = useTranslation();
-  return (
-    <div className="mt-16 w-full">
-      <div className="flex flex-col items-stretch gap-10 rounded-3xl border border-[#e6ebef] bg-white px-6 py-8 shadow-[0_24px_60px_-40px_rgba(10,19,23,0.35)] sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-10 sm:py-10">
-        {/* Langkah 1 — percakapan customer ↔ AI */}
-        <div className="flex flex-1 flex-col gap-2.5">
-          <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[#e6ebef] bg-white px-3.5 py-2.5 text-xs leading-relaxed text-[#0a1317] shadow-sm sm:text-sm">
-              {t('landing.heroFlowCustomerMsg')}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-amber-500 px-3.5 py-2.5 text-xs leading-relaxed text-zinc-950 shadow-sm sm:text-sm">
-              {t('landing.heroFlowAiMsg')}
-            </div>
-          </div>
-        </div>
-
-        {/* Panah alur — mengarah ke booking */}
-        <div className="flex shrink-0 items-center justify-center text-[#1017e8]">
-          <IconArrowRight className="size-5 rotate-90 sm:rotate-0" />
-        </div>
-
-        {/* Langkah 2 — booking terkonfirmasi */}
-        <div className="flex flex-1 items-center gap-4 rounded-2xl border border-[#e6ebef] bg-[#f8fafb] px-5 py-4">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#1017e8] shadow-sm">
-            <IconCalendar className="size-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-sm font-semibold text-[#0a1317]">
-              <IconCheck className="size-4 shrink-0 text-emerald-500" />
-              {t('landing.heroFlowBookingTitle')}
-            </p>
-            <p className="mt-0.5 text-xs text-[#4e606f]">{t('landing.heroFlowBookingMeta')}</p>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -317,56 +279,6 @@ const painPoints = [
   },
 ] as const;
 
-/** Kartu fitur solusi — judul/deskripsi/label/daftar item dari katalog i18n. */
-const solutionCards = [
-  {
-    titleKey: 'landing.solutionConvoTitle',
-    descKey: 'landing.solutionConvoDesc',
-    labelKey: 'landing.solutionConvoLabel',
-    itemKeys: [
-      'landing.solutionConvoItem1',
-      'landing.solutionConvoItem2',
-      'landing.solutionConvoItem3',
-      'landing.solutionConvoItem4',
-      'landing.solutionConvoItem5',
-    ],
-  },
-  {
-    titleKey: 'landing.solutionBookingTitle',
-    descKey: 'landing.solutionBookingDesc',
-    labelKey: 'landing.solutionBookingLabel',
-    itemKeys: [
-      'landing.solutionBookingItem1',
-      'landing.solutionBookingItem2',
-      'landing.solutionBookingItem3',
-      'landing.solutionBookingItem4',
-    ],
-  },
-  {
-    titleKey: 'landing.solutionAwareTitle',
-    descKey: 'landing.solutionAwareDesc',
-    labelKey: 'landing.solutionAwareLabel',
-    itemKeys: [
-      'landing.solutionAwareItem1',
-      'landing.solutionAwareItem2',
-      'landing.solutionAwareItem3',
-      'landing.solutionAwareItem4',
-    ],
-  },
-  {
-    titleKey: 'landing.solutionToolsTitle',
-    descKey: 'landing.solutionToolsDesc',
-    labelKey: 'landing.solutionToolsLabel',
-    itemKeys: [
-      'landing.solutionToolsItem1',
-      'landing.solutionToolsItem2',
-      'landing.solutionToolsItem3',
-      'landing.solutionToolsItem4',
-      'landing.solutionToolsItem5',
-    ],
-  },
-] as const;
-
 /** Indikator suara (equalizer kecil) — muncul saat pembicara sedang berbicara,
  * seperti indikator voice-activity di panggilan sungguhan. */
 function VoiceWave({ tone }: { tone: 'amber' | 'white' }) {
@@ -445,18 +357,35 @@ function Typewriter({ text, filled, animate }: { text: string; filled: boolean; 
   );
 }
 
-/** Tombol "Open app" untuk user yang sudah login — bordered satu warna
- * (indigo brand), tanpa shadow. */
+/** Tombol "Book a demo" — di sebelah kiri "Go to dashboard", background transparan dengan ikon phone Phosphor. */
+function BookDemoButton({ size }: { size: 'sm' | 'lg' }) {
+  const { t } = useTranslation();
+  return (
+    <a
+      href={demoFormUrl}
+      target="_blank"
+      rel="noreferrer"
+      className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#0a1317] bg-transparent text-[#0a1317] transition hover:bg-[#0a1317]/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a1317] ${
+        size === 'lg' ? 'h-11 px-5' : 'h-9 px-4'
+      }`}
+    >
+      <IconPhonePhosphor className="size-4" aria-hidden="true" />
+      <span className="text-base font-medium">{t('landing.bookDemo')}</span>
+    </a>
+  );
+}
+
+/** Tombol "Open app" untuk user yang sudah login — full blue background, text white dengan ikon squares-four. */
 function OpenAppButton({ size }: { size: 'sm' | 'lg' }) {
   const { t } = useTranslation();
   return (
     <a
       href="/app/dashboard"
-      className={`inline-flex items-center gap-1.5 rounded-[10px] border border-[#1017e8] bg-white text-[#1017e8] transition hover:bg-[#f0f1ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] ${
-        size === 'lg' ? 'h-9 px-4' : 'h-7 px-3'
+      className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-[#1017e8] text-white transition hover:bg-[#0c12bd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] ${
+        size === 'lg' ? 'h-11 px-5' : 'h-9 px-4'
       }`}
     >
-      <IconHouseLine className="size-4" aria-hidden="true" />
+      <IconSquaresFour className="size-4" aria-hidden="true" />
       <span className="text-base font-medium">{t('landing.goToDashboard')}</span>
     </a>
   );
@@ -491,11 +420,30 @@ function SectionTopic({
   );
 }
 
+/**
+ * Prefetch chunk halaman auth (lazy di router) saat user menunjukkan intent
+ * — hover/fokus/tekan. Dengan begitu klik "Sign in / Get started" tidak
+ * menunggu download SDK Neon Auth (chunk terpisah) dulu sebelum render.
+ */
+let authChunkPrefetched = false;
+function prefetchAuthPages(): void {
+  if (authChunkPrefetched) return;
+  authChunkPrefetched = true;
+  // Import dinamis yang sama dengan router → Vite memakai chunk yang sama,
+  // jadi ini murni prefetch, tidak menduplikasi kode.
+  void Promise.all([import('../auth/SignInPage'), import('../auth/SignUpPage')]);
+}
+
 export function LandingPage() {
   const { t } = useTranslation();
   // User yang sudah login tidak melihat CTA "Sign in / Get started" —
-  // diganti tombol tunggal menuju dashboard app.
-  const isAuthenticated = useSessionStore((s) => s.status === 'authenticated');
+  // diganti tombol tunggal menuju dashboard app. Saat sesi masih 'loading'
+  // (boot), pakai snapshot localStorage agar CTA tampil benar tanpa menunggu
+  // /api/me; RequireAuth tetap jadi pengaman bila snapshot ternyata stale.
+  const sessionStatus = useSessionStore((s) => s.status);
+  const isAuthenticated =
+    sessionStatus === 'authenticated' ||
+    (sessionStatus === 'loading' && getCachedSessionStatus() === 'authenticated');
 
   // ── Status integrasi live (user login saja) ───────────────
   // Saat integrasi/channel diubah di halaman Integrations, seksi "Everything
@@ -602,6 +550,8 @@ export function LandingPage() {
   const [callConnected, setCallConnected] = useState(false);
   const [callSeconds, setCallSeconds] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  // Menu navigasi mobile — hamburger membuka panel berisi tautan seksi.
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (reducedMotion) return;
@@ -721,7 +671,7 @@ export function LandingPage() {
   ).padStart(2, '0')}`;
   return (
     <main className="flex min-h-screen flex-col bg-[#f8fafb] text-[#0a1317]">
-      <header>
+      <header className="bg-white">
         <div className="mx-auto flex h-[72px] w-full max-w-5xl items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5" aria-label={t('landing.ariaHome')}>
             <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-[#0a1317] shadow-sm">
@@ -729,21 +679,85 @@ export function LandingPage() {
             </span>
             <span className="text-[15px] font-semibold tracking-[-0.03em] text-[#0a1317]">oriole</span>
           </Link>
+
+          {/* Menu navigasi — tautan ke seksi landing (desktop) */}
+          <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-7 md:flex">
+            {landingNavLinks.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-base font-medium text-[#4e606f] transition-colors hover:text-[#1017e8]"
+              >
+                {t(link.labelKey)}
+              </a>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-2.5">
-            <LocaleSwitcher />
             {isAuthenticated ? (
-              <OpenAppButton size="sm" />
+              <>
+                <BookDemoButton size="sm" />
+                <OpenAppButton size="sm" />
+              </>
             ) : (
               <>
-                <Button label={t('landing.signIn')} variant="ghost" size="sm" href="/auth/sign-in" />
-                <Button label={t('landing.getStarted')} variant="primary" size="sm" href="/auth/sign-up" />
+                <Button
+                  label={t('landing.signIn')}
+                  variant="ghost"
+                  size="sm"
+                  href="/auth/sign-in"
+                  onMouseEnter={prefetchAuthPages}
+                  onFocus={prefetchAuthPages}
+                  onPointerDown={prefetchAuthPages}
+                />
+                <Button
+                  label={t('landing.getStarted')}
+                  variant="primary"
+                  size="sm"
+                  href="/auth/sign-up"
+                  onMouseEnter={prefetchAuthPages}
+                  onFocus={prefetchAuthPages}
+                  onPointerDown={prefetchAuthPages}
+                />
               </>
             )}
+            {/* Toggle menu mobile */}
+            <button
+              type="button"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? t('nav.closeMenu') : t('nav.openMenu')}
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              className="flex size-8 items-center justify-center rounded-md text-[#0a1317] transition hover:bg-[#eef0ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] md:hidden"
+            >
+              {mobileMenuOpen ? (
+                <IconX className="size-4" aria-hidden="true" />
+              ) : (
+                <IconMenu className="size-4" aria-hidden="true" />
+              )}
+            </button>
           </div>
         </div>
+
+        {/* Panel menu mobile — tautan seksi muncul di bawah header */}
+        {mobileMenuOpen && (
+          <nav aria-label={t('landing.navLabel')} className="border-t border-[#e6ebef] bg-white px-5 pb-5 pt-2 md:hidden">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-1">
+              {landingNavLinks.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-base font-medium text-[#4e606f] transition-colors hover:bg-[#f8fafb] hover:text-[#1017e8]"
+                >
+                  {t(link.labelKey)}
+                </a>
+              ))}
+            </div>
+          </nav>
+        )}
       </header>
 
-      <section className="flex flex-1 items-center justify-center px-5 py-24 sm:px-8">
+      <section className="flex flex-1 items-center justify-center bg-white px-5 py-24 sm:px-8">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-start text-left">
           <h1 className="text-3xl font-semibold leading-[1.1] tracking-[-0.05em] text-[#0a1317] sm:text-5xl">
             {t('landing.heroHeadline')}
@@ -752,8 +766,36 @@ export function LandingPage() {
             {t('landing.heroSubheadline')}
           </p>
 
-          {/* Ilustrasi alur conversation → booking (tetap dalam hero) */}
-          <HeroFlowIllustration />
+          {/* Tombol aksi — user login melihat dashboard, visitor melihat CTA */}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            {isAuthenticated ? (
+              <>
+                <BookDemoButton size="lg" />
+                <OpenAppButton size="lg" />
+              </>
+            ) : (
+              <>
+                <Button
+                  label={t('landing.getStarted')}
+                  variant="primary"
+                  size="lg"
+                  href="/auth/sign-up"
+                  onMouseEnter={prefetchAuthPages}
+                  onFocus={prefetchAuthPages}
+                  onPointerDown={prefetchAuthPages}
+                />
+                <Button
+                  label={t('landing.signIn')}
+                  variant="ghost"
+                  size="lg"
+                  href="/auth/sign-in"
+                  onMouseEnter={prefetchAuthPages}
+                  onFocus={prefetchAuthPages}
+                  onPointerDown={prefetchAuthPages}
+                />
+              </>
+            )}
+          </div>
         </div>
       </section>
 
@@ -825,45 +867,6 @@ export function LandingPage() {
           <p className="mx-auto mt-14 max-w-3xl text-base leading-7 text-[#0a1317] sm:text-lg sm:leading-8">
             {t('landing.integrationFootnote')}
           </p>
-        </div>
-      </section>
-
-      {/* Solusi — satu asisten AI yang menangani seluruh alur booking */}
-      <section className="px-5 py-20 sm:px-8">
-        <div className="mx-auto w-full max-w-5xl">
-          <SectionTopic icon={IconCalendar} word={t('landing.topicSolution')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-[#0a1317] sm:text-4xl">
-            {t('landing.solutionTitle')}
-          </h2>
-
-          <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {solutionCards.map((card) => (
-              <div
-                key={card.titleKey}
-                className="flex flex-col rounded-2xl border border-[#e6ebef] bg-white p-6"
-              >
-                <h3 className="text-base font-semibold tracking-[-0.02em] text-[#0a1317] sm:text-lg">
-                  {t(card.titleKey)}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-[#4e606f]">
-                  {t(card.descKey)}
-                </p>
-                <div className="mt-5 border-t border-[#e6ebef] pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#1017e8]">
-                    {t(card.labelKey)}
-                  </p>
-                  <ul className="mt-3 space-y-2">
-                    {card.itemKeys.map((itemKey) => (
-                      <li key={itemKey} className="flex items-start gap-2 text-sm leading-6 text-[#4e606f]">
-                        <IconCheck className="mt-1 size-3.5 shrink-0 text-[#1017e8]" />
-                        {t(itemKey)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -1203,7 +1206,18 @@ export function LandingPage() {
                   <Fragment>
                     <div className="border-b border-[#e6ebef] px-4 py-3">
                       <p className="text-sm font-semibold text-[#0a1317]">{t('landing.demoFormTitle')}</p>
-                      <p className="text-xs text-[#4e606f]">{t('landing.demoFormPoweredBy')}</p>
+                      <p className="flex items-center gap-1 text-xs text-[#4e606f]">
+                        <Trans
+                          i18nKey="landing.demoFormPoweredBy"
+                          components={{
+                            icon: (
+                              <span className="inline-flex size-3.5 items-center justify-center overflow-hidden rounded-sm bg-[#0a1317]">
+                                <AppLogo alt="" />
+                              </span>
+                            ),
+                          }}
+                        />
+                      </p>
                     </div>
 
                     {/* Progress bar gaya Tally */}

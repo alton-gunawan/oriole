@@ -28,6 +28,26 @@ export const signInSchema = (t: TFunction) =>
   });
 export type SignInInput = z.infer<ReturnType<typeof signInSchema>>;
 
+export const forgotPasswordEmailSchema = (t: TFunction) =>
+  z.object({
+    email: z.email(t('validation.emailInvalid')),
+  });
+export type ForgotPasswordEmailInput = z.infer<ReturnType<typeof forgotPasswordEmailSchema>>;
+
+export const resetPasswordSchema = (t: TFunction) =>
+  z
+    .object({
+      email: z.email(t('validation.emailInvalid')),
+      otp: z.string().min(1, t('validation.otpRequired')),
+      password: z.string().min(8, t('validation.passwordMin')),
+      confirmPassword: z.string(),
+    })
+    .refine((v) => v.password === v.confirmPassword, {
+      message: t('validation.confirmMismatch'),
+      path: ['confirmPassword'],
+    });
+export type ResetPasswordInput = z.infer<ReturnType<typeof resetPasswordSchema>>;
+
 export const signUpSchema = (t: TFunction) =>
   z
     .object({

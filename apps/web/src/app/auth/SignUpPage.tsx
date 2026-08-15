@@ -52,8 +52,8 @@ export function SignUpPage() {
     return (
       <AuthLayout>
         <div className="space-y-3 text-center">
-          <p className="text-sm font-medium text-zinc-800">{t('auth.authNotConfiguredTitle')}</p>
-          <p className="text-sm text-zinc-500 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs">
+          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('auth.authNotConfiguredTitle')}</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs">
             <Trans i18nKey="auth.authNotConfiguredBodyUp">
               Fill in <code>VITE_NEON_AUTH_URL</code> then restart Vite.
             </Trans>
@@ -110,9 +110,9 @@ export function SignUpPage() {
         />
 
         <div className="flex items-center gap-3 text-xs text-zinc-400">
-          <span className="h-px flex-1 bg-zinc-200" />
+          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
           {t('auth.or')}
-          <span className="h-px flex-1 bg-zinc-200" />
+          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
         </div>
 
         <AuthField
@@ -151,7 +151,7 @@ export function SignUpPage() {
         {error && (
           <div
             role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
           >
             {error}
           </div>
@@ -166,7 +166,7 @@ export function SignUpPage() {
           width="100%"
         />
 
-        <p className="pt-1 text-center text-sm text-zinc-500">
+        <p className="pt-1 text-center text-sm text-zinc-500 dark:text-zinc-400">
           {t('auth.haveAccount')}{' '}
           <Link to="/auth/sign-in" className="font-medium text-amber-600 hover:text-amber-700 hover:underline">
             {t('auth.signInCta')}

@@ -36,9 +36,23 @@ export interface WorkspaceIntegration {
     hasWebhookSecret?: boolean;
     /** Marker migrasi dari Typeform (migration 0022) — banner di UI. */
     migratedFrom?: 'typeform' | null;
+    /** Form memuat hidden field `phone` → URL ?phone= mengisi nomor otomatis. */
+    prefillPhone?: boolean;
+    /** Pertanyaan layanan memakai DROPDOWN dari katalog (bukan teks bebas). */
+    serviceDropdown?: boolean;
+    /** Kapan terakhir konten form disinkronkan (auto-sync guard). */
+    lastContentSyncAt?: string | null;
+    /** Alasan sinkronisasi konten gagal terakhir (null = sukses). */
+    lastContentSyncError?: string | null;
+    /** Status konfirmasi booking terakhir ke customer (diagnostik). */
+    lastConfirmationAt?: string | null;
+    lastConfirmationError?: string | null;
     // Slack — URL webhook TIDAK pernah dikirim (secret); hanya host + channel
     webhookUrlHost?: string | null;
     channel?: string | null;
+    // Telegram booking alerts — chatId TIDAK pernah dikirim; hanya status + nama chat
+    bound?: boolean;
+    chatName?: string | null;
     // Video — Zoom / Google Meet
     provider?: string | null;
     // Voice AI (Vapi) — nomor keluar pilihan workspace
@@ -90,6 +104,15 @@ export interface TallyFormOption {
 /** Respons POST /integrations/tally/preview (API key divalidasi, tidak disimpan). */
 export interface TallyPreviewResponse {
   forms: TallyFormOption[];
+}
+
+/**
+ * Respons POST /integrations/telegram-alerts/connect — tautan bind deep-link.
+ * Buka `bindUrl` lalu tekan Start pada bot untuk mengikat chat.
+ */
+export interface TelegramAlertsConnectResponse {
+  integration: WorkspaceIntegration;
+  bindUrl: string;
 }
 
 /** Respons POST /integrations/calendar/calendars. */
@@ -173,4 +196,40 @@ export interface VapiInboundNumber {
 export interface VapiInboundStatusResponse {
   configured: boolean;
   numbers: VapiInboundNumber[];
+}
+
+/** Status koneksi WhatsApp Business (Meta Embedded Signup — Tech Provider). */
+export type WhatsAppBusinessStatus =
+  | 'not_connected'
+  | 'connecting'
+  | 'connected'
+  | 'error'
+  | 'disconnected';
+
+/**
+ * Koneksi WhatsApp Business publik (dari GET /whatsapp-business) — TANPA
+ * token/ID privat. `platformConfigured` = Meta App platform sudah disetel.
+ */
+export interface WhatsAppBusinessConnection {
+  status: WhatsAppBusinessStatus;
+  wabaId: string | null;
+  phoneNumberId: string | null;
+  displayPhoneNumber: string | null;
+  businessName: string | null;
+  aiAssistantEnabled: boolean;
+  errorMessage: string | null;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+  disconnectedAt: string | null;
+  platformConfigured: boolean;
+}
+
+/** Respons GET /whatsapp-business (dan POST /refresh, /check). */
+export interface WhatsAppBusinessStatusResponse {
+  connection: WhatsAppBusinessConnection;
+}
+
+/** Respons POST /whatsapp-business/connect — URL dialog Embedded Signup. */
+export interface WhatsAppBusinessConnectResponse {
+  signupUrl: string;
 }

@@ -39,25 +39,29 @@ function extractErrorMessage(body: string, fallback: string): string {
   return body.length > 200 ? `${body.slice(0, 200)}…` : body;
 }
 
+/** Init fetch aplikasi — tambahan `timeoutMs` (default 10s) per-call. */
+export type ApiFetchInit = RequestInit & { timeoutMs?: number };
+
 /**
  * Fetch ke backend Hono dengan timeout + header otomatis (Bearer token,
  * cookie sesi HttpOnly, X-Workspace-Id). Mengembalikan Response mentah —
  * interpretasi status dilakukan pemanggil.
  */
-async function doFetch(path: string, init: RequestInit, token: string | null): Promise<Response> {
+async function doFetch(path: string, init: ApiFetchInit, token: string | null): Promise<Response> {
   const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId;
+  const { timeoutMs = 10_000, ...fetchInit } = init;
 
   // Timeout: abort fetch bila backend tidak merespons. `signal` pemanggil
   // (bila ada) tetap dihormati dengan menggabungkannya.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  const signal = init.signal
-    ? AbortSignal.any([init.signal, controller.signal])
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = fetchInit.signal
+    ? AbortSignal.any([fetchInit.signal, controller.signal])
     : controller.signal;
 
   try {
     return await fetch(`${env.API_URL}${path}`, {
-      ...init,
+      ...fetchInit,
       // Kirim cookie sesi HttpOnly (hand-off) bersama request. Bearer token
       // tetap dilampirkan bila masih ada — keduanya diakui server.
       credentials: 'include',
@@ -66,7 +70,7 @@ async function doFetch(path: string, init: RequestInit, token: string | null): P
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(activeWorkspaceId ? { 'X-Workspace-Id': activeWorkspaceId } : {}),
-        ...init.headers,
+        ...fetchInit.headers,
       },
     });
   } finally {
@@ -157,7 +161,7 @@ function resetSession(): void {
  * masalah sesaat (JWKS hiccup, API cold-start, clock skew) tidak lagi
  * mengusir user yang masih punya sesi valid.
  */
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promise<T> {
   let token = getAccessToken();
   let res = await doFetch(path, init, token);
 

@@ -1,5 +1,7 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
+
+import { ensureTallyFormEnhanced } from '../lib/tally.ts';
 
 import { TelnyxApiError } from '../services/telnyx.ts';
 import { VapiCredentialApiError } from '../services/vapi-credential.ts';
@@ -229,10 +231,11 @@ const { dbState } = vi.hoisted(() => ({
 }));
 
 vi.mock('../db/index.ts', async () => {
-  const { workspaces, workspaceIntegrations } = await import('@oriole/database');
+  const { services, workspaces, workspaceIntegrations } = await import('@oriole/database');
   const tableNames = new WeakMap<object, string>();
   tableNames.set(workspaces, 'workspaces');
   tableNames.set(workspaceIntegrations, 'workspaceIntegrations');
+  tableNames.set(services, 'services');
 
   const NOW = new Date('2026-01-01T00:00:00.000Z');
 
@@ -1209,6 +1212,290 @@ describe('PATCH/DELETE /api/integrations/webhook', () => {
       headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
     });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe('POST /api/integrations/tally/connect — checklist updateContent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('updateContent=true → PATCH /forms/:id menimpa blocks + formName = Booking <bisnis>', async () => {
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Klinik Sehat', industry: 'dental' },
+    ]);
+    dbState.tables.set('workspaceIntegrations', []);
+    // getTallyForm (GET) + updateTallyBookingForm (PATCH) + registerWebhook (POST)
+    // — semua dijawab oleh stub yang sama.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'xyz123', name: 'Survey' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request('/api/integrations/tally/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'tly_test_1234567890', formId: 'xyz123', updateContent: true }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      integration: { identifier: string | null; config: { formName: string | null } };
+    };
+    expect(body.integration.identifier).toBe('Booking Klinik Sehat');
+    expect(body.integration.config.formName).toBe('Booking Klinik Sehat');
+    // API key tidak pernah bocor ke respons.
+    expect(JSON.stringify(body)).not.toContain('tly_test_1234567890');
+
+    // Urutan panggilan: GET /forms/:id → PATCH /forms/:id → POST /webhooks.
+    expect(fetchMock.mock.calls).toHaveLength(3);
+    const [getUrl] = fetchMock.mock.calls[0];
+    expect(String(getUrl)).toBe('https://api.tally.so/forms/xyz123');
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1];
+    expect(String(patchUrl)).toBe('https://api.tally.so/forms/xyz123');
+    expect((patchInit as RequestInit).method).toBe('PATCH');
+    const payload = JSON.parse(String((patchInit as RequestInit).body));
+    expect(payload.status).toBe('PUBLISHED');
+    // dental: 5 base + 1 tambahan + 1 catatan = 7 field → 1 judul + 7×2
+    // block + 1 hidden field `phone` (prefill).
+    expect(payload.blocks).toHaveLength(1 + 7 * 2 + 1);
+    expect(payload.blocks.some((b: { type: string }) => b.type === 'HIDDEN_FIELDS')).toBe(true);
+    expect(payload.blocks[0].payload).toMatchObject({ title: 'Booking Klinik Sehat' });
+    const [webhookUrl, webhookInit] = fetchMock.mock.calls[2];
+    expect(String(webhookUrl)).toBe('https://api.tally.so/webhooks');
+    expect((webhookInit as RequestInit).method).toBe('POST');
+  });
+
+  it('updateContent=false (default) → tidak ada PATCH, formName tetap milik form', async () => {
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Klinik Sehat', industry: 'dental' },
+    ]);
+    dbState.tables.set('workspaceIntegrations', []);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'xyz123', name: 'Survey' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request('/api/integrations/tally/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'tly_test_1234567890', formId: 'xyz123' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      integration: { identifier: string | null; config: { formName: string | null } };
+    };
+    expect(body.integration.identifier).toBe('Survey');
+    expect(body.integration.config.formName).toBe('Survey');
+
+    // Hanya GET /forms/:id + POST /webhooks — tanpa PATCH.
+    expect(fetchMock.mock.calls).toHaveLength(2);
+    // GET tidak menyertakan method (default fetch) → undefined ≈ GET.
+    const methods = fetchMock.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.method ?? 'GET');
+    expect(methods).toEqual(['GET', 'POST']);
+  });
+
+  it('updateContent=true tapi Tally menolak PATCH → 400, tidak ada webhook terdaftar', async () => {
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Klinik Sehat', industry: 'dental' },
+    ]);
+    dbState.tables.set('workspaceIntegrations', []);
+    const fetchMock = vi
+      .fn()
+      // GET /forms/:id sukses (validasi form), lalu PATCH ditolak Tally.
+      // PATCH dicoba dua kali: percobaan pertama dengan blok prefill phone
+      // (fallback internal), kedua tanpa prefill — keduanya ditolak → 400.
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'xyz123', name: 'Survey' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ message: 'Forbidden' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ message: 'Forbidden' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request('/api/integrations/tally/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'tly_test_1234567890', formId: 'xyz123', updateContent: true }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('Forbidden');
+    // Connect gagal → integrasi tidak tersimpan, webhook tidak didaftarkan.
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+    // GET /forms/:id + PATCH prefill (ditolak) + PATCH fallback (ditolak).
+    expect(fetchMock.mock.calls).toHaveLength(3);
+  });
+});
+
+describe('POST /api/integrations/tally/update-content — sinkronkan konten form', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('layanan katalog → PATCH form dengan DROPDOWN_OPTION + flag serviceDropdown', async () => {
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Klinik Sehat', industry: 'dental' },
+    ]);
+    dbState.tables.set('workspaceIntegrations', [
+      {
+        id: 'int-tally-1',
+        workspaceId: 'ws-1',
+        integrationType: 'tally',
+        identifier: 'Booking Klinik Sehat',
+        providerConfig: {
+          // Tanpa APP_ENCRYPTION_KEY, encrypt/decrypt = plaintext (compat).
+          apiKey: 'tly_test_1234567890',
+          webhookSecret: 'wh-secret',
+          formId: 'xyz123',
+          formName: 'Booking Klinik Sehat',
+          phonePrefill: true,
+          serviceDropdown: false,
+        },
+        isActive: true,
+      },
+    ]);
+    // Katalog layanan workspace — menjadi opsi dropdown.
+    dbState.tables.set('services', [
+      { id: 'svc-1', workspaceId: 'ws-1', name: 'Scaling Gigi', isActive: true },
+      { id: 'svc-2', workspaceId: 'ws-1', name: 'Bleaching', isActive: true },
+    ]);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'xyz123', name: 'Booking Klinik Sehat' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request('/api/integrations/tally/update-content', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      integration: {
+        config: { serviceDropdown: boolean; prefillPhone: boolean; lastContentSyncAt?: string | null };
+      };
+    };
+    expect(body.integration.config.serviceDropdown).toBe(true);
+    expect(body.integration.config.prefillPhone).toBe(true);
+    // Auto-sync guard: keberhasilan men-stamp lastContentSyncAt.
+    expect(typeof body.integration.config.lastContentSyncAt).toBe('string');
+
+    // PATCH /forms/:id berisi DROPDOWN_OPTION per layanan katalog.
+    const [patchUrl, patchInit] = fetchMock.mock.calls[0];
+    expect(String(patchUrl)).toBe('https://api.tally.so/forms/xyz123');
+    expect((patchInit as RequestInit).method).toBe('PATCH');
+    const payload = JSON.parse(String((patchInit as RequestInit).body));
+    const options = payload.blocks.filter((b: { type: string }) => b.type === 'DROPDOWN_OPTION');
+    expect(options.map((o: { payload: { text: string } }) => o.payload.text)).toEqual([
+      'Scaling Gigi',
+      'Bleaching',
+    ]);
+    expect(options[0].payload).toMatchObject({ index: 0, isFirst: true, isLast: false });
+    expect(options[1].payload).toMatchObject({ index: 1, isFirst: false, isLast: true });
+  });
+});
+
+describe('ensureTallyFormEnhanced — self-heal form saat tautan dikirim', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('prefill sudah aktif → no-op tanpa panggilan API', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      {
+        id: 'int-tally-1',
+        workspaceId: 'ws-1',
+        integrationType: 'tally',
+        identifier: 'Booking Klinik',
+        providerConfig: {
+          apiKey: 'tly_test_1',
+          formId: 'xyz123',
+          phonePrefill: true,
+          serviceDropdown: true,
+        },
+        isActive: true,
+      },
+    ]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await ensureTallyFormEnhanced('ws-1')).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('form belum enhanced → PATCH form + stamp flags (phonePrefill true)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      {
+        id: 'int-tally-1',
+        workspaceId: 'ws-1',
+        integrationType: 'tally',
+        identifier: 'Booking Klinik',
+        providerConfig: {
+          apiKey: 'tly_test_1',
+          formId: 'xyz123',
+          phonePrefill: false,
+          serviceDropdown: false,
+        },
+        isActive: true,
+      },
+    ]);
+    dbState.tables.set('services', []);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'xyz123', name: 'Booking Klinik' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await ensureTallyFormEnhanced('ws-1')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://api.tally.so/forms/xyz123');
+    expect((init as RequestInit).method).toBe('PATCH');
+    const payload = JSON.parse(String((init as RequestInit).body));
+    // Token chat + prefill datang dari blok HIDDEN_FIELDS.
+    expect(payload.blocks.some((b: { type: string }) => b.type === 'HIDDEN_FIELDS')).toBe(true);
+    // Flags ter-stamp di providerConfig.
+    const [updatedRow] = dbState.tables.get('workspaceIntegrations') ?? [];
+    const updatedConfig = (updatedRow as { providerConfig: Record<string, unknown> }).providerConfig;
+    expect(updatedConfig.phonePrefill).toBe(true);
+    expect(updatedConfig.lastContentSyncError).toBeNull();
+  });
+
+  it('percobaan baru-baru ini (throttle 1 jam) → skip tanpa panggilan API', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      {
+        id: 'int-tally-1',
+        workspaceId: 'ws-1',
+        integrationType: 'tally',
+        identifier: 'Booking Klinik',
+        providerConfig: {
+          apiKey: 'tly_test_1',
+          formId: 'xyz123',
+          phonePrefill: false,
+          contentSyncAttemptedAt: new Date().toISOString(),
+        },
+        isActive: true,
+      },
+    ]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await ensureTallyFormEnhanced('ws-1')).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

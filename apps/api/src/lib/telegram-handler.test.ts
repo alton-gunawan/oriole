@@ -355,7 +355,12 @@ afterEach(() => {
 
 // ── Test: import handler setelah mock siap ──────────────────────
 
-import { dispatchTelegramReminder, handleTelegramUpdate, TelegramDispatchError } from './telegram-handler.ts';
+import {
+  dispatchTelegramConfirmation,
+  dispatchTelegramReminder,
+  handleTelegramUpdate,
+  TelegramDispatchError,
+} from './telegram-handler.ts';
 
 describe('handleTelegramUpdate — pesan teks baru (belum terhubung)', () => {
   it('user baru → minta nomor HP (state awaiting-phone), balasan + percakapan dibuat', async () => {
@@ -435,10 +440,20 @@ describe('handleTelegramUpdate — pesan teks baru (belum terhubung)', () => {
     await handleTelegramUpdate(WORKSPACE_ID, textUpdate('Halo', 1001));
     await handleTelegramUpdate(WORKSPACE_ID, textUpdate('081234567890', 1002));
 
-    // Bukan pesan mismatch — tanpa form terhubung: handoff staf (no form).
+    // Bukan pesan mismatch — tanpa form terhubung: jelaskan tidak ada booking
+    // aktif + arahkan hubungi admin (handoff staf).
     const reply = sendMessageMock.mock.calls[1][0];
-    expect(reply.text).toContain('not accepting online bookings');
-    expect(dbState.customerChannels).toHaveLength(0);
+    expect(reply.text).toContain('active booking');
+    expect(reply.text).toContain('contact our admin');
+    // Chat ↔ nomor tetap di-link (opt-in) — konfirmasi dari form nanti bisa
+    // menjangkau chat ini walau booking belum ada.
+    expect(dbState.customerChannels).toHaveLength(1);
+    expect(dbState.customerChannels[0]).toMatchObject({
+      channelType: 'telegram',
+      identifier: CHAT_ID,
+      contactPhone: '6281234567890',
+      isOptedIn: true,
+    });
     // Tetap di state awaiting-phone (bisa coba lagi), TAPI ditandai handoff
     // agar staf melihatnya di inbox.
     expect((dbState.conversations[0]?.state as { step?: string })?.step).toBe('awaiting-phone');
@@ -463,7 +478,12 @@ describe('handleTelegramUpdate — pesan teks baru (belum terhubung)', () => {
     expect(reply.text).toContain('active booking');
     // Customer langsung bisa booking dari awal lewat form.
     expect(reply.text).toContain('https://docs.google.com/forms/d/e/abc123/viewform');
-    expect(dbState.customerChannels).toHaveLength(0);
+    // Chat ↔ nomor di-link (opt-in) saat tautan form dikirim.
+    expect(dbState.customerChannels).toHaveLength(1);
+    expect(dbState.customerChannels[0]).toMatchObject({
+      identifier: CHAT_ID,
+      contactPhone: '6281234567890',
+    });
   });
 
   it('input bukan nomor valid → minta ulang dengan keyboard request_contact (bukan "tidak cocok")', async () => {
@@ -497,6 +517,91 @@ describe('handleTelegramUpdate — pesan teks baru (belum terhubung)', () => {
     // chatLanguage 'id' menang walau callGoalLanguage masih 'en'.
     expect(sendMessageMock.mock.calls[0][0].text).toContain('bagikan nomor HP');
     expect(sendMessageMock.mock.calls[0][0].requestContact).toEqual({ label: '📱 Bagikan Nomor' });
+  });
+});
+
+describe('handleTelegramUpdate — bind Telegram booking alerts (/start oriole_<token>)', () => {
+  const BIND_TOKEN = '0123456789abcdef'.repeat(3); // 48 hex
+
+  function alertsRow() {
+    return {
+      workspaceId: WORKSPACE_ID,
+      integrationType: 'telegram-alerts',
+      isActive: true,
+      providerConfig: { bindToken: BIND_TOKEN, chatId: null, chatName: null },
+    };
+  }
+
+  it('/start oriole_<token> valid → chat terikat + balasan konfirmasi, tanpa percakapan', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    dbState.workspaces = [{ id: WORKSPACE_ID, name: 'Klinik', chatLanguage: 'en' }];
+    dbState.workspaceIntegrations = [alertsRow()];
+
+    const result = await handleTelegramUpdate(WORKSPACE_ID, textUpdate(`/start oriole_${BIND_TOKEN}`, 9001));
+    expect(result).toEqual({ handled: true, reason: 'alert-bind' });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    const sent = sendMessageMock.mock.calls[0][0];
+    expect(sent.chatId).toBe(CHAT_ID);
+    expect(sent.text).toContain('Booking alerts are now enabled');
+
+    // Chat terikat di providerConfig; pesan bind TIDAK masuk inbox.
+    expect((dbState.workspaceIntegrations[0]?.providerConfig as Record<string, unknown>).chatId).toBe(CHAT_ID);
+    expect(dbState.conversations).toHaveLength(0);
+    expect(dbState.messages).toHaveLength(0);
+  });
+
+  it('/start oriole_<token> salah → balasan error, tetap handled (tidak masuk alur customer)', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    dbState.workspaces = [{ id: WORKSPACE_ID, name: 'Klinik', chatLanguage: 'en' }];
+    dbState.workspaceIntegrations = [alertsRow()];
+
+    const result = await handleTelegramUpdate(WORKSPACE_ID, textUpdate(`/start oriole_${'f'.repeat(48)}`, 9002));
+    expect(result).toEqual({ handled: true, reason: 'alert-bind' });
+    expect(sendMessageMock.mock.calls[0][0].text).toContain('invalid or expired');
+    expect(dbState.conversations).toHaveLength(0);
+  });
+
+  it('/start polos → bukan bind, jatuh ke alur customer biasa (minta nomor)', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    const result = await handleTelegramUpdate(WORKSPACE_ID, textUpdate('/start', 9003));
+    expect(result).toEqual({ handled: true });
+    expect(sendMessageMock.mock.calls[0][0].requestContact).toBeTruthy();
+  });
+});
+
+describe('handleTelegramUpdate — booking-request (mau booking)', () => {
+  it('minta booking + form terhubung → balas tautan form (bukan minta nomor)', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    dbState.workspaceIntegrations = [
+      {
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'google-forms',
+        isActive: true,
+        providerConfig: { formId: 'abc123', formName: 'Formulir Pendaftaran' },
+      },
+    ];
+
+    await handleTelegramUpdate(WORKSPACE_ID, textUpdate('mau booking', 1001));
+
+    const reply = sendMessageMock.mock.calls[0][0];
+    expect(reply.text).toContain('https://docs.google.com/forms/d/e/abc123/viewform');
+    expect(reply.text).not.toContain('share your phone number');
+    // Tidak masuk state awaiting-phone — customer langsung diarahkan booking.
+    expect(dbState.conversations[0]?.state).toBeUndefined();
+    expect(dbState.conversations[0]?.status).toBe('active');
+  });
+
+  it('minta booking tanpa form → handoff admin (needsAttention), bukan "tidak menerima booking"', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+
+    await handleTelegramUpdate(WORKSPACE_ID, textUpdate('mau booking', 1001));
+
+    const reply = sendMessageMock.mock.calls[0][0];
+    expect(reply.text).toContain('admin');
+    expect(reply.text).not.toContain('not accepting online bookings');
+    expect((dbState.conversations[0]?.state as { needsAttention?: boolean })?.needsAttention).toBe(true);
+    expect(dbState.customerChannels).toHaveLength(0);
   });
 });
 
@@ -541,8 +646,14 @@ describe('handleTelegramUpdate — kontak (request_contact)', () => {
     await handleTelegramUpdate(WORKSPACE_ID, contactUpdate('+628111222333', 1002));
 
     const reply = sendMessageMock.mock.calls[1][0];
-    expect(reply.text).toContain('not accepting online bookings');
-    expect(dbState.customerChannels).toHaveLength(0);
+    expect(reply.text).toContain('active booking');
+    expect(reply.text).toContain('contact our admin');
+    // Kontak dibagikan → chat ↔ nomor di-link (opt-in) walau tanpa booking.
+    expect(dbState.customerChannels).toHaveLength(1);
+    expect(dbState.customerChannels[0]).toMatchObject({
+      identifier: CHAT_ID,
+      contactPhone: '628111222333',
+    });
     expect((dbState.conversations[0]?.state as { step?: string })?.step).toBe('awaiting-phone');
     expect((dbState.conversations[0]?.state as { needsAttention?: boolean })?.needsAttention).toBe(true);
   });
@@ -850,6 +961,82 @@ describe('dispatchTelegramReminder — outbound reminder', () => {
       },
     ];
     await expect(dispatchTelegramReminder(reminderInput)).rejects.toThrow(TelegramDispatchError);
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('dispatchTelegramConfirmation — konfirmasi booking diterima', () => {
+  const confirmationInput = {
+    workspaceId: WORKSPACE_ID,
+    booking: {
+      id: BOOKING_ID,
+      title: 'Scaling Gigi',
+      customerName: 'Budi',
+      phone: '081234567890',
+      scheduledAt: new Date('2026-08-15T07:00:00.000Z'),
+      timezone: 'Asia/Jakarta',
+      videoLink: null,
+    },
+    businessName: 'Klinik Gigi Sehat',
+  };
+
+  it('mengirim konfirmasi tanpa tombol + dedup confirmationBookingId', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    dbState.customerChannels = [
+      {
+        workspaceId: WORKSPACE_ID,
+        channelType: 'telegram',
+        identifier: CHAT_ID,
+        contactPhone: '081234567890',
+        isOptedIn: true,
+      },
+    ];
+
+    const { messageId } = await dispatchTelegramConfirmation(confirmationInput);
+    expect(messageId).toBe(777);
+
+    const sent = sendMessageMock.mock.calls[0][0];
+    expect(sent.chatId).toBe(CHAT_ID);
+    expect(sent.text).toContain('has been received');
+    expect(sent.buttons).toBeUndefined();
+
+    const outbound = dbState.messages.filter((m) => m.direction === 'outbound');
+    expect(outbound).toHaveLength(1);
+    expect(outbound[0].metadata).toEqual({ confirmationBookingId: BOOKING_ID });
+    expect(outbound[0].status).toBe('sent');
+  });
+
+  it('chatOverride (token asal form) → konfirmasi dikirim tanpa nomor terhubung', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    // Customer TIDAK punya baris customerChannels — chat hanya dikenal lewat
+    // token orioleChatId yang dibawa submission (override).
+    dbState.customerChannels = [];
+
+    const { messageId } = await dispatchTelegramConfirmation({
+      ...confirmationInput,
+      chatOverride: { identifier: CHAT_ID },
+    });
+    expect(messageId).toBe(777);
+    expect(sendMessageMock.mock.calls[0][0].chatId).toBe(CHAT_ID);
+    const outbound = dbState.messages.filter((m) => m.direction === 'outbound');
+    expect(outbound).toHaveLength(1);
+    expect(outbound[0].metadata).toEqual({ confirmationBookingId: BOOKING_ID });
+    // Tautan chat ↔ nomor dikuatkan (opt-in) agar reminder berikutnya jalan.
+    expect(dbState.customerChannels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channelType: 'telegram',
+          identifier: CHAT_ID,
+          contactPhone: '6281234567890',
+          isOptedIn: true,
+        }),
+      ]),
+    );
+  });
+
+  it('customer belum terhubung → TelegramDispatchError (dilewati caller)', async () => {
+    dbState.workspaceChannels = [telegramChannel()];
+    await expect(dispatchTelegramConfirmation(confirmationInput)).rejects.toThrow(TelegramDispatchError);
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
 });

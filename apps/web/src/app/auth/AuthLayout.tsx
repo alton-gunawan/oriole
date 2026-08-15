@@ -10,11 +10,11 @@ import { IconArrowLeft } from '../shell/icons';
 export function AuthLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-white p-8 text-zinc-900">
+    <main className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-white dark:bg-zinc-900 p-8 text-zinc-900 dark:text-zinc-100">
       <div className="absolute left-6 top-6">
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 transition hover:text-zinc-900"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 dark:text-zinc-400 transition hover:text-zinc-900 dark:hover:text-zinc-100"
         >
           <IconArrowLeft className="size-4" strokeWidth={2} aria-hidden="true" />
           {t('errors.backToHome')}
@@ -24,7 +24,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <LocaleSwitcher />
       </div>
       <div className="w-full max-w-sm">
-        <div className="rounded-2xl bg-white p-8">
+        <div className="rounded-2xl bg-white dark:bg-zinc-900 p-8">
           <Link to="/" className="mb-8 flex items-center gap-3">
             <span className="flex size-12 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-sm">
               <AppLogo />
@@ -53,15 +53,15 @@ export function AuthField({ label, error, className, ...props }: AuthFieldProps)
     <input
       {...props}
       type={isPassword && showPassword ? 'text' : props.type}
-      className={`w-full rounded-lg border bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 ${
-        error ? 'border-red-400' : 'border-zinc-300'
+      className={`w-full rounded-lg border bg-white dark:bg-zinc-900 px-3 py-2 text-base text-zinc-900 dark:text-zinc-100 outline-none transition placeholder:text-zinc-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 ${
+        error ? 'border-red-400' : 'border-zinc-300 dark:border-zinc-600'
       } ${isPassword ? 'pr-10' : ''} ${className ?? ''}`}
     />
   );
 
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-zinc-700">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
       <span className="relative block">
         {input}
         {isPassword && (
@@ -71,7 +71,7 @@ export function AuthField({ label, error, className, ...props }: AuthFieldProps)
             onClick={() => setShowPassword((v) => !v)}
             aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
             aria-pressed={showPassword}
-            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-zinc-400 transition hover:text-zinc-600"
+            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-400"
           >
             {showPassword ? (
               // Eye-off (garis miring)
@@ -91,7 +91,7 @@ export function AuthField({ label, error, className, ...props }: AuthFieldProps)
           </button>
         )}
       </span>
-      {error && <span className="mt-1.5 block text-xs text-red-600">{error}</span>}
+      {error && <span className="mt-1.5 block text-sm text-red-600">{error}</span>}
     </label>
   );
 }
@@ -100,7 +100,7 @@ export function Spinner({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className={`inline-block size-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-500 ${className ?? ''}`}
+      className={`inline-block size-5 animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-600 border-t-zinc-500 ${className ?? ''}`}
     />
   );
 }

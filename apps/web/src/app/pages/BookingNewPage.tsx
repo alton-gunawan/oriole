@@ -16,13 +16,6 @@ import {
   TextInput,
   type ISODateTimeString,
 } from '@astryxdesign/core';
-import {
-  determineCallGoal,
-  type BookingGoalContext,
-  type BusinessGoalContext,
-  type GoalCustomization,
-  type Industry,
-} from '@oriole/call-goals';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
@@ -35,7 +28,6 @@ import type { StaffListResponse } from '../../lib/staff';
 import type { ServiceRecord, ServicesListResponse } from '../../lib/services';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
-import { GoalCustomizer } from '../shell/GoalCustomizer';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
 import { Card, PageHeader } from '../shell/ui';
 
@@ -48,9 +40,7 @@ interface ContactSuggestion {
 export function BookingNewPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
 
   // ── Title diambil dari layanan katalog (bukan input manual) ──
   const [title, setTitle] = useState('');
@@ -100,7 +90,6 @@ export function BookingNewPage() {
     if (service.staffIds.length === 1) setStaffId(service.staffIds[0]);
   };
 
-  const [customization, setCustomization] = useState<GoalCustomization | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -164,26 +153,6 @@ export function BookingNewPage() {
     setContactQuery('');
   };
 
-  const business: BusinessGoalContext = {
-    id: activeWorkspaceId,
-    name: workspace?.name ?? null,
-    industry: (workspace?.industry as Industry | null | undefined) ?? null,
-  };
-
-  const bookingContext: BookingGoalContext = {
-    id: 'new',
-    title: title.trim() || t('bookingNew.title'),
-    status: 'pending',
-    scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
-    timezone,
-    customerName: customerName.trim() || null,
-    phone: phone.trim() || null,
-    changeRequested: false,
-    noShowCount: 0,
-    previousCallAttempts: 0,
-    failedCallAttempts: 0,
-  };
-
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -198,7 +167,6 @@ export function BookingNewPage() {
           timezone,
           customerName: customerName.trim() || undefined,
           phone: phone.trim() || undefined,
-          goal: customization ?? undefined,
           // Booking WAJIB berasal dari layanan katalog — title & durasi
           // diisi otomatis dari service (server juga mengisi bila kosong).
           serviceId: serviceId || undefined,
@@ -225,7 +193,7 @@ export function BookingNewPage() {
       >
         <Link
           to="/app/bookings"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
         >
           <IconChevronLeft className="size-4" />
           {t('common.cancel')}
@@ -287,7 +255,7 @@ export function BookingNewPage() {
               <button
                 type="button"
                 onClick={openPicker}
-                className="mt-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-50 hover:text-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                className="mt-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-50 hover:text-amber-800 dark:hover:bg-amber-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 <IconUsers className="size-3.5" />
                 {t('bookingNew.pickContact')}
@@ -333,7 +301,7 @@ export function BookingNewPage() {
             </div>
 
             {/* Pengulangan — ekspansi jadi beberapa instance booking satu seri. */}
-            <div className="sm:col-span-2 rounded-xl border border-zinc-100 p-4">
+            <div className="sm:col-span-2 rounded-xl border border-zinc-100 dark:border-zinc-800 p-4">
               <Switch
                 label={t('bookingNew.repeat')}
                 description={t('bookingNew.repeatDesc')}
@@ -365,7 +333,7 @@ export function BookingNewPage() {
                   />
                   {recurrence.frequency === 'weekly' && (
                     <div className="sm:col-span-2">
-                      <p className="mb-1.5 text-xs font-medium text-zinc-600">{t('bookingNew.repeatWeekdays')}</p>
+                      <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('bookingNew.repeatWeekdays')}</p>
                       <div className="flex flex-wrap gap-1.5">
                         {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day, index) => {
                           const selected = (recurrence.weekdays ?? []).includes(index);
@@ -386,7 +354,7 @@ export function BookingNewPage() {
                               className={`size-8 rounded-full text-xs font-semibold transition ${
                                 selected
                                   ? 'bg-amber-500 text-white shadow-sm'
-                                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                               }`}
                             >
                               {day}
@@ -422,23 +390,8 @@ export function BookingNewPage() {
           </div>
         </Card>
 
-        {/* Progressive disclosure goal CALL-E */}
-        <div>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            <IconCalendar className="size-4" />
-            {t('bookingNew.autoCallHeading')}
-          </h2>
-          <GoalCustomizer
-            booking={bookingContext}
-            business={business}
-            autoDecision={determineCallGoal(bookingContext)}
-            value={customization}
-            onChange={setCustomization}
-          />
-        </div>
-
         {error && (
-          <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
             {error}
           </p>
         )}
@@ -482,13 +435,13 @@ export function BookingNewPage() {
 
                 <div aria-live="polite" className="max-h-72 overflow-y-auto">
                   {isContactsLoading ? (
-                    <p className="px-1 py-8 text-center text-sm text-zinc-500">{t('bookingNew.loadingContacts')}</p>
+                    <p className="px-1 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">{t('bookingNew.loadingContacts')}</p>
                   ) : contactsError ? (
                     <p role="alert" className="px-1 py-8 text-center text-sm text-red-600">
                       {t('errors.loadContactsBody')}
                     </p>
                   ) : filteredContacts.length === 0 ? (
-                    <p className="px-1 py-8 text-center text-sm text-zinc-500">
+                    <p className="px-1 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
                       {contactQuery.trim()
                         ? t('bookingNew.noMatch')
                         : t('bookingNew.noContacts')}
@@ -500,16 +453,16 @@ export function BookingNewPage() {
                           <button
                             type="button"
                             onClick={() => applyContact(contact)}
-                            className="flex w-full items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-left transition hover:bg-amber-50 hover:ring-1 hover:ring-amber-200 focus-visible:bg-amber-50 focus-visible:ring-1 focus-visible:ring-amber-300 focus-visible:outline-none"
+                            className="flex w-full items-center gap-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-left transition hover:bg-amber-50 hover:ring-1 hover:ring-amber-200 focus-visible:bg-amber-50 focus-visible:ring-1 focus-visible:ring-amber-300 focus-visible:outline-none"
                           >
                             <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-xs font-bold text-amber-700">
                               {(contact.name ?? '?').slice(0, 1).toUpperCase()}
                             </span>
                             <span className="min-w-0">
-                              <span className="block truncate text-[15px] font-medium text-zinc-800">
+                              <span className="block truncate text-[15px] font-medium text-zinc-800 dark:text-zinc-200">
                                 {contact.name ?? t('common.noName')}
                               </span>
-                              <span className="block truncate text-sm text-zinc-500">{contact.phone}</span>
+                              <span className="block truncate text-sm text-zinc-500 dark:text-zinc-400">{contact.phone}</span>
                             </span>
                           </button>
                         </li>

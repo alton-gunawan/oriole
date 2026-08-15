@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { VapiClient } from '@vapi-ai/server-sdk';
-import { workspaceIntegrations } from '@oriole/database';
+import { workspaceIntegrations, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { env } from '../lib/env.ts';
@@ -30,12 +30,17 @@ import {
   type NotionConfig,
 } from '../lib/notion.ts';
 import {
+  createTallyBookingForm,
+  getTallyApiKey,
   getTallyForm,
   listTallyForms,
+  listWorkspaceServicesForForm,
   registerTallyWebhook,
   removeTallyWebhook,
+  tallyBookingFormTitle,
   tallyWebhookUrl,
   TallyApiError,
+  updateTallyBookingForm,
   type TallyConfig,
 } from '../lib/tally.ts';
 import {
@@ -68,6 +73,13 @@ import {
   SlackDeliveryError,
   type SlackConfig,
 } from '../lib/slack.ts';
+import {
+  ensureTelegramAlertsConfig,
+  sendTestTelegramAlert,
+  telegramAlertsBindUrl,
+  TelegramAlertError,
+  type TelegramAlertsConfig,
+} from '../lib/telegram-alerts.ts';
 import { availableVideoProviders, type VideoConfig } from '../lib/video.ts';
 
 /** Panjang minimum token integrasi Notion (secret_... jauh lebih panjang). */
@@ -145,6 +157,13 @@ const tallyTokenSchema = z.object({
 const tallyConnectSchema = tallyTokenSchema.extend({
   formId: z.string().trim().min(1, 'Form wajib dipilih').max(100),
   formName: z.string().trim().max(200).optional().nullable(),
+  /** Checklist di dialog Connect: timpa isi form dengan field booking standar. */
+  updateContent: z.boolean().optional().default(false),
+});
+
+/** Generate form booking + langsung hubungkan (tanpa formId — dibuat dulu). */
+const tallyGenerateSchema = tallyTokenSchema.extend({
+  businessName: z.string().trim().max(200).optional().nullable(),
 });
 
 const isActivePatchSchema = z.object({ isActive: z.boolean() });
@@ -192,7 +211,7 @@ interface VapiIntegrationConfig {
 const formSendSchema = z.object({
   integrationType: z.enum(['google-forms', 'tally']),
   contactId: z.string().uuid('ID kontak tidak valid'),
-  channel: z.enum(['whatsapp', 'telegram', 'email']),
+  channel: z.enum(['whatsapp', 'telegram', 'email', 'line']),
 });
 
 type IntegrationRow = typeof workspaceIntegrations.$inferSelect;
@@ -281,6 +300,21 @@ function toPublicIntegration(row: IntegrationRow) {
             typeof tallyConfig.webhookSecret === 'string' && tallyConfig.webhookSecret.length > 0,
           // Marker migrasi dari Typeform (migration 0022) — UI menampilkan banner.
           migratedFrom: tallyConfig.migratedFrom === 'typeform' ? 'typeform' : null,
+          // Form memuat hidden field `phone` → URL ?phone= mengisi nomor otomatis.
+          prefillPhone: tallyConfig.phonePrefill === true,
+          // Pertanyaan layanan memakai DROPDOWN dari katalog (bukan teks bebas).
+          serviceDropdown: tallyConfig.serviceDropdown === true,
+          // Kapan terakhir konten form disinkronkan (auto-sync guard di UI —
+          // form yang belum punya prefill/dropdown disinkronkan otomatis).
+          lastContentSyncAt:
+            typeof tallyConfig.contentSyncAttemptedAt === 'string'
+              ? tallyConfig.contentSyncAttemptedAt
+              : null,
+          // Alasan sinkronisasi konten gagal terakhir (null = sukses).
+          lastContentSyncError: tallyConfig.lastContentSyncError ?? null,
+          // Status konfirmasi booking terakhir ke customer (diagnostik UI).
+          lastConfirmationAt: tallyConfig.lastConfirmationAt ?? null,
+          lastConfirmationError: tallyConfig.lastConfirmationError ?? null,
         },
       };
     }
@@ -323,6 +357,22 @@ function toPublicIntegration(row: IntegrationRow) {
         isActive: row.isActive,
         lastSyncAt: row.lastSyncAt ? row.lastSyncAt.toISOString() : null,
         config: { provider: videoConfig.provider ?? null },
+      };
+    }
+    case 'telegram-alerts': {
+      const alertConfig = config as Partial<TelegramAlertsConfig>;
+      return {
+        id: row.id,
+        integrationType: row.integrationType,
+        identifier: row.identifier ?? alertConfig.chatName ?? null,
+        isActive: row.isActive,
+        lastSyncAt: row.lastSyncAt ? row.lastSyncAt.toISOString() : null,
+        config: {
+          // chatId TIDAK pernah di-expose — hanya status bind + nama chat
+          // tampilan yang keluar (chatId dipakai server untuk mengirim).
+          bound: Boolean(alertConfig.chatId),
+          chatName: alertConfig.chatName ?? null,
+        },
       };
     }
     case 'vapi': {
@@ -469,7 +519,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
     },
   )
-  /* ── Hubungkan database Notion ke project (upsert per workspace+type) ── */
+  /* ── Hubungkan database Notion ke bisnis (upsert per workspace+type) ── */
   .post(
     '/notion/connect',
     requireAuth,
@@ -540,7 +590,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       throw err;
     }
   })
-  /* ── Sinkronkan kontak project → database Notion (manual) ── */
+  /* ── Sinkronkan kontak bisnis → database Notion (manual) ── */
   .post('/notion/sync', requireAuth, requireWorkspace, async (c) => {
     const workspaceId = c.get('workspaceId');
     try {
@@ -586,7 +636,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
     },
   )
-  /* ── Hubungkan form ke project (upsert per workspace+type) ── */
+  /* ── Hubungkan form ke bisnis (upsert per workspace+type) ── */
   .post(
     '/forms/connect',
     requireAuth,
@@ -658,7 +708,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         )
         .limit(1);
       if (!integration) {
-        return c.json({ error: 'Form belum terhubung ke project ini.' }, 404);
+        return c.json({ error: 'Form belum terhubung ke bisnis ini.' }, 404);
       }
       if (!integration.isActive) {
         return c.json({ error: 'Integrasi form sedang dijeda (nonaktif).' }, 409);
@@ -727,6 +777,62 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
    * Tally — submission form → kontak (webhook real-time)
    * ══════════════════════════════════════════════════════════ */
 
+  /* ── Generate: buat form booking sesuai sistem + langsung hubungkan ── */
+  .post(
+    '/tally/generate',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', tallyGenerateSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      const { apiKey, businessName } = c.req.valid('json');
+      try {
+        // Form booking menyesuaikan industri workspace (label layanan + field
+        // tambahan) — industri dibaca dari DB, bukan dari client (single
+        // source of truth di me/onboarding).
+        const [workspace] = await db
+          .select({ name: workspaces.name, industry: workspaces.industry })
+          .from(workspaces)
+          .where(eq(workspaces.id, workspaceId))
+          .limit(1);
+        // phonePrefill default true + dropdown layanan dari katalog: form
+        // diberi hidden field `phone` + DROPDOWN_OPTION per layanan (fallback
+        // internal berlapis bila Tally menolak sebagian payload).
+        const services = await listWorkspaceServicesForForm(workspaceId);
+        const form = await createTallyBookingForm(apiKey, {
+          businessName: businessName ?? workspace?.name ?? null,
+          industry: workspace?.industry ?? null,
+          services,
+        });
+        const webhookSecret = randomBytes(32).toString('base64url');
+        const webhookUrl = tallyWebhookUrl(workspaceId);
+        const webhook = await registerTallyWebhook(apiKey, form.id, webhookUrl, webhookSecret);
+
+        const integration = await upsertIntegration({
+          workspaceId,
+          integrationType: 'tally',
+          identifier: form.name,
+          providerConfig: {
+            apiKey: encryptSecret(apiKey),
+            webhookSecret,
+            formId: form.id,
+            formName: form.name,
+            webhookUrl,
+            webhookId: webhook.id || null,
+            phonePrefill: form.phonePrefill,
+            serviceDropdown: form.serviceDropdown,
+          },
+        });
+        return c.json({ integration, formUrl: form.url }, 201);
+      } catch (err) {
+        if (err instanceof TallyApiError) {
+          return c.json({ error: `Tally menolak: ${err.message}` }, 400);
+        }
+        console.error('[integrations] generate tally gagal:', err);
+        return c.json({ error: 'Gagal membuat form Tally. Coba lagi.' }, 502);
+      }
+    },
+  )
   /* ── Pratinjau: validasi API key + daftar form akun (TIDAK disimpan) ── */
   .post(
     '/tally/preview',
@@ -755,10 +861,32 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     zValidator('json', tallyConnectSchema),
     async (c) => {
       const workspaceId = c.get('workspaceId');
-      const { apiKey, formId, formName } = c.req.valid('json');
+      const { apiKey, formId, formName, updateContent } = c.req.valid('json');
       try {
         const form = await getTallyForm(apiKey, formId);
-        const name = formName ?? form.title;
+        let name = formName ?? form.title;
+        // Checklist "perbarui isi form": sebelum webhook didaftarkan, timpa
+        // block form dengan field booking standar (industri-aware) — form lama
+        // yang isinya tidak lengkap (mis. hanya pesan sapaan "Hey") langsung
+        // menjadi form booking penuh. Gagal di sini → connect dibatalkan.
+        let phonePrefill = false;
+        let serviceDropdown = false;
+        if (updateContent) {
+          const [workspace] = await db
+            .select({ name: workspaces.name, industry: workspaces.industry })
+            .from(workspaces)
+            .where(eq(workspaces.id, workspaceId))
+            .limit(1);
+          const services = await listWorkspaceServicesForForm(workspaceId);
+          const updated = await updateTallyBookingForm(apiKey, formId, {
+            businessName: workspace?.name ?? null,
+            industry: workspace?.industry ?? null,
+            services,
+          });
+          phonePrefill = updated.phonePrefill;
+          serviceDropdown = updated.serviceDropdown;
+          name = tallyBookingFormTitle(workspace?.name ?? null);
+        }
         const webhookSecret = randomBytes(32).toString('base64url');
         const webhookUrl = tallyWebhookUrl(workspaceId);
         // Daftarkan webhook SEKARANG — gagal berarti key/form tidak valid
@@ -777,6 +905,8 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
             formName: name,
             webhookUrl,
             webhookId: webhook.id || null,
+            phonePrefill,
+            serviceDropdown,
           },
         });
         return c.json({ integration }, 201);
@@ -840,6 +970,95 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
       console.error('[integrations] rewebhook tally gagal:', err);
       return c.json({ error: 'Gagal mendaftarkan ulang webhook Tally. Coba lagi.' }, 502);
+    }
+  })
+  /* ── Sinkronkan ulang konten form: dropdown layanan + prefill phone ──
+     Dipakai tombol "Sync service options" — form memakai snapshot layanan
+     saat generate, jadi setelah layanan diubah di halaman Services, konten
+     form harus di-PATCH ulang agar opsi dropdown ikut berubah. */
+  .post('/tally/update-content', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    // config dipakai juga di catch (stamp percobaan saat Tally menolak) —
+    // deklarasi di luar try agar scope aman.
+    let config: TallyConfig | null = null;
+    try {
+      const apiKey = await getTallyApiKey(workspaceId);
+      if (!apiKey) {
+        return c.json({ error: 'Tally belum terhubung.' }, 409);
+      }
+      const [integration] = await db
+        .select()
+        .from(workspaceIntegrations)
+        .where(
+          and(
+            eq(workspaceIntegrations.workspaceId, workspaceId),
+            eq(workspaceIntegrations.integrationType, 'tally'),
+          ),
+        )
+        .limit(1);
+      if (!integration) return c.json({ error: 'Integrasi Tally belum terhubung.' }, 409);
+      config = integration.providerConfig as unknown as TallyConfig;
+      if (!config.formId) {
+        return c.json({ error: 'Form Tally belum dipilih.' }, 409);
+      }
+      const [workspace] = await db
+        .select({ name: workspaces.name, industry: workspaces.industry })
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+        .limit(1);
+      const services = await listWorkspaceServicesForForm(workspaceId);
+      const updated = await updateTallyBookingForm(apiKey, config.formId, {
+        businessName: workspace?.name ?? null,
+        industry: workspace?.industry ?? null,
+        services,
+      });
+
+      const [row] = await db
+        .update(workspaceIntegrations)
+        .set({
+          providerConfig: {
+            ...config,
+            phonePrefill: updated.phonePrefill,
+            serviceDropdown: updated.serviceDropdown,
+            // Stamp keberhasilan — auto-sync UI berhenti mengejar form ini.
+            contentSyncAttemptedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(workspaceIntegrations.workspaceId, workspaceId),
+            eq(workspaceIntegrations.integrationType, 'tally'),
+          ),
+        )
+        .returning();
+      return c.json({ integration: toPublicIntegration(row) });
+    } catch (err) {
+      if (err instanceof TallyApiError) {
+        // Tandai percobaan (guard auto-sync: jangan menekan API tiap halaman
+        // dimuat saat Tally menolak payload) — flags TIDAK diubah, form tetap
+        // pada konten terakhir yang diterima Tally.
+        if (config?.formId) {
+          await db
+            .update(workspaceIntegrations)
+            .set({
+              providerConfig: {
+                ...config,
+                contentSyncAttemptedAt: new Date().toISOString(),
+              },
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(workspaceIntegrations.workspaceId, workspaceId),
+                eq(workspaceIntegrations.integrationType, 'tally'),
+              ),
+            );
+        }
+        return c.json({ error: `Tally menolak: ${err.message}` }, 400);
+      }
+      console.error('[integrations] update-content tally gagal:', err);
+      return c.json({ error: 'Gagal menyinkronkan konten form Tally. Coba lagi.' }, 502);
     }
   })
   /* ── Aktif / nonaktifkan integrasi ── */
@@ -925,7 +1144,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
     },
   )
-  /* ── Hubungkan kalender ke project ── */
+  /* ── Hubungkan kalender ke bisnis ── */
   .post(
     '/calendar/connect',
     requireAuth,
@@ -1168,6 +1387,76 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
   })
 
   /* ══════════════════════════════════════════════════════════
+   * Telegram booking alerts — notifikasi booking ke chat bisnis
+   * Owner membuka deep-link bind (`t.me/<bot>?start=oriole_<token>`),
+   * menekan Start pada bot → chat terikat → setiap event booking
+   * (created/cancelled/…) dikirim sebagai kartu ke chat itu — pola
+   * sama dengan Slack, tetapi via bot Telegram workspace.
+   * ══════════════════════════════════════════════════════════ */
+
+  /* ── Aktifkan / buat ulang tautan bind ── */
+  .post('/telegram-alerts/connect', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const { integration, config } = await ensureTelegramAlertsConfig(workspaceId);
+    const bindUrl = await telegramAlertsBindUrl(workspaceId, config);
+    if (!bindUrl) {
+      return c.json(
+        { error: 'Channel Telegram belum dikonfigurasi — hubungkan bot di halaman Channels dulu.' },
+        409,
+      );
+    }
+    return c.json({ integration: toPublicIntegration(integration), bindUrl });
+  })
+  /* ── Kirim ping uji ke chat terikat (sinkron, feedback langsung) ── */
+  .post('/telegram-alerts/test', requireAuth, requireWorkspace, async (c) => {
+    try {
+      const result = await sendTestTelegramAlert(c.get('workspaceId'));
+      return c.json({ ...result, sentAt: new Date().toISOString() });
+    } catch (err) {
+      if (err instanceof TelegramAlertError) {
+        // Belum terhubung / belum bind → 409; kegagalan pengiriman → 502.
+        if (err.status === 409) return c.json({ error: err.message }, 409);
+        return c.json({ error: `Telegram gagal: ${err.message}` }, 502);
+      }
+      console.error('[integrations] test telegram alerts gagal:', err);
+      return c.json({ error: 'Gagal mengirim pesan uji ke Telegram. Coba lagi.' }, 502);
+    }
+  })
+  /* ── Aktif / nonaktifkan Telegram alerts ── */
+  .patch(
+    '/telegram-alerts',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', isActivePatchSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      const { isActive } = c.req.valid('json');
+      const [row] = await db
+        .update(workspaceIntegrations)
+        .set({ isActive, updatedAt: new Date() })
+        .where(
+          and(
+            eq(workspaceIntegrations.workspaceId, workspaceId),
+            eq(workspaceIntegrations.integrationType, 'telegram-alerts'),
+          ),
+        )
+        .returning();
+      if (!row) return c.json({ error: 'Integrasi Telegram alerts belum diaktifkan.' }, 404);
+      return c.json({ integration: toPublicIntegration(row) });
+    },
+  )
+  /* ── Lepas Telegram alerts ── */
+  .delete('/telegram-alerts', requireAuth, requireWorkspace, async (c) => {
+    try {
+      const result = await deleteIntegration(c.get('workspaceId'), 'telegram-alerts');
+      return c.json({ ok: true, id: result.id });
+    } catch (err) {
+      if (err instanceof IntegrationNotFoundError) return c.json({ error: err.message }, 404);
+      throw err;
+    }
+  })
+
+  /* ══════════════════════════════════════════════════════════
    * Payments — Global Payments (Paddle, Merchant of Record)
    * Kredensial server-side (env PADDLE_API_KEY) — user cukup one-click
    * connect, tanpa memasukkan secret apa pun. Payment link dibuat via
@@ -1178,7 +1467,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
   .post('/payments/connect', requireAuth, requireWorkspace, async (c) => {
     if (!isPaddlePaymentsConfigured()) {
       return c.json(
-        { error: 'PADDLE_API_KEY belum dikonfigurasi di server — Payments dinonaktifkan. Hubungi administrator project.' },
+        { error: 'PADDLE_API_KEY belum dikonfigurasi di server — Payments dinonaktifkan. Hubungi administrator.' },
         503,
       );
     }
@@ -1246,7 +1535,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
       if (provider === 'zoom' && !availableVideoProviders().find((p) => p.provider === 'zoom')?.ready) {
         return c.json(
-          { error: 'Zoom belum dikonfigurasi di server (ZOOM_ACCOUNT_ID / ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET). Hubungi administrator project.' },
+          { error: 'Zoom belum dikonfigurasi di server (ZOOM_ACCOUNT_ID / ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET). Hubungi administrator.' },
           503,
         );
       }
@@ -1369,7 +1658,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
       if (!env.VAPI_API_KEY) {
         return c.json(
-          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator project.' },
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
           503,
         );
       }
@@ -1422,7 +1711,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     async (c) => {
       if (!env.VAPI_API_KEY) {
         return c.json(
-          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator project.' },
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
           503,
         );
       }
@@ -1460,7 +1749,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       const vapiKey = env.VAPI_API_KEY;
       if (!vapiKey) {
         return c.json(
-          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator project.' },
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
           503,
         );
       }
@@ -1552,7 +1841,7 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       const workspaceId = c.get('workspaceId');
       if (!env.VAPI_API_KEY) {
         return c.json(
-          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator project.' },
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
           503,
         );
       }

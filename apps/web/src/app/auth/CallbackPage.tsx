@@ -119,8 +119,8 @@ export function CallbackPage() {
       <div className="flex flex-col items-center gap-3 py-6 text-center">
         {error ? (
           <>
-            <p className="text-sm font-medium text-zinc-800">{t('auth.signInFailedTitle')}</p>
-            <p className="text-sm text-zinc-500">{error}</p>
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('auth.signInFailedTitle')}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{error}</p>
             <Link
               to="/auth/sign-in"
               className="mt-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
@@ -131,7 +131,7 @@ export function CallbackPage() {
         ) : (
           <>
             <Spinner />
-            <p className="text-sm text-zinc-500">{t('auth.finishingSignIn')}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('auth.finishingSignIn')}</p>
           </>
         )}
       </div>

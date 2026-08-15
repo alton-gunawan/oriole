@@ -9,8 +9,6 @@ import {
   LayoutContent,
   LayoutFooter,
   LayoutHeader,
-  Tab,
-  TabList,
   TextInput,
 } from '@astryxdesign/core';
 import { Trans, useTranslation } from 'react-i18next';
@@ -28,9 +26,6 @@ import { AvatarPicker } from '../components/AvatarPicker';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { IconCheck, IconEdit, IconPlus, IconSettings, IconTrash, IconX } from '../shell/icons';
 import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
-import { WorkspaceCallSettings } from '../shell/WorkspaceCallSettings';
-import { WorkspaceAiSettings } from '../shell/WorkspaceAiSettings';
-import { WorkspaceChatSettings } from '../shell/WorkspaceChatSettings';
 
 /** Pilihan kategori — dipakai form buat & edit project. Industri CALL-E mengikuti kategori otomatis. */
 function CategoryPicker({
@@ -52,8 +47,8 @@ function CategoryPicker({
             key={item.id}
             className={`cursor-pointer rounded-lg border p-3 transition ${
               selected
-                ? 'border-amber-400 bg-white ring-2 ring-amber-500/10'
-                : 'border-zinc-200 bg-white/70 hover:border-zinc-300'
+                ? 'border-amber-400 bg-white dark:bg-zinc-900 ring-2 ring-amber-500/10'
+                : 'border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-600'
             }`}
           >
             <input
@@ -64,8 +59,8 @@ function CategoryPicker({
               onChange={() => onChange(item.id)}
               className="sr-only"
             />
-            <span className="flex items-center gap-2 text-sm font-medium text-zinc-800">
-              <span className="flex size-7 items-center justify-center rounded-md bg-zinc-100 text-xs">{item.emoji}</span>
+            <span className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="flex size-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 text-xs">{item.emoji}</span>
               {t(item.labelKey)}
               <IconCheck className={`ml-auto size-4 ${selected ? 'text-amber-600' : 'text-transparent'}`} />
             </span>
@@ -98,11 +93,6 @@ export function WorkspaceSettingsPage() {
   const [editAvatar, setEditAvatar] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  // Tab aktif di dialog edit — panel pengaturan (calls/chat/AI) di sini.
-  const [editTab, setEditTab] = useState<'general' | 'calls' | 'chat' | 'ai'>('general');
-
-  // Workspace yang sedang diedit (dari store) — dipakai panel pengaturan di dialog.
-  const editingWorkspace = editingId ? (workspaces.find((w) => w.id === editingId) ?? null) : null;
 
   // ── Hapus project (konfirmasi AlertDialog) ────────────────
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -143,13 +133,11 @@ export function WorkspaceSettingsPage() {
     setEditCategory(workspace.templateCategory);
     setEditAvatar(workspace.avatarUrl ?? null);
     setEditError(null);
-    setEditTab('general');
   };
 
   const closeEditForm = () => {
     setEditingId(null);
     setEditError(null);
-    setEditTab('general');
   };
 
   const handleEditDialogClose = (open: boolean) => {
@@ -295,13 +283,11 @@ export function WorkspaceSettingsPage() {
       >
         <Layout
           header={
-            // [--layout-padding-inner-y:0px] menghilangkan padding bawah header
-            // (spacing-4 default Astryx) agar TabList menempel ke divider.
-            <LayoutHeader hasDivider className="[--layout-padding-inner-y:0px]">
+            <LayoutHeader hasDivider>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-zinc-900">{t('ws.editProject')}</h2>
-                  <p className="mt-0.5 text-sm text-zinc-500">{t('ws.editProjectDesc')}</p>
+                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('ws.editProject')}</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{t('ws.editProjectDesc')}</p>
                 </div>
                 <IconButton
                   label={t('common.close')}
@@ -310,76 +296,39 @@ export function WorkspaceSettingsPage() {
                   onClick={closeEditForm}
                 />
               </div>
-              {/* Tab pengaturan — di dalam header, tepat di bawah deskripsi
-                  dialog (pola sama dengan dialog Connect WhatsApp). */}
-              <TabList
-                className="mt-3"
-                value={editTab}
-                onChange={(value) => setEditTab(value as 'general' | 'calls' | 'chat' | 'ai')}
-                layout="fill"
-              >
-                <Tab value="general" label={t('ws.tabGeneral')} />
-                <Tab value="calls" label={t('ws.tabCalls')} />
-                <Tab value="chat" label={t('ws.tabChat')} />
-                <Tab value="ai" label={t('ws.tabAi')} />
-              </TabList>
             </LayoutHeader>
           }
           content={
             <LayoutContent>
-              {/* Panel tetap ter-mount (hidden, bukan unmount) agar perubahan
-                  yang belum disimpan di tiap tab tidak hilang saat pindah tab. */}
-              <div className={editTab === 'general' ? '' : 'hidden'}>
-                <form id="edit-workspace-form" onSubmit={saveWorkspace} className="space-y-5">
-                  <TextInput
-                    label={t('ws.projectName')}
-                    value={editName}
-                    onChange={setEditName}
-                    width="100%"
-                  />
-                  {/* key=editingId → remount per project agar state picker ikut project. */}
-                  <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
-                  <CategoryPicker value={editCategory} onChange={setEditCategory} name="edit-workspace-category" />
-                </form>
-              </div>
-
-              {editingWorkspace && (
-                <>
-                  <div className={editTab === 'calls' ? '' : 'hidden'}>
-                    <WorkspaceCallSettings key={`calls-${editingId}`} workspace={editingWorkspace} />
-                  </div>
-                  <div className={editTab === 'chat' ? '' : 'hidden'}>
-                    <WorkspaceChatSettings key={`chat-${editingId}`} workspace={editingWorkspace} />
-                  </div>
-                  <div className={editTab === 'ai' ? '' : 'hidden'}>
-                    <WorkspaceAiSettings key={`ai-${editingId}`} workspace={editingWorkspace} />
-                  </div>
-                </>
-              )}
+              <form id="edit-workspace-form" onSubmit={saveWorkspace} className="space-y-5">
+                <TextInput
+                  label={t('ws.projectName')}
+                  value={editName}
+                  onChange={setEditName}
+                  width="100%"
+                />
+                {/* key=editingId → remount per project agar state picker ikut project. */}
+                <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
+                <CategoryPicker value={editCategory} onChange={setEditCategory} name="edit-workspace-category" />
+              </form>
             </LayoutContent>
           }
           footer={
             <LayoutFooter hasDivider>
-              {editTab === 'general' ? (
-                <>
-                  {editError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{editError}</p>}
-                  <div className="flex justify-end gap-2">
-                    <Button label={t('common.cancel')} variant="ghost" onClick={closeEditForm} isDisabled={isSaving} />
-                    <Button
-                      label={t('common.save')}
-                      variant="primary"
-                      isLoading={isSaving}
-                      isDisabled={isSaving || editName.trim().length < 2}
-                      type="submit"
-                      form="edit-workspace-form"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="flex justify-end">
-                  <Button label={t('common.close')} variant="ghost" onClick={closeEditForm} />
+              <>
+                {editError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{editError}</p>}
+                <div className="flex justify-end gap-2">
+                  <Button label={t('common.cancel')} variant="ghost" onClick={closeEditForm} isDisabled={isSaving} />
+                  <Button
+                    label={t('common.save')}
+                    variant="primary"
+                    isLoading={isSaving}
+                    isDisabled={isSaving || editName.trim().length < 2}
+                    type="submit"
+                    form="edit-workspace-form"
+                  />
                 </div>
-              )}
+              </>
             </LayoutFooter>
           }
         />
@@ -392,15 +341,15 @@ export function WorkspaceSettingsPage() {
               <div className="flex min-w-0 items-center gap-3">
                 <WorkspaceAvatar workspace={workspace} size={44} radiusClass="rounded-xl" />
                 <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold text-zinc-900">{workspace.name}</h2>
-                  <p className="mt-1 text-xs text-zinc-500">{categoryLabel(workspace.templateCategory)}</p>
+                  <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</h2>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{categoryLabel(workspace.templateCategory)}</p>
                   <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {t(industryKey(workspace.industry))}</p>
                 </div>
               </div>
               <Badge variant="success" label={t('ws.ready')} />
             </div>
 
-            <p className="mt-5 text-xs leading-relaxed text-zinc-500">
+            <p className="mt-5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
               {t('ws.separateNote')}
             </p>
             <div className="mt-4 flex justify-end gap-1">
@@ -439,7 +388,7 @@ export function WorkspaceSettingsPage() {
         description={
           <Trans
             i18nKey="ws.deleteQuestion"
-            components={{ strong: <strong className="font-bold text-black" /> }}
+            components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
           />
         }
         cancelLabel={t('common.cancel')}
@@ -458,7 +407,7 @@ export function WorkspaceSettingsPage() {
       />
 
       {deleteError && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
           {deleteError}
         </p>
       )}

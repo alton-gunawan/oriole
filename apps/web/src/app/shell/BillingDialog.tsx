@@ -101,12 +101,12 @@ function UsageBar({
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-zinc-800">{label}</p>
-        <p className={`text-xs font-semibold ${over ? 'text-red-600' : 'text-zinc-500'}`}>
+        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{label}</p>
+        <p className={`text-xs font-semibold ${over ? 'text-red-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
           {used} / {included} {unit}
         </p>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100">
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
         <div
           className={`h-full rounded-full transition-all duration-500 ${
             over ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
@@ -227,9 +227,9 @@ export function BillingDialog({
             <div className="space-y-6">
               {/* Not configured banner */}
               {!isPending && data && !data.paddleConfigured && (
-                <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5">
-                  <IconAlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
-                  <div className="text-sm leading-relaxed text-amber-800">
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 dark:border-amber-900/60 dark:bg-amber-950/40">
+                  <IconAlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div className="text-sm leading-relaxed text-amber-800 dark:text-amber-300">
                     <p className="font-semibold">{t('billing.notConfiguredTitle')}</p>
                     <p className="mt-0.5 [&_code]:rounded [&_code]:bg-amber-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs">
                       <Trans i18nKey="billing.notConfiguredBody">
@@ -244,12 +244,12 @@ export function BillingDialog({
               {/* Error state */}
               {showError && (
                 <Card className="flex flex-col items-center gap-4 p-10 text-center">
-                  <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+                  <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
                     <IconAlertTriangle className="size-6" />
                   </span>
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900">{t('errors.billingLoadTitle')}</h3>
-                    <p className="mt-1 text-sm text-zinc-500">{t('errors.apiConnection')}</p>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.billingLoadTitle')}</h3>
+                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t('errors.apiConnection')}</p>
                   </div>
                   <Button label={t('common.retry')} variant="primary" onClick={() => void refetch()} />
                 </Card>
@@ -285,18 +285,18 @@ export function BillingDialog({
                           <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                             {t('billing.currentPlan')}
                           </p>
-                          <p className="text-sm font-semibold text-zinc-900">{plan.name}</p>
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{plan.name}</p>
                         </div>
                       </div>
 
-                      <p className="mt-5 text-3xl font-bold tracking-tight text-zinc-900">
+                      <p className="mt-5 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
                         {formatPrice(plan.pricePerMonth)}
                         <span className="text-sm font-medium text-zinc-400">{t('common.perMonth')}</span>
                       </p>
 
                       <ul className="mt-5 space-y-2">
                         {plan.features.map((feature) => (
-                          <li key={feature} className="flex items-start gap-2 text-sm text-zinc-600">
+                          <li key={feature} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-400">
                             <IconCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />
                             {feature}
                           </li>
@@ -304,14 +304,14 @@ export function BillingDialog({
                       </ul>
 
                       {sub && (
-                        <div className="mt-6 space-y-1.5 rounded-xl bg-zinc-50 px-3 py-2.5 text-xs text-zinc-600">
+                        <div className="mt-6 space-y-1.5 rounded-xl bg-zinc-50 dark:bg-zinc-900 px-3 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">
                           <div className="flex items-center justify-between gap-2">
                             <span>{t('billing.status')}</span>
                             <Badge variant={badgeFor(sub.status, t).variant} label={badgeFor(sub.status, t).label} />
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span>{t('billing.renewal')}</span>
-                            <span className="font-medium text-zinc-800">{formatDate(sub.currentPeriodEnd)}</span>
+                            <span className="font-medium text-zinc-800 dark:text-zinc-200">{formatDate(sub.currentPeriodEnd)}</span>
                           </div>
                           {sub.cancelAtPeriodEnd && (
                             <p className="pt-1 text-amber-700">
@@ -324,8 +324,8 @@ export function BillingDialog({
 
                     {/* Usage */}
                     <Card className="p-6 lg:col-span-2">
-                      <h3 className="text-sm font-semibold text-zinc-900">{t('billing.usageTitle')}</h3>
-                      <p className="mt-1 text-xs text-zinc-500">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('billing.usageTitle')}</h3>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                         {t('billing.usageDesc', { plan: plan.name })}
                       </p>
 
@@ -344,18 +344,18 @@ export function BillingDialog({
                         />
                       </div>
 
-                      <div className="mt-6 grid grid-cols-1 gap-4 border-t border-zinc-100 pt-5 sm:grid-cols-3">
+                      <div className="mt-6 grid grid-cols-1 gap-4 border-t border-zinc-100 dark:border-zinc-800 pt-5 sm:grid-cols-3">
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                             {t('billing.totalCalls')}
                           </p>
-                          <p className="mt-1 text-lg font-bold text-zinc-900">{formatNumber(usage.totalCalls)}</p>
+                          <p className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-100">{formatNumber(usage.totalCalls)}</p>
                         </div>
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                             {t('billing.totalMinutes')}
                           </p>
-                          <p className="mt-1 text-lg font-bold text-zinc-900">
+                          <p className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-100">
                             {formatNumber(formatMinutes(usage.totalSeconds))}
                           </p>
                         </div>
@@ -363,7 +363,7 @@ export function BillingDialog({
                           <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                             {t('billing.paymentMethod')}
                           </p>
-                          <p className="mt-1 text-sm font-semibold text-zinc-700">
+                          <p className="mt-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                             {data.paddleConfigured ? t('billing.paddleMor') : t('billing.notConnected')}
                           </p>
                         </div>
@@ -373,13 +373,13 @@ export function BillingDialog({
 
                   {/* Plan comparison */}
                   <section>
-                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       {t('billing.comparePlans')}
                     </h2>
                     <Card className="overflow-x-auto">
                       <table className="w-full min-w-[640px] text-left text-sm">
                         <thead>
-                          <tr className="border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-400">
+                          <tr className="border-b border-zinc-100 dark:border-zinc-800 text-xs uppercase tracking-wider text-zinc-400">
                             <th className="px-5 py-3.5 font-semibold">{t('billing.feature')}</th>
                             {data.plans.map((p) => {
                               return (
@@ -398,11 +398,11 @@ export function BillingDialog({
                             })}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-100">
+                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.price')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.price')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 font-semibold text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 font-semibold text-zinc-900 dark:text-zinc-100">
                                 {formatPrice(p.pricePerMonth)}
                                 <span className="text-xs font-medium text-zinc-400">
                                   {t('common.perMonth')}
@@ -411,41 +411,41 @@ export function BillingDialog({
                             ))}
                           </tr>
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.aiCallsPerMonth')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.aiCallsPerMonth')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
                                 {formatNumber(p.callsPerMonth)}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.minutesPerMonth')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.minutesPerMonth')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
                                 {formatNumber(p.minutesPerMonth)}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.inboundReceptionist')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.inboundReceptionist')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
                                 {p.inboundNumbersIncluded > 0 ? t('billing.oneNumberIncluded') : '—'}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.callHistory')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.callHistory')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
                                 {p.id === 'free' ? t('billing.days30') : t('billing.unlimited')}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="px-5 py-3 text-zinc-600">{t('billing.support')}</td>
+                            <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{t('billing.support')}</td>
                             {data.plans.map((p) => (
-                              <td key={p.id} className="px-5 py-3 text-zinc-900">
+                              <td key={p.id} className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
                                 {p.id === 'free' ? t('billing.community') : t('billing.priority')}
                               </td>
                             ))}

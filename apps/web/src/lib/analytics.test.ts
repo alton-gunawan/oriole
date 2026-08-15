@@ -88,7 +88,7 @@ describe('analytics (frontend PostHog)', () => {
     expect(fakePostHog.group).not.toHaveBeenCalled();
   });
 
-  it('groupAnalyticsWorkspace → posthog.group (switch project)', async () => {
+  it('groupAnalyticsWorkspace → posthog.group (switch bisnis)', async () => {
     await groupAnalyticsWorkspace('ws-2');
 
     expect(fakePostHog.group).toHaveBeenCalledWith('workspace', 'ws-2');

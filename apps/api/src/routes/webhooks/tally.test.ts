@@ -2,17 +2,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 
-// Mock Inngest, idempotency lib, guard soft-delete, dan loadTallyConfig agar
-// test tidak menyentuh DB/network (pola sama dengan waha.test.ts).
-const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
+// Mock idempotency lib, guard soft-delete, loadTallyConfig, dan processor
+// submission agar test tidak menyentuh DB/network (pola waha.test.ts).
+// Submission diproses SINCRON di route (bukan queue Inngest) — tidak ada
+// mock inngest/client di sini.
+const { syncTallyMock } = vi.hoisted(() => ({ syncTallyMock: vi.fn() }));
 const { markWebhookProcessedMock } = vi.hoisted(() => ({ markWebhookProcessedMock: vi.fn() }));
 const { recordWebhookEventMock } = vi.hoisted(() => ({ recordWebhookEventMock: vi.fn() }));
 const { isWorkspaceActiveMock } = vi.hoisted(() => ({ isWorkspaceActiveMock: vi.fn() }));
 const { loadTallyConfigMock } = vi.hoisted(() => ({ loadTallyConfigMock: vi.fn() }));
-
-vi.mock('../../inngest/client.ts', () => ({
-  inngest: { send: sendMock },
-}));
 
 vi.mock('../../lib/webhooks.ts', () => ({
   recordWebhookEvent: recordWebhookEventMock,
@@ -28,6 +26,7 @@ vi.mock('../../lib/tally.ts', async (importOriginal) => {
   return {
     ...actual,
     loadTallyConfig: loadTallyConfigMock,
+    syncTallySubmissionToContacts: syncTallyMock,
   };
 });
 
@@ -64,7 +63,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  sendMock.mockReset();
+  syncTallyMock.mockReset();
+  syncTallyMock.mockResolvedValue({ imported: true, skipped: null, bookingCreated: true });
   markWebhookProcessedMock.mockReset();
   markWebhookProcessedMock.mockResolvedValue(undefined);
   recordWebhookEventMock.mockReset();
@@ -105,7 +105,7 @@ function sign(body: string): string {
 }
 
 describe('POST /api/webhooks/tally — keamanan', () => {
-  it('project soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
+  it('bisnis soft-deleted → 200 disabled tanpa proses', async () => {
     app = await buildApp();
     isWorkspaceActiveMock.mockResolvedValue(false);
     const res = await app.request('/api/webhooks/tally/ws-1', {
@@ -115,7 +115,7 @@ describe('POST /api/webhooks/tally — keamanan', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ received: true, disabled: true });
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(syncTallyMock).not.toHaveBeenCalled();
   });
 
   it('integrasi tidak dikonfigurasi → 404', async () => {
@@ -144,7 +144,7 @@ describe('POST /api/webhooks/tally — keamanan', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ received: true, disabled: true });
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(syncTallyMock).not.toHaveBeenCalled();
   });
 
   it('signature salah → 401', async () => {
@@ -155,12 +155,12 @@ describe('POST /api/webhooks/tally — keamanan', () => {
       body: validBody(),
     });
     expect(res.status).toBe(401);
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(syncTallyMock).not.toHaveBeenCalled();
   });
 });
 
-describe('POST /api/webhooks/tally — pemrosesan', () => {
-  it('submission valid → catat event + queue Inngest + ack eventId', async () => {
+describe('POST /api/webhooks/tally — pemrosesan sinkron', () => {
+  it('submission valid → diproses langsung (sync) + ack eventId', async () => {
     app = await buildApp();
     const res = await app.request('/api/webhooks/tally/ws-1', {
       method: 'POST',
@@ -178,14 +178,23 @@ describe('POST /api/webhooks/tally — pemrosesan', () => {
       'form_response',
       expect.anything(),
     );
-    expect(sendMock).toHaveBeenCalledWith({
-      name: 'tally/form.response',
-      data: { workspaceId: 'ws-1', payload: expect.objectContaining({ eventId: 'a4cb511e-d513-4fa5-baee-b815d718dfd1' }) },
-    });
+    expect(syncTallyMock).toHaveBeenCalledWith('ws-1', expect.objectContaining({ eventId: 'a4cb511e-d513-4fa5-baee-b815d718dfd1' }));
     expect(markWebhookProcessedMock).toHaveBeenCalledWith(expect.anything(), 'tally', 'ws-1:2wgx4n');
   });
 
-  it('duplikat (sudah processed) → ack duplicate tanpa queue ulang', async () => {
+  it('pemrosesan gagal → 500 (Tally retry) + TIDAK ditandai processed', async () => {
+    app = await buildApp();
+    syncTallyMock.mockRejectedValue(new Error('db down'));
+    const res = await app.request('/api/webhooks/tally/ws-1', {
+      method: 'POST',
+      headers: { 'tally-signature': sign(validBody()) },
+      body: validBody(),
+    });
+    expect(res.status).toBe(500);
+    expect(markWebhookProcessedMock).not.toHaveBeenCalled();
+  });
+
+  it('duplikat (sudah processed) → ack duplicate tanpa proses ulang', async () => {
     app = await buildApp();
     recordWebhookEventMock.mockResolvedValue('processed');
     const res = await app.request('/api/webhooks/tally/ws-1', {
@@ -195,7 +204,7 @@ describe('POST /api/webhooks/tally — pemrosesan', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ duplicate: true, eventId: 'ws-1:2wgx4n' });
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(syncTallyMock).not.toHaveBeenCalled();
   });
 
   it('payload tanpa submissionId → ack 200 tanpa proses', async () => {
@@ -208,6 +217,6 @@ describe('POST /api/webhooks/tally — pemrosesan', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ received: true, events: 0 });
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(syncTallyMock).not.toHaveBeenCalled();
   });
 });

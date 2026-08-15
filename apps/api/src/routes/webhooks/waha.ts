@@ -47,7 +47,7 @@ import { resolveWahaChannel } from '../../services/waha.ts';
 export const wahaWebhookRoutes = new Hono().post('/:workspaceId', async (c) => {
   const workspaceId = c.req.param('workspaceId');
 
-  // Project soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
+  // Bisnis soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
   // WAHA tidak me-retry; pesan tidak akan pernah diproses).
   if (!(await isWorkspaceActive(workspaceId))) {
     return c.json({ received: true, disabled: true });

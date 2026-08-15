@@ -12,6 +12,8 @@ import { resend } from '../services/email.ts';
 import { TelegramApiError, telegramSendMessage } from '../lib/telegram.ts';
 import { resolveTelegramChannel } from '../lib/telegram-handler.ts';
 import { resolveWhatsAppChannel, sendWhatsAppMessage, WhatsAppApiError } from '../services/whatsapp.ts';
+import { LineApiError, lineBuildMessages, linePushMessage } from '../lib/line.ts';
+import { resolveLineChannel } from '../lib/line-handler.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 
@@ -277,7 +279,11 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
 
       // Jangan kirim ke customer yang sudah opt-out (kecuali email — tanpa opt-out).
-      if (conversation.channelType === 'telegram' || conversation.channelType === 'whatsapp') {
+      if (
+        conversation.channelType === 'telegram' ||
+        conversation.channelType === 'whatsapp' ||
+        conversation.channelType === 'line'
+      ) {
         const [channelRow] = await db
           .select({ isOptedIn: customerChannels.isOptedIn })
           .from(customerChannels)
@@ -338,6 +344,27 @@ export const inboxRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           providerMessageId = sent.messageId;
         } catch (error) {
           if (error instanceof WhatsAppApiError) {
+            return c.json({ error: `Gagal mengirim: ${error.message}` }, 400);
+          }
+          throw error;
+        }
+      } else if (conversation.channelType === 'line') {
+        const channel = await resolveLineChannel(workspaceId);
+        if (!channel) {
+          return c.json({ error: 'Channel Line belum dikonfigurasi untuk workspace ini.' }, 400);
+        }
+        if (!channel.isActive) {
+          return c.json({ error: 'Channel Line sedang dijeda — aktifkan dulu di halaman Channels.' }, 400);
+        }
+        try {
+          await linePushMessage({
+            accessToken: channel.accessToken,
+            to: conversation.externalId,
+            messages: lineBuildMessages(text, buttons),
+          });
+          providerMessageId = null;
+        } catch (error) {
+          if (error instanceof LineApiError) {
             return c.json({ error: `Gagal mengirim: ${error.message}` }, 400);
           }
           throw error;

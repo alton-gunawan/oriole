@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router';
 import {
   Badge,
+  Banner,
   Button,
   Dialog,
   DialogHeader,
@@ -32,26 +34,31 @@ import {
   type NotionDatabaseOption,
   type NotionDatabasesResponse,
   type NotionSyncResult,
-  type TallyFormOption,
-  type TallyPreviewResponse,
   type TelnyxByocConnectResponse,
   type TelnyxByocSearchResponse,
+  type TelegramAlertsConnectResponse,
   type VapiInboundNumber,
   type VapiInboundStatusResponse,
   type VapiVoiceStatusResponse,
   type WebhookTestResult,
+  type WhatsAppBusinessConnection,
+  type WhatsAppBusinessConnectResponse,
+  type WhatsAppBusinessStatusResponse,
   type WorkspaceIntegration,
 } from '../../lib/integrations';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
 import { PaymentsDialog } from '../shell/PaymentsDialog';
 import {
+  IconChat,
   IconCheck,
   IconCopy,
   IconCreditCard,
   IconDotsVertical,
+  IconExternalLink,
   IconMail,
   IconPhone,
+  IconSignal,
   IconPlug,
   IconRefresh,
   IconSend,
@@ -85,41 +92,8 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 text-xs">
       <span className="shrink-0 font-medium uppercase tracking-wider text-zinc-400">{label}</span>
-      <span className="min-w-0 text-right font-medium text-zinc-700">{value}</span>
+      <span className="min-w-0 text-right font-medium text-zinc-700 dark:text-zinc-300">{value}</span>
     </div>
-  );
-}
-
-/** Blok ringkas konfigurasi terhubung — TIDAK di kartu, hanya di dalam dialog. */
-function ConnectedDetails({ title, rows }: { title: string; rows: { label: string; value: ReactNode }[] }) {
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{title}</p>
-      <div className="mt-2 space-y-1.5">
-        {rows.map((row) => (
-          <DetailRow key={row.label} label={row.label} value={row.value} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Nilai yang bisa disalin (webhook URL) — dengan tombol copy kecil di dalam dialog. */
-function CopyableValue({ value, copied, onCopy }: { value: string; copied: boolean; onCopy: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onCopy}
-      aria-label={copied ? undefined : 'Copy'}
-      className="group inline-flex max-w-full items-center justify-end gap-1 font-medium text-zinc-700"
-    >
-      <span className="max-w-[260px] truncate font-mono text-xs text-zinc-600 group-hover:text-zinc-800">{value}</span>
-      {copied ? (
-        <IconCheck className="size-3.5 shrink-0 text-emerald-600" />
-      ) : (
-        <IconCopy className="size-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-600" />
-      )}
-    </button>
   );
 }
 
@@ -158,10 +132,57 @@ const CHANNEL_DEFS: {
     descriptionKey: 'channels.facebookDesc',
     logo: '/brands/facebook.svg',
   },
+  {
+    type: 'line',
+    label: 'Line',
+    descriptionKey: 'channels.lineDesc',
+    // Belum ada aset logo resmi — ikon chat dengan warna brand Line (#06C755).
+    icon: IconChat,
+    accent: 'bg-[#06C755]/10 text-[#06C755]',
+  },
+];
+
+/**
+ * Channel yang BELUM tersedia — masing-masing butuh persetujuan / akun
+ * bisnis di platformnya dulu (bukan sekadar API key). Kartu ini informatif:
+ * menampilkan syarat dengan jujur, tanpa tombol connect palsu.
+ */
+const CHANNEL_COMING_SOON: {
+  type: string;
+  label: string;
+  descriptionKey: TranslationKey;
+  requirementKey: TranslationKey;
+  icon: typeof IconChat;
+  accent: string;
+}[] = [
+  {
+    type: 'signal',
+    label: 'Signal',
+    descriptionKey: 'channels.signalDesc',
+    requirementKey: 'channels.signalRequirement',
+    icon: IconSignal,
+    accent: 'bg-[#3A76F0]/10 text-[#3A76F0]',
+  },
+  {
+    type: 'wechat',
+    label: 'WeChat',
+    descriptionKey: 'channels.wechatDesc',
+    requirementKey: 'channels.wechatRequirement',
+    icon: IconChat,
+    accent: 'bg-[#07C160]/10 text-[#07C160]',
+  },
+  {
+    type: 'imessage',
+    label: 'iMessage',
+    descriptionKey: 'channels.imessageDesc',
+    requirementKey: 'channels.imessageRequirement',
+    icon: IconMail,
+    accent: 'bg-[#34C759]/10 text-[#34C759]',
+  },
 ];
 
 /** Chip logo brand (aset SVG dari svgl.app) — kartu putih dengan logo di dalamnya. */
-function BrandLogo({ src, alt, chip = 'size-10 rounded-xl bg-white', img = 'size-6' }: {
+function BrandLogo({ src, alt, chip = 'size-10 rounded-xl bg-white dark:bg-zinc-900', img = 'size-6' }: {
   src: string;
   alt: string;
   chip?: string;
@@ -186,14 +207,20 @@ export function IntegrationsPage() {
   const [notion, setNotion] = useState<WorkspaceIntegration | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Banner sukses — konfirmasi integrasi/channel berhasil terhubung di halaman
+  // ini. Dismissable; tidak timeout (sukses connect layak terlihat jelas).
+  const [integrationNotice, setIntegrationNotice] = useState<string | null>(null);
+  const showConnectedNotice = (name: string) => {
+    setIntegrationNotice(t('integrations.connectedSuccess', { name }));
+  };
 
   // Form kredensial per channel — di dalam dialog setup (tidak inline di kartu).
   const [telegramToken, setTelegramToken] = useState('');
-  const [setupDialog, setSetupDialog] = useState<'telegram' | null>(null);
+  const [lineAccessToken, setLineAccessToken] = useState('');
+  const [lineChannelSecret, setLineChannelSecret] = useState('');
+  const [setupDialog, setSetupDialog] = useState<'telegram' | 'line' | null>(null);
   const [busyChannel, setBusyChannel] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<{ channel: string; message: string } | null>(null);
-  // Nilai webhook URL yang baru saja disalin (tombol copy di dalam dialog).
-  const [copiedValue, setCopiedValue] = useState<string | null>(null);
 
   // Pengaturan reminder — sekarang di dalam dialog settings.
   const [leadMinutes, setLeadMinutes] = useState(120);
@@ -229,7 +256,7 @@ export function IntegrationsPage() {
   const [sendFormQuery, setSendFormQuery] = useState('');
   const [sendFormResults, setSendFormResults] = useState<ContactRecord[] | null>(null);
   const [sendFormContactId, setSendFormContactId] = useState('');
-  const [sendFormChannel, setSendFormChannel] = useState<'telegram' | 'email'>('email');
+  const [sendFormChannel, setSendFormChannel] = useState<'telegram' | 'email' | 'line'>('email');
   const [sendFormSearching, setSendFormSearching] = useState(false);
   const [sendFormSending, setSendFormSending] = useState(false);
   const [sendFormMessage, setSendFormMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -239,11 +266,8 @@ export function IntegrationsPage() {
   const [tally, setTally] = useState<WorkspaceIntegration | null>(null);
   const [tallyDialogOpen, setTallyDialogOpen] = useState(false);
   const [tallyApiKey, setTallyApiKey] = useState('');
-  const [tallyForms, setTallyForms] = useState<TallyFormOption[] | null>(null);
-  const [tallyFormId, setTallyFormId] = useState('');
-  const [tallyLoadingForms, setTallyLoadingForms] = useState(false);
   const [tallyConnecting, setTallyConnecting] = useState(false);
-  const [tallyBusy, setTallyBusy] = useState<'rewebhook' | 'disconnect' | null>(null);
+  const [tallyBusy, setTallyBusy] = useState<'rewebhook' | 'update-content' | 'disconnect' | null>(null);
   const [tallyError, setTallyError] = useState<string | null>(null);
 
   // ── Google Calendar integration ───────────────────────────
@@ -285,6 +309,14 @@ export function IntegrationsPage() {
   const [slackTestResult, setSlackTestResult] = useState<string | null>(null);
   const [slackBusy, setSlackBusy] = useState<'disconnect' | null>(null);
   const [slackError, setSlackError] = useState<string | null>(null);
+
+  // ── Telegram booking alerts (notifikasi booking ke chat bisnis) ─
+  const [telegramAlerts, setTelegramAlerts] = useState<WorkspaceIntegration | null>(null);
+  const [telegramAlertsConnecting, setTelegramAlertsConnecting] = useState(false);
+  const [telegramAlertsTesting, setTelegramAlertsTesting] = useState(false);
+  const [telegramAlertsBusy, setTelegramAlertsBusy] = useState<'disconnect' | null>(null);
+  const [telegramAlertsError, setTelegramAlertsError] = useState<string | null>(null);
+  const [telegramAlertsBindHint, setTelegramAlertsBindHint] = useState(false);
 
   // ── Meta (Instagram / Facebook DMs) ────────────────────────
   const metaWebhookUrl = `${window.location.origin}/api/webhooks/meta`;
@@ -350,6 +382,15 @@ export function IntegrationsPage() {
   const [obsidianSyncResult, setObsidianSyncResult] = useState<string | null>(null);
   const [obsidianError, setObsidianError] = useState<string | null>(null);
 
+  // ── WhatsApp Business (Meta Embedded Signup — Tech Provider) ──
+  // Kredensial/TIDAK pernah sampai ke frontend — hanya metadata publik.
+  const [whatsappBusiness, setWhatsappBusiness] = useState<WhatsAppBusinessConnection | null>(null);
+  const [whatsappBusy, setWhatsappBusy] = useState<'connect' | 'refresh' | 'check' | 'disconnect' | null>(null);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
+  // Notice dari redirect callback (whatsapp=connected|error|already di URL).
+  const [whatsappNotice, setWhatsappNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -366,11 +407,21 @@ export function IntegrationsPage() {
       setGoogleCalendar(integrationRes.integrations.find((item) => item.integrationType === 'google-calendar') ?? null);
       setWebhook(integrationRes.integrations.find((item) => item.integrationType === 'webhook') ?? null);
       setSlack(integrationRes.integrations.find((item) => item.integrationType === 'slack') ?? null);
+      setTelegramAlerts(integrationRes.integrations.find((item) => item.integrationType === 'telegram-alerts') ?? null);
       setPayments(integrationRes.integrations.find((item) => item.integrationType === 'payments') ?? null);
       setVideo(integrationRes.integrations.find((item) => item.integrationType === 'video') ?? null);
       setVoice(integrationRes.integrations.find((item) => item.integrationType === 'vapi') ?? null);
       setVoiceStatus(voiceRes);
       setInboundStatus(inboundRes);
+
+      // WhatsApp Business dimuat terpisah — endpoint baru tidak boleh
+      // menggagalkan seluruh halaman bila platform Meta belum disetel.
+      try {
+        const wa = await apiFetch<WhatsAppBusinessStatusResponse>('/whatsapp-business');
+        setWhatsappBusiness(wa.connection);
+      } catch (err) {
+        setWhatsappError(errorMessage(err, t, 'integrations.loadFailed'));
+      }
     } catch (err) {
       setError(errorMessage(err, t, 'integrations.loadFailed'));
     } finally {
@@ -407,6 +458,7 @@ export function IntegrationsPage() {
       });
       setTelegramToken('');
       setSetupDialog(null);
+      showConnectedNotice(t('channels.telegram'));
     } catch (err) {
       setSetupError({ channel: type, message: errorMessage(err, t, 'channels.setupFailed') });
     } finally {
@@ -427,6 +479,7 @@ export function IntegrationsPage() {
         const rest = prev.filter((ch) => ch.channelType !== 'telegram');
         return [...rest, response.channel];
       });
+      showConnectedNotice(t('channels.telegram'));
     } catch (err) {
       setSetupError({
         channel: 'telegram',
@@ -474,6 +527,52 @@ export function IntegrationsPage() {
     }
   };
 
+  const setupLineChannel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSetupError(null);
+    setBusyChannel('line');
+    try {
+      const response = await apiFetch<{ channel: WorkspaceChannel }>(
+        '/channels/line/setup',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            channelAccessToken: lineAccessToken.trim(),
+            channelSecret: lineChannelSecret.trim(),
+          }),
+        },
+      );
+      setChannels((prev) => {
+        const rest = prev.filter((ch) => ch.channelType !== 'line');
+        return [...rest, response.channel];
+      });
+      setLineAccessToken('');
+      setLineChannelSecret('');
+      setSetupDialog(null);
+      showConnectedNotice(t('channels.line'));
+    } catch (err) {
+      setSetupError({ channel: 'line', message: errorMessage(err, t, 'channels.setupFailed') });
+    } finally {
+      setBusyChannel(null);
+    }
+  };
+
+  const rewebhookLine = async () => {
+    setBusyChannel('line');
+    setSetupError(null);
+    try {
+      await apiFetch('/channels/line/rewebhook', { method: 'POST' });
+      await load();
+    } catch (err) {
+      setSetupError({
+        channel: 'line',
+        message: errorMessage(err, t, 'channels.rewebhookFailed'),
+      });
+    } finally {
+      setBusyChannel(null);
+    }
+  };
+
   const removeChannel = async (type: string) => {
     setBusyChannel(type);
     setSetupError(null);
@@ -487,6 +586,109 @@ export function IntegrationsPage() {
       });
     } finally {
       setBusyChannel(null);
+    }
+  };
+
+  /* ── WhatsApp Business (Meta Embedded Signup) ── */
+  const connectWhatsAppBusiness = async () => {
+    setWhatsappError(null);
+    setWhatsappNotice(null);
+    setWhatsappBusy('connect');
+    try {
+      const response = await apiFetch<WhatsAppBusinessConnectResponse>(
+        '/whatsapp-business/connect',
+        { method: 'POST' },
+      );
+      // Official Embedded Signup: arahkan browser ke dialog Meta (login,
+      // pilih/buat Business Portfolio + WABA, verifikasi nomor, izin) — Meta
+      // lalu mengarahkan kembali ke callback yang menyelesaikan onboarding.
+      window.location.assign(response.signupUrl);
+    } catch (err) {
+      setWhatsappError(errorMessage(err, t, 'whatsappBusiness.connectError'));
+    } finally {
+      setWhatsappBusy(null);
+    }
+  };
+
+  const refreshWhatsAppBusiness = async () => {
+    setWhatsappError(null);
+    setWhatsappBusy('refresh');
+    try {
+      const response = await apiFetch<WhatsAppBusinessStatusResponse>(
+        '/whatsapp-business/refresh',
+        { method: 'POST' },
+      );
+      setWhatsappBusiness(response.connection);
+    } catch (err) {
+      setWhatsappError(errorMessage(err, t, 'whatsappBusiness.refreshFailed'));
+    } finally {
+      setWhatsappBusy(null);
+    }
+  };
+
+  const checkWhatsAppBusiness = async () => {
+    setWhatsappError(null);
+    setWhatsappBusy('check');
+    try {
+      const response = await apiFetch<WhatsAppBusinessStatusResponse>(
+        '/whatsapp-business/check',
+        { method: 'POST' },
+      );
+      setWhatsappBusiness(response.connection);
+    } catch (err) {
+      setWhatsappError(errorMessage(err, t, 'whatsappBusiness.checkFailed'));
+    } finally {
+      setWhatsappBusy(null);
+    }
+  };
+
+  const disconnectWhatsAppBusiness = async () => {
+    setWhatsappError(null);
+    setWhatsappBusy('disconnect');
+    try {
+      await apiFetch('/whatsapp-business/disconnect', { method: 'POST' });
+      const response = await apiFetch<WhatsAppBusinessStatusResponse>('/whatsapp-business');
+      setWhatsappBusiness(response.connection);
+    } catch (err) {
+      setWhatsappError(errorMessage(err, t, 'whatsappBusiness.disconnectFailed'));
+    } finally {
+      setWhatsappBusy(null);
+    }
+  };
+
+  // Callback Meta kembali ke /integrations?whatsapp=… — tampilkan notice lalu
+  // bersihkan query string agar refresh tidak menampilkannya lagi.
+  useEffect(() => {
+    const result = searchParams.get('whatsapp');
+    if (!result) return;
+    let notice: { ok: boolean; text: string } | null = null;
+    if (result === 'connected') notice = { ok: true, text: t('whatsappBusiness.connectSuccess') };
+    else if (result === 'already') notice = { ok: true, text: t('whatsappBusiness.connectAlready') };
+    else if (result === 'error') notice = { ok: false, text: t('whatsappBusiness.connectError') };
+    if (notice) {
+      setWhatsappNotice(notice);
+      void load();
+      // Banner sukses halaman — konsisten dengan alur connect lainnya.
+      if (result === 'connected' || result === 'already') {
+        showConnectedNotice(t('whatsappBusiness.name'));
+      }
+    }
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, t, load]);
+
+  /** Badge status WhatsApp Business (variant + label) — kartu Integrations. */
+  const whatsappStatusBadge = () => {
+    switch (whatsappBusiness?.status ?? 'not_connected') {
+      case 'connected':
+        return { variant: 'success' as const, label: t('whatsappBusiness.statusConnected') };
+      case 'connecting':
+        return { variant: 'info' as const, label: t('whatsappBusiness.statusConnecting') };
+      case 'error':
+        return { variant: 'error' as const, label: t('whatsappBusiness.statusError') };
+      case 'disconnected':
+        return { variant: 'neutral' as const, label: t('whatsappBusiness.statusDisconnected') };
+      default:
+        return { variant: 'neutral' as const, label: t('whatsappBusiness.statusNotConnected') };
     }
   };
 
@@ -572,6 +774,7 @@ export function IntegrationsPage() {
     setObsidian(config);
     setObsidianSyncResult(null);
     setObsidianDialogOpen(false);
+    showConnectedNotice(t('obsidian.name'));
   };
 
   const syncObsidian = async () => {
@@ -649,6 +852,7 @@ export function IntegrationsPage() {
       setNotion(response.integration);
       setNotionSyncResult(null);
       setNotionDialogOpen(false);
+      showConnectedNotice(t('notion.name'));
     } catch (err) {
       setIntegrationError(errorMessage(err, t, 'notion.saveFailed'));
     } finally {
@@ -746,6 +950,7 @@ export function IntegrationsPage() {
       setGoogleForms(response.integration);
       setFormsSyncResult(null);
       setFormsDialogOpen(false);
+      showConnectedNotice(t('googleForms.name'));
     } catch (err) {
       setFormsError(errorMessage(err, t, 'googleForms.saveFailed'));
     } finally {
@@ -803,8 +1008,6 @@ export function IntegrationsPage() {
   const openTallyDialog = () => {
     setTallyError(null);
     setTallyApiKey('');
-    setTallyForms(null);
-    setTallyFormId('');
     setTallyDialogOpen(true);
   };
 
@@ -813,40 +1016,31 @@ export function IntegrationsPage() {
     setTallyError(null);
   };
 
-  const loadTallyForms = async () => {
-    setTallyError(null);
-    setTallyLoadingForms(true);
-    try {
-      const response = await apiFetch<TallyPreviewResponse>(
-        '/integrations/tally/preview',
-        { method: 'POST', body: JSON.stringify({ apiKey: tallyApiKey.trim() }) },
-      );
-      setTallyForms(response.forms);
-    } catch (err) {
-      setTallyError(errorMessage(err, t, 'tally.saveFailed'));
-    } finally {
-      setTallyLoadingForms(false);
-    }
-  };
-
+  /**
+   * Connect: form booking Tally DI-GENERATE otomatis (sesuai industri
+   * workspace) + webhook didaftarkan + integrasi terhubung — tanpa memilih
+   * form. Satu langkah setelah API key ditempel.
+   */
   const connectTally = async () => {
     setTallyError(null);
     setTallyConnecting(true);
     try {
-      const selected = tallyForms?.find((form) => form.id === tallyFormId);
+      const workspace = useWorkspaceStore.getState().workspaces.find(
+        (w) => w.id === workspaceId,
+      );
       const response = await apiFetch<{ integration: WorkspaceIntegration }>(
-        '/integrations/tally/connect',
+        '/integrations/tally/generate',
         {
           method: 'POST',
-          body: JSON.stringify({
-            apiKey: tallyApiKey.trim(),
-            formId: tallyFormId,
-            formName: selected?.title,
-          }),
+          body: JSON.stringify({ apiKey: tallyApiKey.trim(), businessName: workspace?.name ?? null }),
+          // Tally API lambat saat membuat form + mendaftarkan webhook —
+          // default 10s terlalu sempit dan memicu abort ("Fetch is aborted").
+          timeoutMs: 45_000,
         },
       );
       setTally(response.integration);
       setTallyDialogOpen(false);
+      showConnectedNotice(t('tally.name'));
     } catch (err) {
       setTallyError(errorMessage(err, t, 'tally.saveFailed'));
     } finally {
@@ -894,6 +1088,42 @@ export function IntegrationsPage() {
     }
   };
 
+  /** Sinkronkan ulang konten form Tally — dropdown layanan ikut layanan terbaru. */
+  const updateTallyContent = async () => {
+    setTallyError(null);
+    setTallyBusy('update-content');
+    try {
+      const response = await apiFetch<{ integration: WorkspaceIntegration }>(
+        '/integrations/tally/update-content',
+        { method: 'POST' },
+      );
+      setTally(response.integration);
+      showConnectedNotice(t('tally.contentSynced'));
+    } catch (err) {
+      setTallyError(errorMessage(err, t, 'tally.syncServicesFailed'));
+    } finally {
+      setTallyBusy(null);
+    }
+  };
+
+  // ── Auto-sync form Tally yang masih polos (sebelum fitur prefill/dropdown) ──
+  // Saat halaman Integrations dibuka, form yang sudah terhubung tapi belum punya
+  // hidden field `phone` / dropdown layanan (flags false, mis. terhubung sebelum
+  // fitur ini ada) di-PATCH ulang otomatis agar ?phone= dan dropdown berfungsi.
+  // Guard: maksimal sekali per kunjungan + 24 jam sejak percobaan terakhir, agar
+  // Tally yang menolak payload tidak ditekan API setiap halaman dimuat.
+  const tallyAutoSyncRan = useRef(false);
+  useEffect(() => {
+    if (tallyAutoSyncRan.current) return;
+    const config = tally?.config;
+    if (!tally || !config?.formId || !tally.isActive) return;
+    if (config.prefillPhone && config.serviceDropdown) return; // form sudah lengkap
+    const lastAttempt = config.lastContentSyncAt ? Date.parse(config.lastContentSyncAt) : 0;
+    if (Number.isFinite(lastAttempt) && Date.now() - lastAttempt < 24 * 60 * 60 * 1000) return;
+    tallyAutoSyncRan.current = true;
+    void updateTallyContent();
+  }, [tally, updateTallyContent]);
+
   /* ── Kirim form ke customer: buka dialog / cari kontak / kirim ── */
 
   const openSendForm = (type: 'google-forms' | 'tally') => {
@@ -902,9 +1132,10 @@ export function IntegrationsPage() {
     setSendFormResults(null);
     setSendFormContactId('');
     setSendFormMessage(null);
-    // Default channel: prioritas Telegram → Email.
+    // Default channel: prioritas Telegram → Line → Email (chat dulu, email terakhir).
     const telegramActive = channels.some((ch) => ch.channelType === 'telegram' && ch.isActive);
-    setSendFormChannel(telegramActive ? 'telegram' : 'email');
+    const lineActive = channels.some((ch) => ch.channelType === 'line' && ch.isActive);
+    setSendFormChannel(telegramActive ? 'telegram' : lineActive ? 'line' : 'email');
     setSendFormOpen(true);
   };
 
@@ -959,18 +1190,6 @@ export function IntegrationsPage() {
       setSendFormMessage({ ok: false, text: errorMessage(err, t, 'formSend.sendFailed') });
     } finally {
       setSendFormSending(false);
-    }
-  };
-
-  /** Salin nilai (webhook URL dsb.) — status "copied" di state dialog. */
-  const copyValue = async (value: string) => {
-    if (!value) return;
-    try {
-      await copyToClipboard(value);
-      setCopiedValue(value);
-      setTimeout(() => setCopiedValue(null), 1500);
-    } catch {
-      // Clipboard tidak tersedia — abaikan (nilai tetap terlihat di dialog).
     }
   };
 
@@ -1037,6 +1256,7 @@ export function IntegrationsPage() {
       setGoogleCalendar(response.integration);
       setCalendarSyncResult(null);
       setCalendarDialogOpen(false);
+      showConnectedNotice(t('googleCalendar.name'));
     } catch (err) {
       setCalendarError(errorMessage(err, t, 'googleCalendar.saveFailed'));
     } finally {
@@ -1119,6 +1339,7 @@ export function IntegrationsPage() {
       setWebhook(response.integration);
       setWebhookTestResult(null);
       setWebhookDialogOpen(false);
+      showConnectedNotice(t('webhook.name'));
     } catch (err) {
       setWebhookError(errorMessage(err, t, 'webhook.saveFailed'));
     } finally {
@@ -1203,6 +1424,7 @@ export function IntegrationsPage() {
       setSlack(response.integration);
       setSlackTestResult(null);
       setSlackDialogOpen(false);
+      showConnectedNotice(t('slack.name'));
     } catch (err) {
       setSlackError(errorMessage(err, t, 'slack.saveFailed'));
     } finally {
@@ -1255,6 +1477,83 @@ export function IntegrationsPage() {
     }
   };
 
+  /* ── Telegram alerts: connect (bind link) / test / toggle / disconnect ── */
+
+  const connectTelegramAlerts = async () => {
+    setTelegramAlertsError(null);
+    setTelegramAlertsConnecting(true);
+    try {
+      const response = await apiFetch<TelegramAlertsConnectResponse>(
+        '/integrations/telegram-alerts/connect',
+        { method: 'POST' },
+      );
+      setTelegramAlerts(response.integration);
+      if (response.bindUrl) {
+        // Buka tautan bind — user menekan Start pada bot lalu Refresh status.
+        setTelegramAlertsBindHint(true);
+        window.open(response.bindUrl, '_blank');
+      }
+    } catch (err) {
+      setTelegramAlertsError(errorMessage(err, t, 'telegramAlerts.saveFailed'));
+    } finally {
+      setTelegramAlertsConnecting(false);
+    }
+  };
+
+  const refreshTelegramAlerts = async () => {
+    setTelegramAlertsError(null);
+    try {
+      const integrationRes = await apiFetch<IntegrationListResponse>('/integrations');
+      setTelegramAlerts(
+        integrationRes.integrations.find((item) => item.integrationType === 'telegram-alerts') ?? null,
+      );
+      setTelegramAlertsBindHint(false);
+    } catch (err) {
+      setTelegramAlertsError(errorMessage(err, t, 'telegramAlerts.saveFailed'));
+    }
+  };
+
+  const testTelegramAlerts = async () => {
+    setTelegramAlertsError(null);
+    setTelegramAlertsTesting(true);
+    try {
+      await apiFetch('/integrations/telegram-alerts/test', { method: 'POST' });
+      showConnectedNotice(t('telegramAlerts.testSent'));
+    } catch (err) {
+      setTelegramAlertsError(errorMessage(err, t, 'telegramAlerts.testFailed'));
+    } finally {
+      setTelegramAlertsTesting(false);
+    }
+  };
+
+  const toggleTelegramAlertsActive = async () => {
+    if (!telegramAlerts) return;
+    setTelegramAlertsError(null);
+    try {
+      const response = await apiFetch<{ integration: WorkspaceIntegration }>(
+        '/integrations/telegram-alerts',
+        { method: 'PATCH', body: JSON.stringify({ isActive: !telegramAlerts.isActive }) },
+      );
+      setTelegramAlerts(response.integration);
+    } catch (err) {
+      setTelegramAlertsError(errorMessage(err, t, 'telegramAlerts.saveFailed'));
+    }
+  };
+
+  const disconnectTelegramAlerts = async () => {
+    setTelegramAlertsError(null);
+    setTelegramAlertsBusy('disconnect');
+    try {
+      await apiFetch('/integrations/telegram-alerts', { method: 'DELETE' });
+      setTelegramAlerts(null);
+      setTelegramAlertsBindHint(false);
+    } catch (err) {
+      setTelegramAlertsError(errorMessage(err, t, 'telegramAlerts.saveFailed'));
+    } finally {
+      setTelegramAlertsBusy(null);
+    }
+  };
+
   /* ── Meta: preview / connect (Instagram & Facebook DMs) ──── */
 
   const openMetaDialog = (channelType: 'instagram' | 'facebook') => {
@@ -1299,6 +1598,8 @@ export function IntegrationsPage() {
         response.channel,
       ]);
       setMetaDialogOpen(false);
+      // Label kartu Meta di-hardcode di CHANNEL_DEFS (belum ada kunci i18n).
+      showConnectedNotice(metaDialogType === 'instagram' ? 'Instagram' : 'Facebook');
     } catch (err) {
       setMetaError(errorMessage(err, t, 'channels.setupFailed'));
     } finally {
@@ -1340,6 +1641,7 @@ export function IntegrationsPage() {
       );
       setVideo(response.integration);
       setVideoDialogOpen(false);
+      showConnectedNotice(t('video.name'));
     } catch (err) {
       setVideoError(errorMessage(err, t, 'video.saveFailed'));
     } finally {
@@ -1418,6 +1720,7 @@ export function IntegrationsPage() {
       setVoice(response.integration);
       setVoiceStatus((prev) => (prev ? { ...prev, selected: response.integration } : prev));
       setVoiceDialogOpen(false);
+      showConnectedNotice(t('vapi.name'));
     } catch (err) {
       setVoiceError(errorMessage(err, t, 'vapi.saveFailed'));
     } finally {
@@ -1566,6 +1869,7 @@ export function IntegrationsPage() {
         { method: 'POST' },
       );
       setPayments(response.integration);
+      showConnectedNotice(t('payments.name'));
     } catch (err) {
       setPaymentsError(errorMessage(err, t, 'payments.createFailed'));
     } finally {
@@ -1630,9 +1934,20 @@ export function IntegrationsPage() {
         </DropdownMenu>
       </PageHeader>
 
+      {/* Banner sukses — konfirmasi integrasi/channel terhubung. Dismissable,
+          tanpa timeout: sukses connect layak terlihat sampai ditutup user. */}
+      {integrationNotice && (
+        <Banner
+          status="success"
+          title={integrationNotice}
+          isDismissable
+          onDismiss={() => setIntegrationNotice(null)}
+        />
+      )}
+
       {/* ── Messaging channels ─────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           {t('integrations.channelsSection')}
         </h2>
         <p className="mt-1 text-xs text-zinc-400">{t('integrations.channelsSectionDesc')}</p>
@@ -1657,7 +1972,7 @@ export function IntegrationsPage() {
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-semibold text-zinc-900">{def.label}</h3>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{def.label}</h3>
                       {channel?.isEnvShared ? (
                         <Badge variant="neutral" label={t('channels.sharedEnvBadge')} />
                       ) : configured ? (
@@ -1666,12 +1981,12 @@ export function IntegrationsPage() {
                         <Badge variant="neutral" label={t('channels.notSet')} />
                       )}
                     </div>
-                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t(def.descriptionKey)}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t(def.descriptionKey)}</p>
                   </div>
                 </div>
 
                 {setupError?.channel === def.type && (
-                  <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                  <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                     {setupError.message}
                   </p>
                 )}
@@ -1679,7 +1994,7 @@ export function IntegrationsPage() {
                 {/* Email selalu tersedia — tidak butuh konfigurasi. */}
                 {def.type === 'email' && (
                   <div className="mt-4">
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
                       {t('channels.emailNote')}
                     </p>
                   </div>
@@ -1687,7 +2002,7 @@ export function IntegrationsPage() {
 
                 {channel?.isEnvShared ? (
                   <div className="mt-4 space-y-3">
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                       {t('channels.sharedEnvNote')}
                     </p>
                     <Button
@@ -1705,22 +2020,24 @@ export function IntegrationsPage() {
                       label={
                         def.type === 'telegram'
                           ? t('channels.connectBot')
-                          : t('channels.connectMeta')
+                          : def.type === 'line'
+                            ? t('channels.connectLine')
+                            : t('channels.connectMeta')
                       }
                       variant="primary"
                       width="100%"
                       onClick={() => {
                         if (def.type === 'telegram') setSetupDialog('telegram');
+                        else if (def.type === 'line') setSetupDialog('line');
                         else if (def.type === 'instagram' || def.type === 'facebook') openMetaDialog(def.type);
                       }}
                     />
                   </div>
                 ) : configured && channel ? (
-                  // Kartu Telegram RINGKAS — switch aktif, re-register webhook
-                  // & disconnect dipindah ke dialog (blok status & management
-                  // di dialog telegram). Di kartu hanya tombol Connected
-                  // (membuka dialog).
-                  def.type === 'telegram' ? (
+                  // Kartu Telegram/Line RINGKAS — switch aktif, re-register
+                  // webhook & disconnect dipindah ke dialog. Di kartu hanya
+                  // tombol Connected (membuka dialog).
+                  def.type === 'telegram' || def.type === 'line' ? (
                     <div className="mt-4 space-y-3">
                       <Button
                         label={t('channels.connected')}
@@ -1762,9 +2079,44 @@ export function IntegrationsPage() {
         </div>
       </section>
 
+      {/* ── Channel yang butuh persetujuan platform ────────── */}
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          {t('channels.comingSoonTitle')}
+        </h2>
+        <p className="mt-1 text-xs text-zinc-400">{t('channels.comingSoonDesc')}</p>
+
+        <div className="mt-4 grid grid-cols-1 items-start gap-5 xl:grid-cols-3">
+          {CHANNEL_COMING_SOON.map((def) => (
+            <Card key={def.type} className="flex flex-col p-5">
+              <div className="flex items-start gap-3">
+                <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${def.accent}`}>
+                  <def.icon className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{def.label}</h3>
+                    <Badge variant="neutral" label={t('channels.unavailableBadge')} />
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t(def.descriptionKey)}</p>
+                </div>
+              </div>
+
+              {/* Syarat yang jujur — bukan tombol connect palsu. */}
+              <div className="mt-4 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2.5">
+                <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{t('channels.requiredLabel')}: </span>
+                  {t(def.requirementKey)}
+                </p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+
       {/* ── App integrations ───────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           {t('integrations.appsSection')}
         </h2>
         <p className="mt-1 text-xs text-zinc-400">{t('integrations.appsSectionDesc')}</p>
@@ -1777,19 +2129,19 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/notion.svg" alt={t('notion.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('notion.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('notion.name')}</h3>
                   {notion ? (
                     <Badge variant={notion.isActive ? 'success' : 'neutral'} label={notion.isActive ? t('notion.connected') : t('notion.notConnected')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('notion.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('notion.desc')}</p>
               </div>
             </div>
 
             {integrationError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {integrationError}
               </p>
             )}
@@ -1805,7 +2157,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {notionSyncResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {notionSyncResult.total === 0
                       ? t('notion.syncEmpty')
                       : t('notion.syncResult', {
@@ -1854,19 +2206,19 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/obsidian.svg" alt={t('obsidian.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('obsidian.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('obsidian.name')}</h3>
                   {obsidian ? (
                     <Badge variant="success" label={t('obsidian.connected')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('obsidian.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('obsidian.desc')}</p>
               </div>
             </div>
 
             {obsidianError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {obsidianError}
               </p>
             )}
@@ -1882,7 +2234,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {obsidianSyncResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {obsidianSyncResult}
                   </p>
                 )}
@@ -1916,19 +2268,19 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/google-forms.svg" alt={t('googleForms.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('googleForms.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('googleForms.name')}</h3>
                   {googleForms ? (
                     <Badge variant={googleForms.isActive ? 'success' : 'neutral'} label={googleForms.isActive ? t('googleForms.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('googleForms.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('googleForms.desc')}</p>
               </div>
             </div>
 
             {formsError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {formsError}
               </p>
             )}
@@ -1944,7 +2296,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {formsSyncResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {formsSyncResult.total === 0
                       ? t('googleForms.syncEmpty')
                       : t('googleForms.syncResult', {
@@ -2005,26 +2357,24 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/tally.svg" alt={t('tally.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('tally.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('tally.name')}</h3>
                   {tally ? (
                     <Badge variant={tally.isActive ? 'success' : 'neutral'} label={tally.isActive ? t('tally.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('tally.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('tally.desc')}</p>
               </div>
-            </div>
-
-            {tallyError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+            </div>                {tallyError && (
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {tallyError}
               </p>
             )}
 
             {/* Migrasi Typeform → Tally: minta hubungkan ulang dengan API key. */}
             {tally?.config.migratedFrom === 'typeform' && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                 {t('tally.migratedNotice')}
               </p>
             )}
@@ -2064,6 +2414,37 @@ export function IntegrationsPage() {
                   />
                 )}
 
+                {/* Prefill phone aktif — URL ?phone= mengisi nomor otomatis. */}
+                {tally.config.prefillPhone && (
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                    {t('tally.prefillPhoneOn')}
+                  </p>
+                )}
+
+                {/* Layanan = dropdown dari katalog (snapshot saat generate). */}
+                {tally.config.serviceDropdown && (
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                    {t('tally.serviceDropdownOn')}
+                  </p>
+                )}
+
+                {/* Diagnostik: sinkronisasi form / konfirmasi customer gagal —
+                    jangan "diam tanpa kabar". */}
+                {tally.config.lastConfirmationError || tally.config.lastContentSyncError ? (
+                  <p
+                    role="alert"
+                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                  >
+                    {tally.config.lastConfirmationError
+                      ? t('tally.confirmationError', {
+                          error: tally.config.lastConfirmationError,
+                        })
+                      : t('tally.contentSyncError', {
+                          error: tally.config.lastContentSyncError ?? '',
+                        })}
+                  </p>
+                ) : null}
+
                 <Switch
                   label={t('tally.activeSwitch')}
                   description={tally.isActive ? t('tally.activeDesc') : t('tally.inactiveDesc')}
@@ -2074,6 +2455,17 @@ export function IntegrationsPage() {
                 />
 
                 <div className="flex items-center gap-2">
+                  {tally.config.formId && (
+                    <Button
+                      label={t('tally.syncServices')}
+                      variant="secondary"
+                      size="sm"
+                      icon={<IconRefresh className="size-3.5" />}
+                      isLoading={tallyBusy === 'update-content'}
+                      isDisabled={tallyBusy !== null || !tally.isActive}
+                      onClick={() => void updateTallyContent()}
+                    />
+                  )}
                   <Button
                     label={t('tally.rewebhook')}
                     variant="ghost"
@@ -2103,19 +2495,19 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/google-calendar.svg" alt={t('googleCalendar.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('googleCalendar.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('googleCalendar.name')}</h3>
                   {googleCalendar ? (
                     <Badge variant={googleCalendar.isActive ? 'success' : 'neutral'} label={googleCalendar.isActive ? t('googleCalendar.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('googleCalendar.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('googleCalendar.desc')}</p>
               </div>
             </div>
 
             {calendarError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {calendarError}
               </p>
             )}
@@ -2131,7 +2523,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {calendarSyncResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {calendarSyncResult.created === 0 && calendarSyncResult.updated === 0
                       ? t('googleCalendar.syncEmpty')
                       : t('googleCalendar.syncResult', {
@@ -2182,19 +2574,19 @@ export function IntegrationsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('webhook.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('webhook.name')}</h3>
                   {webhook ? (
                     <Badge variant={webhook.isActive ? 'success' : 'neutral'} label={webhook.isActive ? t('webhook.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('webhook.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('webhook.desc')}</p>
               </div>
             </div>
 
             {webhookError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {webhookError}
               </p>
             )}
@@ -2210,7 +2602,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {webhookTestResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {webhookTestResult}
                   </p>
                 )}
@@ -2254,19 +2646,19 @@ export function IntegrationsPage() {
               <BrandLogo src="/brands/slack.svg" alt={t('slack.name')} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('slack.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('slack.name')}</h3>
                   {slack ? (
                     <Badge variant={slack.isActive ? 'success' : 'neutral'} label={slack.isActive ? t('slack.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('slack.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('slack.desc')}</p>
               </div>
             </div>
 
             {slackError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {slackError}
               </p>
             )}
@@ -2282,7 +2674,7 @@ export function IntegrationsPage() {
             ) : (
               <div className="mt-4 space-y-3">
                 {slackTestResult && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {slackTestResult}
                   </p>
                 )}
@@ -2320,6 +2712,109 @@ export function IntegrationsPage() {
             )}
           </Card>
 
+          {/* Telegram Booking Alerts — notifikasi booking ke chat bisnis
+              (deep-link bind: t.me/<bot>?start=oriole_<token> → Start). */}
+          <Card className="flex flex-col p-5">
+            <div className="flex items-start gap-3">
+              <BrandLogo src="/brands/telegram.svg" alt={t('telegramAlerts.name')} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('telegramAlerts.name')}</h3>
+                  {telegramAlerts ? (
+                    telegramAlerts.config.bound ? (
+                      <Badge
+                        variant={telegramAlerts.isActive ? 'success' : 'neutral'}
+                        label={telegramAlerts.isActive ? t('telegramAlerts.bound') : t('channels.inactive')}
+                      />
+                    ) : (
+                      <Badge variant="neutral" label={t('telegramAlerts.awaiting')} />
+                    )
+                  ) : (
+                    <Badge variant="neutral" label={t('channels.notSet')} />
+                  )}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('telegramAlerts.desc')}</p>
+              </div>
+            </div>
+
+            {telegramAlertsError && (
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                {telegramAlertsError}
+              </p>
+            )}
+
+            {!telegramAlerts ? (
+              <Button
+                label={t('telegramAlerts.connect')}
+                variant="primary"
+                width="100%"
+                className="mt-4"
+                isLoading={telegramAlertsConnecting}
+                onClick={() => void connectTelegramAlerts()}
+              />
+            ) : (
+              <div className="mt-4 space-y-3">
+                {telegramAlertsBindHint && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    {t('telegramAlerts.bindHint')}
+                  </p>
+                )}
+
+                {telegramAlerts.config.bound && telegramAlerts.config.chatName && (
+                  <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {t('telegramAlerts.boundChat', { chat: telegramAlerts.config.chatName })}
+                  </p>
+                )}
+
+                <Switch
+                  label={t('telegramAlerts.activeSwitch')}
+                  description={telegramAlerts.isActive ? t('telegramAlerts.activeDesc') : t('telegramAlerts.inactiveDesc')}
+                  value={telegramAlerts.isActive}
+                  onChange={() => void toggleTelegramAlertsActive()}
+                  labelPosition="start"
+                  labelSpacing="spread"
+                />
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    label={t('telegramAlerts.test')}
+                    variant="primary"
+                    size="sm"
+                    icon={<IconSend className="size-3.5" />}
+                    isLoading={telegramAlertsTesting}
+                    isDisabled={telegramAlertsTesting || !telegramAlerts.isActive || !telegramAlerts.config.bound}
+                    onClick={() => void testTelegramAlerts()}
+                  />
+                  <Button
+                    label={telegramAlerts.config.bound ? t('telegramAlerts.changeChat') : t('telegramAlerts.retryBind')}
+                    variant="secondary"
+                    size="sm"
+                    icon={<IconSettings className="size-3.5" />}
+                    isLoading={telegramAlertsConnecting}
+                    isDisabled={telegramAlertsConnecting}
+                    onClick={() => void connectTelegramAlerts()}
+                  />
+                  <Button
+                    label={t('telegramAlerts.refresh')}
+                    variant="ghost"
+                    size="sm"
+                    icon={<IconRefresh className="size-3.5" />}
+                    onClick={() => void refreshTelegramAlerts()}
+                  />
+                  <Button
+                    label={t('telegramAlerts.disconnect')}
+                    variant="ghost"
+                    size="sm"
+                    icon={<IconTrash className="size-3.5" />}
+                    isLoading={telegramAlertsBusy === 'disconnect'}
+                    isDisabled={telegramAlertsBusy !== null}
+                    onClick={() => void disconnectTelegramAlerts()}
+                  />
+                </div>
+              </div>
+            )}
+          </Card>
+
           {/* Video calls — link otomatis untuk setiap booking (Zoom / Meet). */}
           <Card className="flex flex-col p-5">
             <div className="flex items-start gap-3">
@@ -2328,19 +2823,19 @@ export function IntegrationsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('video.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('video.name')}</h3>
                   {video ? (
                     <Badge variant={video.isActive ? 'success' : 'neutral'} label={video.isActive ? t('video.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('video.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('video.desc')}</p>
               </div>
             </div>
 
             {videoError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {videoError}
               </p>
             )}
@@ -2388,7 +2883,7 @@ export function IntegrationsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('vapi.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('vapi.name')}</h3>
                   {voice ? (
                     <Badge variant={voice.isActive ? 'success' : 'neutral'} label={t('vapi.connected')} />
                   ) : (
@@ -2398,12 +2893,12 @@ export function IntegrationsPage() {
                     />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('vapi.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('vapi.desc')}</p>
               </div>
             </div>
 
             {voiceError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {voiceError}
               </p>
             )}
@@ -2411,12 +2906,12 @@ export function IntegrationsPage() {
             {!voice ? (
               <div className="mt-4 space-y-3">
                 {!voiceStatus?.apiKeyConfigured && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                     {t('vapi.serverNotConfigured')}
                   </p>
                 )}
                 {voiceStatus?.apiKeyConfigured && voiceStatus.numbers.length === 0 && (
-                  <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                  <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                     {t('vapi.noNumbers')}
                   </p>
                 )}
@@ -2462,7 +2957,7 @@ export function IntegrationsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('vapiInbound.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('vapiInbound.name')}</h3>
                   {(inboundStatus?.numbers.length ?? 0) > 0 ? (
                     <Badge
                       variant="success"
@@ -2472,18 +2967,18 @@ export function IntegrationsPage() {
                     <Badge variant="neutral" label={t('vapiInbound.inactive')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('vapiInbound.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('vapiInbound.desc')}</p>
               </div>
             </div>
 
             {inboundError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {inboundError}
               </p>
             )}
 
             {!inboundStatus?.configured && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                 {t('vapi.serverNotConfigured')}
               </p>
             )}
@@ -2493,14 +2988,14 @@ export function IntegrationsPage() {
                 {inboundStatus!.numbers.map((number) => (
                   <div
                     key={number.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2.5"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2.5"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-800">
+                      <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
                         {number.number ?? t('vapiInbound.provisioning')}
                       </p>
                       {number.name && (
-                        <p className="mt-0.5 truncate text-xs text-zinc-500">{number.name}</p>
+                        <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{number.name}</p>
                       )}
                     </div>
                     <Button
@@ -2538,19 +3033,19 @@ export function IntegrationsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900">{t('payments.name')}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('payments.name')}</h3>
                   {payments ? (
                     <Badge variant={payments.isActive ? 'success' : 'neutral'} label={payments.isActive ? t('payments.connected') : t('channels.inactive')} />
                   ) : (
                     <Badge variant="neutral" label={t('channels.notSet')} />
                   )}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t('payments.desc')}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('payments.desc')}</p>
               </div>
             </div>
 
             {paymentsError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
                 {paymentsError}
               </p>
             )}
@@ -2598,6 +3093,177 @@ export function IntegrationsPage() {
               </div>
             )}
           </Card>
+
+          {/* WhatsApp Business — Meta Embedded Signup (Tech Provider). Setiap
+              tenant menghubungkan NOMOR mereka sendiri lewat flow resmi Meta;
+              token/WABA ID/Phone Number ID tidak pernah sampai ke frontend. */}
+          <Card className="flex flex-col p-5">
+            <div className="flex items-start gap-3">
+              <BrandLogo src="/brands/whatsapp.svg" alt={t('whatsappBusiness.name')} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('whatsappBusiness.name')}</h3>
+                  <Badge
+                    variant={whatsappStatusBadge().variant}
+                    label={whatsappStatusBadge().label}
+                  />
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('whatsappBusiness.desc')}</p>
+              </div>
+            </div>
+
+            {whatsappNotice && (
+              <p
+                role="status"
+                className={`mt-3 rounded-lg px-3 py-2 text-xs ${whatsappNotice.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400'}`}
+              >
+                {whatsappNotice.text}
+              </p>
+            )}
+
+            {whatsappError && (
+              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                {whatsappError}
+              </p>
+            )}
+
+            {whatsappBusiness?.platformConfigured === false && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                {t('whatsappBusiness.platformNotConfigured')}
+              </p>
+            )}
+
+            {/* Detail akun — hanya saat terhubung. */}
+            {whatsappBusiness?.status === 'connected' && (
+              <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2.5">
+                <div className="space-y-1.5">
+                  <DetailRow
+                    label={t('whatsappBusiness.numberLabel')}
+                    value={whatsappBusiness.displayPhoneNumber ?? '—'}
+                  />
+                  <DetailRow
+                    label={t('whatsappBusiness.businessLabel')}
+                    value={whatsappBusiness.businessName ?? '—'}
+                  />
+                  <DetailRow
+                    label={t('whatsappBusiness.aiLabel')}
+                    value={whatsappBusiness.aiAssistantEnabled ? t('whatsappBusiness.aiOn') : t('whatsappBusiness.aiOff')}
+                  />
+                  {whatsappBusiness.lastSyncAt && (
+                    <DetailRow
+                      label={t('whatsappBusiness.lastSync')}
+                      value={formatDateTime(whatsappBusiness.lastSyncAt)}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(() => {
+              const status = whatsappBusiness?.status ?? 'not_connected';
+              if (status === 'connected') {
+                return (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('whatsappBusiness.connectedHint')}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        label={t('whatsappBusiness.refresh')}
+                        variant="ghost"
+                        size="sm"
+                        icon={<IconRefresh className="size-3.5" />}
+                        isLoading={whatsappBusy === 'refresh'}
+                        isDisabled={whatsappBusy !== null}
+                        onClick={() => void refreshWhatsAppBusiness()}
+                      />
+                      <Button
+                        label={t('whatsappBusiness.check')}
+                        variant="ghost"
+                        size="sm"
+                        isDisabled={whatsappBusy !== null}
+                        onClick={() => void checkWhatsAppBusiness()}
+                      />
+                      <Button
+                        label={t('whatsappBusiness.disconnect')}
+                        variant="ghost"
+                        size="sm"
+                        icon={<IconTrash className="size-3.5" />}
+                        isLoading={whatsappBusy === 'disconnect'}
+                        isDisabled={whatsappBusy !== null}
+                        onClick={() => void disconnectWhatsAppBusiness()}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+              if (status === 'connecting') {
+                return (
+                  <div className="mt-4 space-y-3">
+                    <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-700">
+                      {t('whatsappBusiness.connectingHint')}
+                    </p>
+                    <Button
+                      label={t('whatsappBusiness.retry')}
+                      variant="primary"
+                      width="100%"
+                      isLoading={whatsappBusy === 'connect'}
+                      isDisabled={whatsappBusy !== null}
+                      onClick={() => void connectWhatsAppBusiness()}
+                    />
+                  </div>
+                );
+              }
+              if (status === 'error') {
+                return (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('whatsappBusiness.errorHint')}</p>
+                    {whatsappBusiness?.errorMessage && (
+                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                        {whatsappBusiness.errorMessage}
+                      </p>
+                    )}
+                    <Button
+                      label={t('whatsappBusiness.reconnect')}
+                      variant="primary"
+                      width="100%"
+                      isLoading={whatsappBusy === 'connect'}
+                      isDisabled={whatsappBusy !== null}
+                      onClick={() => void connectWhatsAppBusiness()}
+                    />
+                  </div>
+                );
+              }
+              if (status === 'disconnected') {
+                return (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('whatsappBusiness.disconnectedHint')}</p>
+                    <Button
+                      label={t('whatsappBusiness.reconnect')}
+                      variant="primary"
+                      width="100%"
+                      isLoading={whatsappBusy === 'connect'}
+                      isDisabled={whatsappBusy !== null}
+                      onClick={() => void connectWhatsAppBusiness()}
+                    />
+                  </div>
+                );
+              }
+              // not_connected
+              return (
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('whatsappBusiness.notConnectedHint')}</p>
+                  <Button
+                    label={t('whatsappBusiness.connect')}
+                    variant="primary"
+                    width="100%"
+                    icon={<IconCheck className="size-3.5" />}
+                    isLoading={whatsappBusy === 'connect'}
+                    isDisabled={whatsappBusiness?.platformConfigured === false}
+                    onClick={() => void connectWhatsAppBusiness()}
+                  />
+                </div>
+              );
+            })()}
+          </Card>
         </div>
       </section>
 
@@ -2607,10 +3273,10 @@ export function IntegrationsPage() {
         onOpenChange={setPaymentsDialogOpen}
       />
 
-      {/* Dialog setup channel — input kredensial (token/API key) tidak tampil
-          inline di kartu, hanya di dalam dialog ini. */}
+      {/* Dialog setup Telegram — input bot token tidak tampil inline di kartu,
+          hanya di dalam dialog ini. */}
       <Dialog
-        isOpen={setupDialog !== null}
+        isOpen={setupDialog === 'telegram'}
         onOpenChange={(open) => {
           if (!open) {
             setSetupDialog(null);
@@ -2668,23 +3334,6 @@ export function IntegrationsPage() {
                 }
                 return (
                   <div className="space-y-3">
-                    <ConnectedDetails
-                      title={t('channels.currentConfig')}
-                      rows={[
-                        { label: t('channels.botLabel'), value: tel.identifier ?? '—' },
-                        {
-                          label: t('channels.webhookUrl'),
-                          value: (
-                            <CopyableValue
-                              value={tel.webhookUrl}
-                              copied={copiedValue === tel.webhookUrl}
-                              onCopy={() => void copyValue(tel.webhookUrl)}
-                            />
-                          ),
-                        },
-                      ]}
-                    />
-
                     <Switch
                       label={t('channels.activeSwitch')}
                       description={tel.isActive ? t('channels.activeDesc') : t('channels.inactiveDesc')}
@@ -2761,6 +3410,160 @@ export function IntegrationsPage() {
         />
       </Dialog>
 
+      {/* Dialog setup Line — channel access token + channel secret dari
+          Line Developers Console (Messaging API, bukan LINE Login). */}
+      <Dialog
+        isOpen={setupDialog === 'line'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSetupDialog(null);
+            setSetupError(null);
+          }
+        }}
+        purpose="info"
+        width={480}
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title={
+                channelRow('line')
+                  ? t('channels.settingsTitle')
+                  : t('channels.connectLine')
+              }
+              subtitle={
+                channelRow('line')
+                  ? t('channels.lineDesc')
+                  : t('channels.lineSetupSubtitle')
+              }
+              onOpenChange={(open) => {
+                if (!open) {
+                  setSetupDialog(null);
+                  setSetupError(null);
+                }
+              }}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              {(() => {
+                const line = channelRow('line');
+                if (!line) {
+                  return (
+                    <form id="line-setup-form" onSubmit={setupLineChannel} className="space-y-3">
+                      <TextInput
+                        label={t('channels.lineAccessToken')}
+                        value={lineAccessToken}
+                        onChange={setLineAccessToken}
+                        placeholder={t('channels.lineAccessTokenPlaceholder')}
+                        width="100%"
+                      />
+                      <TextInput
+                        label={t('channels.lineChannelSecret')}
+                        value={lineChannelSecret}
+                        onChange={setLineChannelSecret}
+                        placeholder={t('channels.lineChannelSecretPlaceholder')}
+                        width="100%"
+                      />
+                      <a
+                        href="https://developers.line.biz/console/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 transition hover:text-emerald-500"
+                      >
+                        <IconPlug className="size-3.5" />
+                        {t('channels.lineConsole')}
+                      </a>
+                      <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        {t('channels.lineHint')}
+                      </p>
+                      {setupError?.channel === 'line' && (
+                        <p role="alert" className="text-xs text-red-600">{setupError.message}</p>
+                      )}
+                    </form>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    <Switch
+                      label={t('channels.activeSwitch')}
+                      description={line.isActive ? t('channels.activeDesc') : t('channels.inactiveDesc')}
+                      value={line.isActive}
+                      onChange={() => void toggleChannel(line)}
+                      isDisabled={busyChannel === 'line'}
+                      labelPosition="start"
+                      labelSpacing="spread"
+                    />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        label={t('channels.rewebhook')}
+                        variant="ghost"
+                        size="sm"
+                        icon={<IconRefresh className="size-3.5" />}
+                        isDisabled={busyChannel === 'line'}
+                        isLoading={busyChannel === 'line'}
+                        onClick={() => void rewebhookLine()}
+                      />
+                      <Button
+                        label={t('channels.disconnect')}
+                        variant="ghost"
+                        size="sm"
+                        icon={<IconTrash className="size-3.5" />}
+                        isDisabled={busyChannel === 'line'}
+                        onClick={() => void removeChannel('line')}
+                      />
+                    </div>
+
+                    {setupError?.channel === 'line' && (
+                      <p role="alert" className="text-xs text-red-600">{setupError.message}</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              {channelRow('line') ? (
+                <div className="flex justify-end gap-2">
+                  <Button
+                    label={t('common.close')}
+                    variant="primary"
+                    onClick={() => {
+                      setSetupDialog(null);
+                      setSetupError(null);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button
+                    label={t('common.cancel')}
+                    variant="ghost"
+                    onClick={() => {
+                      setSetupDialog(null);
+                      setSetupError(null);
+                    }}
+                  />
+                  <Button
+                    label={t('channels.connectLine')}
+                    variant="primary"
+                    type="submit"
+                    form="line-setup-form"
+                    isLoading={busyChannel === 'line'}
+                    isDisabled={
+                      lineAccessToken.trim().length < 10 || lineChannelSecret.trim().length < 8
+                    }
+                  />
+                </div>
+              )}
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
+
       {/* Dialog Notion — dua langkah: token → pilih database. */}
       <Dialog
         isOpen={notionDialogOpen}
@@ -2784,21 +3587,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-5">
-                {notion && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('notion.databaseLabel'),
-                        value: notion.config.databaseName ?? notion.identifier ?? '—',
-                      },
-                      {
-                        label: t('channels.lastSyncLabel'),
-                        value: notion.lastSyncAt ? formatDateTime(notion.lastSyncAt) : t('notion.neverSynced'),
-                      },
-                    ]}
-                  />
-                )}
                 {notionDatabases === null ? (
                   <form
                     id="notion-token-form"
@@ -2815,7 +3603,7 @@ export function IntegrationsPage() {
                       placeholder={t('notion.tokenPlaceholder')}
                       width="100%"
                     />
-                    <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                    <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {t('notion.howTo')}
                     </p>
                     {integrationError && (
@@ -2824,7 +3612,7 @@ export function IntegrationsPage() {
                   </form>
                 ) : notionDatabases.length === 0 ? (
                   <div>
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                       {t('notion.noDatabases')}
                     </p>
                     {integrationError && (
@@ -2833,7 +3621,7 @@ export function IntegrationsPage() {
                   </div>
                 ) : (
                   <div>
-                    <p className="mb-2 text-sm font-semibold text-zinc-800">{t('notion.stepDatabases')}</p>
+                    <p className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('notion.stepDatabases')}</p>
                     <div className="max-h-72 space-y-2 overflow-y-auto pr-1" role="radiogroup" aria-label={t('notion.stepDatabases')}>
                       {notionDatabases.map((db) => {
                         const selected = db.id === notionDatabaseId;
@@ -2846,18 +3634,18 @@ export function IntegrationsPage() {
                             onClick={() => setNotionDatabaseId(db.id)}
                             className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
                               selected
-                                ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15'
-                                : 'border-zinc-200 bg-white hover:border-zinc-300'
+                                ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15 dark:bg-amber-950/40 dark:ring-amber-500/25'
+                                : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-600'
                             }`}
                           >
                             <BrandLogo
                               src="/brands/notion.svg"
                               alt=""
-                              chip={`size-8 rounded-lg shadow-none ${selected ? 'bg-amber-50 ring-1 ring-amber-400' : 'bg-white ring-1 ring-zinc-200'}`}
+                              chip={`size-8 rounded-lg shadow-none ${selected ? 'bg-amber-50 ring-1 ring-amber-400' : 'bg-white dark:bg-zinc-900 ring-1 ring-zinc-200'}`}
                               img="size-5"
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-zinc-900">{db.title}</span>
+                              <span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{db.title}</span>
                               <span className="block truncate text-xs text-zinc-400">{db.id}</span>
                             </span>
                             <IconCheck className={`size-4 shrink-0 ${selected ? 'text-amber-600' : 'text-transparent'}`} />
@@ -2924,15 +3712,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-3">
-                {obsidian && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      { label: t('obsidian.vaultUrl'), value: obsidian.url },
-                      { label: t('obsidian.folderPath'), value: obsidian.folderPath },
-                    ]}
-                  />
-                )}
                 <TextInput
                   label={t('obsidian.vaultUrl')}
                   value={obsidianUrl}
@@ -2963,11 +3742,11 @@ export function IntegrationsPage() {
                   placeholder={t('obsidian.folderPathPlaceholder')}
                   width="100%"
                 />
-                <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   {t('obsidian.howTo')}
                 </p>
                 {obsidianTested && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                     {t('obsidian.testOk', {
                       version: obsidianTested.obsidianVersion ?? '?',
                       author: obsidianTested.author ?? 'Obsidian',
@@ -3026,21 +3805,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-5">
-                {googleForms && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('googleForms.formLabel'),
-                        value: googleForms.config.formName ?? googleForms.identifier ?? '—',
-                      },
-                      {
-                        label: t('channels.lastSyncLabel'),
-                        value: googleForms.lastSyncAt ? formatDateTime(googleForms.lastSyncAt) : t('googleForms.neverSynced'),
-                      },
-                    ]}
-                  />
-                )}
                 {formsPreview === null ? (
                   <form
                     id="google-forms-form"
@@ -3065,7 +3829,7 @@ export function IntegrationsPage() {
                       placeholder={t('googleForms.formIdPlaceholder')}
                       width="100%"
                     />
-                    <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                    <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {t('googleForms.howTo')}
                     </p>
                     {formsError && (
@@ -3074,14 +3838,14 @@ export function IntegrationsPage() {
                   </form>
                 ) : (
                   <div className="space-y-3">
-                    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium leading-relaxed text-emerald-700">
+                    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium leading-relaxed text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                       {t('googleForms.formFound', { title: formsPreview.form.title })}
                     </p>
                     <div>
-                      <p className="mb-2 text-sm font-semibold text-zinc-800">{t('googleForms.questionsLabel')}</p>
+                      <p className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('googleForms.questionsLabel')}</p>
                       <div className="flex flex-wrap gap-1.5">
                         {formsPreview.form.questions.map((question) => (
-                          <span key={question.id} className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600">
+                          <span key={question.id} className="rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
                             {question.title}
                           </span>
                         ))}
@@ -3142,115 +3906,67 @@ export function IntegrationsPage() {
               onOpenChange={(open) => {
                 if (!open) closeTallyDialog();
               }}
+              // Logo resmi Tally (mark) — polos tanpa chip/ring; hanya ukuran
+              // layout karena SVG intrinsik 128px.
+              startContent={<img src="/brands/tally.svg" alt="" className="h-8 w-auto shrink-0" />}
               hasDivider
             />
           }
           content={
             <LayoutContent>
               <div className="space-y-5">
-                {tally && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('tally.formLabel'),
-                        value: tally.config.formName ?? tally.identifier ?? '—',
-                      },
-                      {
-                        label: t('channels.lastSyncLabel'),
-                        value: tally.lastSyncAt ? formatDateTime(tally.lastSyncAt) : t('tally.neverSynced'),
-                      },
-                    ]}
-                  />
+                {/* Migrasi Typeform → Tally: ingatkan hubungkan ulang. */}
+                {tally?.config.migratedFrom === 'typeform' && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    {t('tally.migratedNotice')}
+                  </p>
                 )}
-                {tallyForms === null ? (
-                  <div className="space-y-5">
-                    {/* Migrasi Typeform → Tally: ingatkan hubungkan ulang. */}
-                    {tally?.config.migratedFrom === 'typeform' && (
-                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                        {t('tally.migratedNotice')}
-                      </p>
-                    )}
-                    <form
-                      id="tally-key-form"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void loadTallyForms();
-                      }}
-                      className="space-y-3"
-                    >
-                      <TextInput
-                        label={t('tally.tokenLabel')}
-                        value={tallyApiKey}
-                        onChange={setTallyApiKey}
-                        placeholder={t('tally.tokenPlaceholder')}
-                        width="100%"
-                      />
-                      {/* Pintasan: buka halaman API key Tally — user tidak perlu
-                          mencari sendiri di mana membuat token. */}
+                <form
+                  id="tally-key-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void connectTally();
+                  }}
+                  className="space-y-3"
+                >
+                  <div>
+                    {/* Label "API Key" + pintasan "Get your API key" (ikon
+                        arrow-square-out) di ujung kanan label. */}
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {t('tally.tokenLabel')}
+                      </span>
                       <a
                         href="https://tally.so/settings/api-keys"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 transition hover:text-amber-500"
+                        aria-label={t('tally.getKey')}
+                        title={t('tally.getKey')}
+                        className="rounded-md p-1 text-zinc-400 transition hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/40"
                       >
-                        <IconPlug className="size-3.5" />
-                        {t('tally.getKey')}
+                        <IconExternalLink className="size-4" />
                       </a>
-                      <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
-                        {t('tally.howTo')}
-                      </p>
-                    </form>
-                    {tallyError && (
-                      <p role="alert" className="text-xs text-red-600">{tallyError}</p>
-                    )}
-                  </div>
-                ) : tallyForms.length === 0 ? (
-                  <div>
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                      {t('tally.noForms')}
-                    </p>
-                    {tallyError && (
-                      <p role="alert" className="mt-2 text-xs text-red-600">{tallyError}</p>
-                    )}
-                  </div>
-                ) : (
-                  <div>
-                    <p className="mb-2 text-sm font-semibold text-zinc-800">{t('tally.stepForms')}</p>
-                    <div className="max-h-72 space-y-2 overflow-y-auto pr-1" role="radiogroup" aria-label={t('tally.stepForms')}>
-                      {tallyForms.map((form) => {
-                        const selected = form.id === tallyFormId;
-                        return (
-                          <button
-                            key={form.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => setTallyFormId(form.id)}
-                            className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
-                              selected
-                                ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15'
-                                : 'border-zinc-200 bg-white hover:border-zinc-300'
-                            }`}
-                          >
-                            <BrandLogo
-                              src="/brands/tally.svg"
-                              alt=""
-                              chip={`size-8 rounded-lg shadow-none ${selected ? 'bg-amber-50 ring-1 ring-amber-400' : 'bg-white ring-1 ring-zinc-200'}`}
-                              img="size-5"
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-zinc-900">{form.title}</span>
-                              <span className="block truncate text-xs text-zinc-400">{form.id}</span>
-                            </span>
-                            <IconCheck className={`size-4 shrink-0 ${selected ? 'text-amber-600' : 'text-transparent'}`} />
-                          </button>
-                        );
-                      })}
                     </div>
-                    {tallyError && (
-                      <p role="alert" className="mt-2 text-xs text-red-600">{tallyError}</p>
-                    )}
+                    <TextInput
+                      label={t('tally.tokenLabel')}
+                      isLabelHidden
+                      value={tallyApiKey}
+                      onChange={setTallyApiKey}
+                      placeholder={t('tally.tokenPlaceholder')}
+                      width="100%"
+                    />
+                  </div>
+                </form>
+                {tallyError && (
+                  <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 dark:bg-red-500/10">
+                    <p className="min-w-0 flex-1 text-xs text-red-600 dark:text-red-400">{tallyError}</p>
+                    <Button
+                      label={t('common.retry')}
+                      variant="ghost"
+                      size="sm"
+                      isDisabled={tallyConnecting}
+                      onClick={() => void connectTally()}
+                    />
                   </div>
                 )}
               </div>
@@ -3260,24 +3976,14 @@ export function IntegrationsPage() {
             <LayoutFooter hasDivider>
               <div className="flex justify-end gap-2">
                 <Button label={t('common.cancel')} variant="ghost" onClick={closeTallyDialog} />
-                {tallyForms === null ? (
-                  <Button
-                    label={t('tally.loadForms')}
-                    variant="primary"
-                    type="submit"
-                    form="tally-key-form"
-                    isLoading={tallyLoadingForms}
-                    isDisabled={tallyApiKey.trim().length < 10 || tallyLoadingForms}
-                  />
-                ) : (
-                  <Button
-                    label={t('tally.connectForm')}
-                    variant="primary"
-                    isLoading={tallyConnecting}
-                    isDisabled={!tallyFormId || tallyConnecting}
-                    onClick={() => void connectTally()}
-                  />
-                )}
+                <Button
+                  label={t('tally.connect')}
+                  variant="primary"
+                  type="submit"
+                  form="tally-key-form"
+                  isLoading={tallyConnecting}
+                  isDisabled={tallyApiKey.trim().length < 10 || tallyConnecting}
+                />
               </div>
             </LayoutFooter>
           }
@@ -3307,21 +4013,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-5">
-                {googleCalendar && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('googleCalendar.calendarLabel'),
-                        value: googleCalendar.config.calendarName ?? googleCalendar.identifier ?? '—',
-                      },
-                      {
-                        label: t('channels.lastSyncLabel'),
-                        value: googleCalendar.lastSyncAt ? formatDateTime(googleCalendar.lastSyncAt) : t('googleCalendar.neverSynced'),
-                      },
-                    ]}
-                  />
-                )}
                 {calendars === null ? (
                   <form
                     id="google-calendar-form"
@@ -3339,7 +4030,7 @@ export function IntegrationsPage() {
                       rows={5}
                       width="100%"
                     />
-                    <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                    <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {t('googleCalendar.howTo')}
                     </p>
                     {calendarError && (
@@ -3348,7 +4039,7 @@ export function IntegrationsPage() {
                   </form>
                 ) : calendars.length === 0 ? (
                   <div>
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                       {t('googleCalendar.noCalendars')}
                     </p>
                     {calendarError && (
@@ -3357,7 +4048,7 @@ export function IntegrationsPage() {
                   </div>
                 ) : (
                   <div>
-                    <p className="mb-2 text-sm font-semibold text-zinc-800">{t('googleCalendar.stepCalendars')}</p>
+                    <p className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('googleCalendar.stepCalendars')}</p>
                     <div className="max-h-72 space-y-2 overflow-y-auto pr-1" role="radiogroup" aria-label={t('googleCalendar.stepCalendars')}>
                       {calendars.map((calendar) => {
                         const selected = calendar.id === calendarId;
@@ -3370,18 +4061,18 @@ export function IntegrationsPage() {
                             onClick={() => setCalendarId(calendar.id)}
                             className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
                               selected
-                                ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15'
-                                : 'border-zinc-200 bg-white hover:border-zinc-300'
+                                ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15 dark:bg-amber-950/40 dark:ring-amber-500/25'
+                                : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-600'
                             }`}
                           >
                             <BrandLogo
                               src="/brands/google-calendar.svg"
                               alt=""
-                              chip={`size-8 rounded-lg shadow-none ${selected ? 'bg-amber-50 ring-1 ring-amber-400' : 'bg-white ring-1 ring-zinc-200'}`}
+                              chip={`size-8 rounded-lg shadow-none ${selected ? 'bg-amber-50 ring-1 ring-amber-400' : 'bg-white dark:bg-zinc-900 ring-1 ring-zinc-200'}`}
                               img="size-5"
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-zinc-900">{calendar.summary}</span>
+                              <span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{calendar.summary}</span>
                               <span className="block truncate text-xs text-zinc-400">{calendar.id}</span>
                             </span>
                             <IconCheck className={`size-4 shrink-0 ${selected ? 'text-amber-600' : 'text-transparent'}`} />
@@ -3448,29 +4139,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-3">
-                {webhook && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('webhook.urlLabel'),
-                        value: webhook.config.url ? (
-                          <CopyableValue
-                            value={webhook.config.url}
-                            copied={copiedValue === webhook.config.url}
-                            onCopy={() => void copyValue(webhook.config.url ?? '')}
-                          />
-                        ) : (
-                          '—'
-                        ),
-                      },
-                      {
-                        label: t('webhook.signatureLabel'),
-                        value: webhook.config.hasSecret ? t('webhook.signed') : t('webhook.unsigned'),
-                      },
-                    ]}
-                  />
-                )}
                 <form id="webhook-connect-form" onSubmit={connectWebhook} className="space-y-3">
                   <TextInput
                     label={t('webhook.urlLabel')}
@@ -3492,7 +4160,7 @@ export function IntegrationsPage() {
                   placeholder={t('webhook.secretPlaceholder')}
                   width="100%"
                 />
-                <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   {t('webhook.secretHint')}
                 </p>
                   {webhookError && (
@@ -3551,28 +4219,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-3">
-                {(() => {
-                  const meta = channelRow(metaDialogType);
-                  if (!meta) return null;
-                  return (
-                    <ConnectedDetails
-                      title={t('channels.currentConfig')}
-                      rows={[
-                        { label: t('channels.pageLabel'), value: meta.identifier ?? '—' },
-                        {
-                          label: t('channels.webhookUrl'),
-                          value: (
-                            <CopyableValue
-                              value={meta.webhookUrl}
-                              copied={copiedValue === meta.webhookUrl}
-                              onCopy={() => void copyValue(meta.webhookUrl)}
-                            />
-                          ),
-                        },
-                      ]}
-                    />
-                  );
-                })()}
                 <div className="flex items-center gap-2">
                   <Button
                     label={t('channels.instagramTitle')}
@@ -3618,7 +4264,7 @@ export function IntegrationsPage() {
                 />
 
                 {metaPreview && (
-                  <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                  <div className="rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/40">
                     <p className="text-sm font-medium text-emerald-800">{metaPreview.name}</p>
                     <p className="mt-0.5 text-xs text-emerald-700">
                       {metaDialogType === 'instagram'
@@ -3630,7 +4276,7 @@ export function IntegrationsPage() {
                   </div>
                 )}
 
-                <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   {t('channels.metaHint', {
                     webhookUrl: metaWebhookUrl,
                   })}
@@ -3686,17 +4332,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-3">
-                {video && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('video.providerLabel'),
-                        value: video.config.provider === 'zoom' ? 'Zoom' : 'Google Meet',
-                      },
-                    ]}
-                  />
-                )}
                 <Selector
                   label={t('video.providerLabel')}
                   options={[
@@ -3712,7 +4347,7 @@ export function IntegrationsPage() {
                 />
 
                 {videoProviders && (
-                  <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                  <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                     {videoProvider === 'zoom'
                       ? (videoProviders.find((p) => p.provider === 'zoom')?.ready
                           ? t('video.zoomReady')
@@ -3767,23 +4402,6 @@ export function IntegrationsPage() {
           }
           content={
             <LayoutContent>
-              {voice && (
-                <div className="mb-3">
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('vapi.selectedNumberLabel'),
-                        value: voice.config.phoneNumber ?? voice.identifier ?? '—',
-                      },
-                      {
-                        label: t('vapi.modeLabel'),
-                        value: voice.config.mode === 'byoc' ? t('vapi.byoTabLabel') : t('vapi.operatorTabLabel'),
-                      },
-                    ]}
-                  />
-                </div>
-              )}
               <TabList
                 className="mb-3"
                 value={voiceTab}
@@ -3811,7 +4429,7 @@ export function IntegrationsPage() {
                         className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
                           voiceNumberId === n.id
                             ? 'border-sky-500 bg-sky-50 text-sky-700'
-                            : 'border-zinc-200 bg-white text-zinc-800 hover:border-zinc-300'
+                            : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
                         }`}
                       >
                         <span className="truncate font-medium">{n.number ?? n.name ?? n.id}</span>
@@ -3821,7 +4439,7 @@ export function IntegrationsPage() {
                       </button>
                     ))}
                     {voiceStatus && voiceStatus.numbers.length === 0 && (
-                      <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+                      <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
                         {t('vapi.noNumbers')}
                       </p>
                     )}
@@ -3906,7 +4524,7 @@ export function IntegrationsPage() {
                                 className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
                                   voiceByoNumber === n.phoneNumber
                                     ? 'border-sky-500 bg-sky-50 text-sky-700'
-                                    : 'border-zinc-200 bg-white text-zinc-800 hover:border-zinc-300'
+                                    : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
                                 }`}
                               >
                                 <span className="truncate font-medium">
@@ -3942,7 +4560,7 @@ export function IntegrationsPage() {
                                 className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
                                   voiceByoNumber === n.phoneNumber
                                     ? 'border-sky-500 bg-sky-50 text-sky-700'
-                                    : 'border-zinc-200 bg-white text-zinc-800 hover:border-zinc-300'
+                                    : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
                                 }`}
                               >
                                 <span className="truncate font-medium">
@@ -3962,7 +4580,7 @@ export function IntegrationsPage() {
                         </div>
                       )}
                       {voiceByoResult.owned.length === 0 && voiceByoResult.available.length === 0 && (
-                        <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+                        <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
                           {t('vapi.byoEmpty')}
                         </p>
                       )}
@@ -4099,21 +4717,6 @@ export function IntegrationsPage() {
           content={
             <LayoutContent>
               <div className="space-y-3">
-                {slack && (
-                  <ConnectedDetails
-                    title={t('channels.currentConfig')}
-                    rows={[
-                      {
-                        label: t('slack.targetLabel'),
-                        value: slack.config.webhookUrlHost ?? slack.identifier ?? '—',
-                      },
-                      {
-                        label: t('slack.channelLabel'),
-                        value: slack.config.channel ?? '—',
-                      },
-                    ]}
-                  />
-                )}
                 <form id="slack-connect-form" onSubmit={connectSlack} className="space-y-3">
                   <TextInput
                     label={t('slack.urlLabel')}
@@ -4135,7 +4738,7 @@ export function IntegrationsPage() {
                     placeholder={t('slack.channelPlaceholder')}
                     width="100%"
                   />
-                  <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                  <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                     {t('slack.hint')}
                   </p>
                   {slackError && (
@@ -4257,8 +4860,8 @@ export function IntegrationsPage() {
                   <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                     {t('formSend.formLinkLabel')}
                   </p>
-                  <div className="mt-1 flex items-center gap-1.5 rounded-lg bg-zinc-50 p-2">
-                    <p className="min-w-0 flex-1 break-all font-mono text-xs leading-relaxed text-zinc-500">
+                  <div className="mt-1 flex items-center gap-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-900 p-2">
+                    <p className="min-w-0 flex-1 break-all font-mono text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {sendFormType === 'tally'
                         ? (tally?.config.formUrl ?? '—')
                         : (googleForms?.config.formUrl ?? '—')}
@@ -4312,12 +4915,12 @@ export function IntegrationsPage() {
                           onClick={() => setSendFormContactId(contact.id)}
                           className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition ${
                             sendFormContactId === contact.id
-                              ? 'border-amber-500 bg-amber-50/60'
-                              : 'border-zinc-200 bg-white hover:bg-zinc-50'
+                              ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/40'
+                              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-900'
                           }`}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-zinc-800">
+                            <span className="block truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
                               {contact.name}
                             </span>
                             <span className="block truncate text-xs text-zinc-400">
@@ -4358,6 +4961,12 @@ export function IntegrationsPage() {
                         onClick={() => setSendFormChannel('telegram')}
                       />
                     )}
+                    {channels.some((ch) => ch.channelType === 'line' && ch.isActive) && (
+                      <DropdownMenuItem
+                        label={t('channels.line')}
+                        onClick={() => setSendFormChannel('line')}
+                      />
+                    )}
                   </DropdownMenu>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400">
                     {t('formSend.channelHint')}
@@ -4368,7 +4977,7 @@ export function IntegrationsPage() {
                   <p
                     role="alert"
                     className={`rounded-lg px-3 py-2 text-xs font-medium ${
-                      sendFormMessage.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                      sendFormMessage.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400'
                     }`}
                   >
                     {sendFormMessage.text}

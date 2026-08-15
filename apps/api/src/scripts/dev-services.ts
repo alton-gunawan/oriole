@@ -48,7 +48,6 @@ import { telegramSetWebhook } from '../lib/telegram.ts';
 const ROOT = resolve(import.meta.dirname, '..', '..', '..', '..');
 const CACHE_DIR = join(ROOT, 'node_modules', '.cache', 'oriole');
 const TUNNEL_STATE_FILE = join(CACHE_DIR, 'tunnel.json');
-const TUNNEL_LOG = join(CACHE_DIR, 'tunnel.log');
 const INNGEST_LOG = join(CACHE_DIR, 'inngest.log');
 const TUNNEL_TARGET = process.env.TUNNEL_TARGET ?? 'http://localhost:3000';
 const API_INNGEST_URL = 'http://localhost:3000/api/inngest';
@@ -59,6 +58,9 @@ interface TunnelState {
   pid: number | null;
   url: string;
   port: number;
+  /** Log milik generasi tunnel ini — unik per spawn agar proses lama yang
+   *  tidak bisa dimatikan tidak mengotori log tunnel baru. */
+  log: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -87,15 +89,6 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-function isProcessRunning(pattern: string): boolean {
-  try {
-    execSync(`pgrep -f "${pattern}"`, { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function hasBinary(name: string): boolean {
   try {
     execSync(`command -v ${name}`, { stdio: 'ignore' });
@@ -109,8 +102,18 @@ function readTunnelState(): TunnelState | null {
   try {
     if (!existsSync(TUNNEL_STATE_FILE)) return null;
     const parsed = JSON.parse(readFileSync(TUNNEL_STATE_FILE, 'utf8')) as Partial<TunnelState>;
-    if (typeof parsed.url !== 'string' || typeof parsed.port !== 'number') return null;
-    return { pid: typeof parsed.pid === 'number' ? parsed.pid : null, url: parsed.url, port: parsed.port };
+    if (
+      typeof parsed.url !== 'string' ||
+      typeof parsed.port !== 'number' ||
+      typeof parsed.log !== 'string'
+    )
+      return null;
+    return {
+      pid: typeof parsed.pid === 'number' ? parsed.pid : null,
+      url: parsed.url,
+      port: parsed.port,
+      log: parsed.log,
+    };
   } catch {
     return null;
   }
@@ -237,6 +240,48 @@ function isDnsError(error: unknown): boolean {
 }
 
 /**
+ * Deteksi tunnel yang MATI padahal proses cloudflared-nya masih hidup.
+ *
+ * Quick tunnel (trycloudflare.com) bersifat ephemeral: begitu koneksinya
+ * terputus cukup lama (laptop sleep / ganti jaringan), Cloudflare menghapus
+ * registrasi URL-nya. cloudflared tidak pernah bisa mendaftarkan ulang URL
+ * yang sama — ia hanya mencatat `ERR ... "Unauthorized: Tunnel not found"`
+ * berulang-ulang. `isPidAlive` saja TIDAK cukup: pid hidup ≠ tunnel sehat.
+ *
+ * Setiap spawn memakai file log SENDIRI (lihat `newTunnelLogPath`), sehingga
+ * keberadaan signature "Tunnel not found" di ekor log benar-benar milik
+ * generasi tunnel tersebut — bukti kuat URL sudah mati dan wajib diganti.
+ */
+function isTunnelLogHealthy(logPath: string): boolean {
+  try {
+    if (!existsSync(logPath)) return true;
+    const log = readFileSync(logPath, 'utf8');
+    return !/Tunnel not found/i.test(log.slice(-16_384));
+  } catch {
+    // Log tak terbaca → asumsikan sehat (jangan salah buang tunnel).
+    return true;
+  }
+}
+
+/**
+ * Path log baru per-generasi tunnel — unik agar tunnel lama (yang mungkin
+ * TIDAK bisa dimatikan, mis. dijalankan sebagai root lewat `sudo`) tidak
+ * menimpa output tunnel baru di file yang sama.
+ */
+function newTunnelLogPath(): string {
+  return join(CACHE_DIR, `tunnel-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}.log`);
+}
+
+/** Hentikan semua proses cloudflared quick tunnel milik dev-services. */
+function killTunnelProcesses(): void {
+  try {
+    execSync(`pkill -f "cloudflared tunnel --url ${TUNNEL_TARGET}"`, { stdio: 'ignore' });
+  } catch {
+    // Tidak ada proses cloudflared — lanjut.
+  }
+}
+
+/**
  * Pastikan ada quick tunnel yang hidup. Mengembalikan base URL webhook,
  * atau null bila tunnel tidak dapat dijalankan (mis. cloudflared belum
  * diinstall — warning, `pnpm dev` tetap lanjut).
@@ -255,27 +300,35 @@ async function ensureTunnel(): Promise<string | null> {
     return null;
   }
 
-  // 1) State file valid (pid masih hidup) → reuse.
+  // Tunnel lama yang pid-nya masih hidup TAPI sudah mati di sisi Cloudflare
+  // ("Tunnel not found") TIDAK boleh di-reuse — URL-nya sudah hilang selamanya.
+  // Proses lama dicoba dimatikan (best-effort; bisa gagal bila root-owned),
+  // lalu state dibuang dan tunnel baru dibuat dengan log + URL baru.
   const state = readTunnelState();
   if (state && state.port === 3000 && state.pid != null && isPidAlive(state.pid)) {
-    syncEnvWebhookBaseUrl(state.url);
-    console.log(`[dev-services] Tunnel masih hidup (reuse): ${state.url}`);
-    return state.url;
+    if (isTunnelLogHealthy(state.log)) {
+      syncEnvWebhookBaseUrl(state.url);
+      console.log(`[dev-services] Tunnel masih hidup (reuse): ${state.url}`);
+      return state.url;
+    }
+    console.warn('[dev-services] Tunnel lama mati di Cloudflare ("Tunnel not found") → dibuat ulang dengan URL baru.');
+    killTunnelProcesses();
   }
 
-  // 2) cloudflared sudah berjalan + .env masih trycloudflare → reuse URL .env.
-  if (currentBase && isProcessRunning(`cloudflared tunnel --url ${TUNNEL_TARGET}`)) {
-    syncEnvWebhookBaseUrl(currentBase);
-    console.log(`[dev-services] cloudflared sudah berjalan → reuse: ${currentBase}`);
-    return currentBase;
+  // State basi / tidak ada → buang sisa state lama sebelum spawn baru.
+  try {
+    if (existsSync(TUNNEL_STATE_FILE)) unlinkSync(TUNNEL_STATE_FILE);
+  } catch {
+    // Abaikan — spawn baru akan menimpa state.
   }
 
-  // 3) Spawn tunnel baru.
-  // 'w' (truncate): log hanya berisi output generasi ini — waitForTunnelUrl
-  // membaca URL pertama yang cocok, jadi URL generasi lama di log lama harus
-  // tidak ikut terbaca (kalau tidak, rotasi "menemukan" URL yang sama).
+  // Spawn tunnel baru dengan log PER-GENERASI. Log tidak di-share dengan proses
+  // lama (yang mungkin root-owned dan tidak bisa dimatikan) — masing-masing
+  // menulis ke file sendiri, sehingga waitForTunnelUrl & health check hanya
+  // melihat output generasi ini dan tidak pernah "menemukan" URL mati lama.
   mkdirSync(CACHE_DIR, { recursive: true });
-  const outFd = openSync(TUNNEL_LOG, 'w');
+  const logPath = newTunnelLogPath();
+  const outFd = openSync(logPath, 'w');
   // `--protocol http2` (TCP) + `--edge-ip-version 4`: di beberapa jaringan
   // (termasuk dev machine ini) outbound UDP/QUIC (port 7844) diblokir sehingga
   // quick tunnel yang register via QUIC mati dalam hitungan detik — HTTP/2
@@ -288,8 +341,8 @@ async function ensureTunnel(): Promise<string | null> {
   child.unref();
 
   try {
-    const url = await waitForTunnelUrl(TUNNEL_LOG, 45_000);
-    writeTunnelState({ pid: child.pid ?? null, url, port: 3000 });
+    const url = await waitForTunnelUrl(logPath, 45_000);
+    writeTunnelState({ pid: child.pid ?? null, url, port: 3000, log: logPath });
     syncEnvWebhookBaseUrl(url);
     console.log(`[dev-services] Tunnel baru siap: ${url}`);
     return url;
@@ -306,11 +359,7 @@ async function ensureTunnel(): Promise<string | null> {
  */
 async function rotateTunnel(): Promise<string | null> {
   console.warn('[dev-services] Rotasi tunnel (URL lama ter-poison DNS)…');
-  try {
-    execSync(`pkill -f "cloudflared tunnel --url ${TUNNEL_TARGET}"`, { stdio: 'ignore' });
-  } catch {
-    // Tidak ada proses cloudflared — lanjut.
-  }
+  killTunnelProcesses();
   try {
     if (existsSync(TUNNEL_STATE_FILE)) unlinkSync(TUNNEL_STATE_FILE);
   } catch {

@@ -30,6 +30,8 @@ import {
   Menu,
   MessageSquare,
   MicOff,
+  Monitor,
+  Moon,
   MoreHorizontal,
   MoreVertical,
   PanelLeftClose,
@@ -48,6 +50,8 @@ import {
   Shield,
   Signal,
   SlidersVertical,
+  Sun,
+  SunMoon,
   Tags,
   Trash2,
   TriangleAlert,
@@ -132,6 +136,10 @@ export const IconPanelLeftOpen = PanelLeftOpen;
 export const IconBookmark = Bookmark;
 export const IconReceipt = Receipt;
 export const IconGlobe = Globe;
+export const IconSun = Sun;
+export const IconSunMoon = SunMoon;
+export const IconMoon = Moon;
+export const IconMonitor = Monitor;
 export const IconVideo = Video;
 export const IconMicOff = MicOff;
 export const IconSignal = Signal;
@@ -184,6 +192,34 @@ export function IconHouseLine(props: IconProps) {
   return (
     <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
       <path d="M240,208H224V136l2.34,2.34A8,8,0,0,0,237.66,127L139.31,28.68a16,16,0,0,0-22.62,0L18.34,127a8,8,0,0,0,11.32,11.31L32,136v72H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM48,120l80-80,80,80v88H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48Zm96,88H112V160h32Z" />
+    </svg>
+  );
+}
+
+export function IconSquaresFour(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 256 256"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="16"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <rect x="48" y="48" width="64" height="64" rx="10" />
+      <rect x="144" y="48" width="64" height="64" rx="10" />
+      <rect x="48" y="144" width="64" height="64" rx="10" />
+      <rect x="144" y="144" width="64" height="64" rx="10" />
+    </svg>
+  );
+}
+
+export function IconPhonePhosphor(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M222.37,158.46l-48-24A16,16,0,0,0,155.8,138l-19.16,24c-22.39-11.45-43.23-32.28-54.68-54.67L106,88.19A16,16,0,0,0,109.53,69.6l-24-48A16,16,0,0,0,67.38,13.23L23.1,28.2A16,16,0,0,0,12,43.28C12,149.6,98.4,236,204.72,236a16,16,0,0,0,15.08-11.1l14.97-44.28A16,16,0,0,0,222.37,158.46ZM204.72,220C107.27,220,28,140.73,28,43.28L72.28,28.31,96.28,76.31,73.8,94.3a8,8,0,0,0-2,9.39c14,27.53,38.77,52.3,66.3,66.3a8,8,0,0,0,9.39-2l18-22.48,48,24Z" />
     </svg>
   );
 }

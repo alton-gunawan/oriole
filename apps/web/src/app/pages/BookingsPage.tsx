@@ -89,10 +89,10 @@ const STATUS_DOT: Record<BookingRecord['status'], StatusDotVariant> = {
 
 /** Warna teks opsi filter status — mengikuti variant dot-nya. */
 const STATUS_TEXT: Record<string, string> = {
-  '': 'text-zinc-500',
+  '': 'text-zinc-500 dark:text-zinc-400',
   pending: 'text-amber-600',
   confirmed: 'text-emerald-600',
-  completed: 'text-zinc-500',
+  completed: 'text-zinc-500 dark:text-zinc-400',
   cancelled: 'text-red-600',
 };
 
@@ -572,7 +572,7 @@ export function BookingsPage() {
       width: proportional(3),
       renderCell: (booking) => (
         <Link to={`/app/bookings/${booking.id}`} className="group block min-w-0">
-          <span className="block truncate text-base font-semibold text-zinc-900 transition group-hover:text-amber-600">
+          <span className="block truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 transition group-hover:text-amber-600">
             {booking.serviceName ?? booking.title ?? t('bookings.noService')}
           </span>
         </Link>
@@ -586,7 +586,7 @@ export function BookingsPage() {
         const staffName = booking.staffId ? staffNameById.get(booking.staffId) : null;
         return (
           <span className="block min-w-0">
-            <span className="block truncate text-base text-zinc-600">
+            <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
               {formatDateTime(booking.scheduledAt)}
             </span>
             {staffName && (
@@ -604,7 +604,7 @@ export function BookingsPage() {
       header: t('bookings.colDuration'),
       width: pixel(100),
       renderCell: (booking) => (
-        <span className="block truncate text-base text-zinc-600">
+        <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
           {booking.durationMinutes > 0
             ? t('bookings.duration', { count: booking.durationMinutes })
             : '—'}
@@ -874,7 +874,7 @@ export function BookingsPage() {
                 <SelectorOption
                   icon={option.icon}
                   label={
-                    <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500'}>
+                    <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500 dark:text-zinc-400'}>
                       {option.label}
                     </span>
                   }
@@ -918,12 +918,12 @@ export function BookingsPage() {
         <>
           {showError && (
             <Card className="flex flex-col items-center gap-4 p-10 text-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
                 <IconAlertTriangle className="size-6" />
               </span>
               <div>
-                <h3 className="text-lg font-semibold text-zinc-900">{t('errors.bookingsLoadTitle')}</h3>
-                <p className="mt-1 text-sm text-zinc-500">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.bookingsLoadTitle')}</h3>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                   {error instanceof ApiError
                     ? t('errors.apiStatus', { status: error.status })
                     : t('errors.apiConnection')}
@@ -938,7 +938,7 @@ export function BookingsPage() {
               {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-6 border-b border-zinc-100 px-5 py-4 last:border-b-0"
+                  className="flex items-center gap-6 border-b border-zinc-100 dark:border-zinc-800 px-5 py-4 last:border-b-0"
                 >
                   <Skeleton width="28%" height={14} />
                   <Skeleton width="18%" height={12} />
@@ -952,7 +952,7 @@ export function BookingsPage() {
           {actionError && (
             <p
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
             >
               {actionError}
             </p>
@@ -982,8 +982,8 @@ export function BookingsPage() {
               ) : (
                 <>
                   {selectedKeys.size > 0 && (
-                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm font-medium text-zinc-800">
+                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                         {t('bookings.selectedCount', { count: selectedKeys.size })}
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1057,7 +1057,7 @@ export function BookingsPage() {
                   {/* Footer: rows-per-page (kiri) + info realtime jumlah baris terlihat */}
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-zinc-500">
+                      <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                         {t('bookings.rowsPerPage')}
                       </span>
                       <Selector
@@ -1077,7 +1077,7 @@ export function BookingsPage() {
                       <Trans
                         i18nKey="bookings.showingRows"
                         values={{ shown: visibleRows.length, total: data?.total ?? 0 }}
-                        components={{ strong: <strong className="font-bold text-black" /> }}
+                        components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
                       />
                     </p>
                     {/* Pagination di ujung kanan, di luar border tabel */}

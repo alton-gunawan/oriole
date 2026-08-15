@@ -83,6 +83,20 @@ export async function emitSlackBookingEvent(
 }
 
 /**
+ * Antrekan notifikasi booking → chat Telegram bisnis
+ * (`telegram-alert/booking.event`). Payload sama dengan webhook keluar —
+ * lib telegram-alerts.ts yang memformat kartu pesan.
+ */
+export async function emitTelegramBookingAlert(
+  workspaceId: string,
+  event: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (!(await integrationIsActive(workspaceId, 'telegram-alerts'))) return;
+  await safeSend('telegram-alert/booking.event', { workspaceId, event, data });
+}
+
+/**
  * Antrekan sinkronisasi booking → Google Calendar
  * (`google-calendar/booking.changed`, action: 'upsert' | 'delete').
  */

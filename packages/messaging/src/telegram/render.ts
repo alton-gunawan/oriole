@@ -83,6 +83,41 @@ export function formatSlotTime(
   return formatAppointment(scheduledAt, timezone, language === 'id' ? 'id-ID' : 'en-US');
 }
 
+/**
+ * Konfirmasi booking diterima — dipakai auto-respond saat booking dibuat dari
+ * submission form (Tally / Google Forms), sebelum reminder terjadwal terkirim.
+ */
+export function renderBookingReceivedReply(
+  input: BookingReminderInput,
+  language: BotLanguage = 'en',
+): string {
+  const when = formatSlotTime(input.scheduledAt, input.timezone, language);
+  const customer = input.customerName?.trim();
+  const greet = customer
+    ? (language === 'id' ? `Halo ${customer}! 🙌` : `Hello ${customer}! 🙌`)
+    : (language === 'id' ? 'Halo! 🙌' : 'Hello! 🙌');
+  return (language === 'id'
+    ? [
+        greet,
+        '',
+        `Booking Anda untuk **${input.title}** di ${input.businessName} telah kami terima.`,
+        '',
+        `📅 ${when}`,
+        '',
+        'Kami akan mengirimkan pengingat sebelum jadwal Anda.',
+      ]
+    : [
+        greet,
+        '',
+        `Your booking for **${input.title}** at ${input.businessName} has been received.`,
+        '',
+        `📅 ${when}`,
+        '',
+        "We'll send you a reminder before your appointment.",
+      ]
+  ).join('\n');
+}
+
 /** Input render pesan undangan mengisi form (channel-agnostic). */
 export interface FormInvitationInput {
   businessName?: string | null;
@@ -144,6 +179,151 @@ export function renderConfirmReply(
         '✅ Thank you, your attendance has been confirmed!',
         '',
         `We look forward to seeing you: ${formatSlotTime(scheduledAt, timezone, language)}.`,
+      ].join('\n');
+}
+
+/**
+ * Tawaran slot kosong (waitlist) — dikirim saat booking dibatalkan dan
+ * slotnya dilepas ke customer daftar tunggu berikutnya.
+ */
+export function renderWaitlistOffer(
+  input: { serviceName: string | null; scheduledAt: string; timezone?: string | null },
+  language: BotLanguage = 'en',
+): string {
+  const when = formatSlotTime(input.scheduledAt, input.timezone, language);
+  const service = input.serviceName ?? (language === 'id' ? 'layanan Anda' : 'your service');
+  return language === 'id'
+    ? [
+        `🎉 Kabar baik! Slot untuk ${service} pada ${when} baru saja kosong.`,
+        '',
+        'Balas *Ya* untuk mengambil slot ini (kami akan bookingkan untuk Anda), atau balas *Tidak* untuk melewatkannya.',
+      ].join('\n')
+    : [
+        `🎉 Good news! A slot for ${service} on ${when} just opened up.`,
+        '',
+        'Reply *Yes* to claim it (we\'ll book it for you), or reply *No* to pass.',
+      ].join('\n');
+}
+
+/** Konfirmasi customer sudah masuk daftar tunggu. */
+export function renderWaitlistJoined(language: BotLanguage = 'en'): string {
+  return language === 'id'
+    ? '👍 Anda sudah masuk daftar tunggu. Kami akan menghubungi Anda begitu ada slot kosong.'
+    : '👍 You\'re on the waitlist. We\'ll message you as soon as a slot opens up.';
+}
+
+/** Balasan saat customer menolak tawaran slot daftar tunggu. */
+export function renderWaitlistDeclinedReply(language: BotLanguage = 'en'): string {
+  return language === 'id'
+    ? 'Baik, tidak masalah. Semoga berjumpa lain waktu! 👋'
+    : 'No problem. Hope to see you another time! 👋';
+}
+
+/**
+ * Permintaan ulasan (review) — dikirim setelah booking selesai. Customer
+ * diminta membalas dengan nilai 1–5 + ulasan singkat.
+ */
+export function renderReviewRequest(
+  input: { businessName: string | null; customerName?: string | null },
+  language: BotLanguage = 'en',
+): string {
+  const customer = input.customerName?.trim();
+  const greet = customer
+    ? (language === 'id' ? `Halo ${customer}! 🙏` : `Hello ${customer}! 🙏`)
+    : (language === 'id' ? 'Halo! 🙏' : 'Hello! 🙏');
+  const business = input.businessName?.trim();
+  return language === 'id'
+    ? [
+        greet,
+        '',
+        `Terima kasih sudah menggunakan layanan${business ? ` ${business}` : ' kami'}.`,
+        '',
+        'Bagaimana pengalaman Anda? Balas dengan nilai 1–5 dan ulasan singkat. Masukan Anda sangat berarti bagi kami. ⭐',
+      ].join('\n')
+    : [
+        greet,
+        '',
+        `Thank you for choosing${business ? ` ${business}` : ' us'}.`,
+        '',
+        'How was your experience? Reply with a 1–5 rating and a short comment. Your feedback means a lot to us. ⭐',
+      ].join('\n');
+}
+
+/**
+ * Pesan re-engagement untuk pelanggan dorman / no-show. `reason` memilih
+ * copy yang sesuai ('no-show' = ajakan jadwal ulang, selain itu = ajakan
+ * booking kembali).
+ */
+export function renderReEngagement(
+  input: { businessName: string | null; customerName?: string | null; reason: 'no-show' | 'dormant' },
+  language: BotLanguage = 'en',
+): string {
+  const customer = input.customerName?.trim();
+  const greet = customer
+    ? (language === 'id' ? `Halo ${customer}! 👋` : `Hello ${customer}! 👋`)
+    : (language === 'id' ? 'Halo! 👋' : 'Hello! 👋');
+  const business = input.businessName?.trim();
+
+  if (input.reason === 'no-show') {
+    return language === 'id'
+      ? [
+          greet,
+          '',
+          `Kami rindu Anda di${business ? ` ${business}` : ' tempat kami'}! Sepertinya Anda melewatkan jadwal terakhir.`,
+          '',
+          'Mau kami bantu menjadwalkan ulang? Balas pesan ini dan kami siap membantu. 🙌',
+        ].join('\n')
+      : [
+          greet,
+          '',
+          `We missed you at${business ? ` ${business}` : ' our place'}! It looks like you missed your last appointment.`,
+          '',
+          "Would you like help rescheduling? Just reply and we'll take care of it. 🙌",
+        ].join('\n');
+  }
+
+  return language === 'id'
+    ? [
+        greet,
+        '',
+        `Sudah lama tidak bertemu! ${business ? `${business} ` : ''}masih punya slot tersedia untuk Anda.`,
+        '',
+        'Ingin booking lagi? Balas pesan ini dan kami bantu carikan jadwal. ⭐',
+      ].join('\n')
+    : [
+        greet,
+        '',
+        `It's been a while! ${business ? `${business} ` : 'We'} still have open slots for you.`,
+        '',
+        "Want to book again? Just reply and we'll help you find a time. ⭐",
+      ].join('\n');
+}
+
+/** Konfirmasi slot waitlist berhasil dibookingkan (customer menjawab "Ya"). */
+export function renderWaitlistBookedReply(
+  input: { customerName?: string | null; serviceName: string | null; scheduledAt: string; timezone?: string | null },
+  language: BotLanguage = 'en',
+): string {
+  const when = formatSlotTime(input.scheduledAt, input.timezone, language);
+  const service = input.serviceName ?? (language === 'id' ? 'layanan Anda' : 'your service');
+  const customer = input.customerName?.trim();
+  const greet = customer
+    ? (language === 'id' ? `Halo ${customer}! 🎉` : `Hello ${customer}! 🎉`)
+    : (language === 'id' ? 'Halo! 🎉' : 'Hello! 🎉');
+  return language === 'id'
+    ? [
+        greet,
+        '',
+        `Slot ${service} pada ${when} sudah kami bookingkan untuk Anda.`,
+        '',
+        'Kami akan mengirimkan pengingat sebelum jadwal Anda.',
+      ].join('\n')
+    : [
+        greet,
+        '',
+        `Your ${service} slot on ${when} has been booked for you.`,
+        '',
+        "We'll send you a reminder before your appointment.",
       ].join('\n');
 }
 
@@ -379,26 +559,30 @@ export function renderAiDisabledReply(language: BotLanguage = 'en'): string {
       ].join('\n');
 }
 
-/** Balasan saat customer minta booking tapi belum ada form terhubung. */
+/**
+ * Balasan saat customer minta booking tapi form online belum diaktifkan:
+ * jelaskan kondisinya secara jujur (bukan "tidak menerima booking") + arahkan
+ * ke admin untuk proses booking.
+ */
 export function renderNoFormReply(language: BotLanguage = 'en'): string {
   return language === 'id'
     ? [
         'Terima kasih atas minat Anda untuk booking! 🙌',
-        'Saat ini kami sedang tidak menerima booking otomatis.',
-        'Silakan hubungi admin kami langsung — kami akan segera membalas.',
+        'Booking online kami belum diaktifkan.',
+        'Silakan hubungi admin kami langsung untuk booking — kami akan segera membalas.',
       ].join('\n')
     : [
         'Thank you for your interest in booking! 🙌',
-        'We are not accepting online bookings at the moment.',
-        'Please contact our admin directly — we will reply as soon as possible.',
+        "Online booking isn't set up for us yet.",
+        'Please contact our admin directly to book — we will reply as soon as possible.',
       ].join('\n');
 }
 
 /**
  * Balasan saat nomor customer tidak punya booking AKTIF (pending/confirmed):
  * jelaskan kondisinya + arahkan ke form booking bila tersedia (customer yang
- * ingin booking dari awal). Tanpa form → caller memakai renderNoFormReply
- * (handoff staf) dan tandai percakapan needsAttention.
+ * ingin booking dari awal). Tanpa form → arahkan hubungi admin langsung
+ * (handoff staf) — caller tetap menandai percakapan needsAttention.
  */
 export function renderNoBookingReply(
   formUrl: string | null | undefined,
@@ -416,13 +600,17 @@ export function renderNoBookingReply(
       '',
       formUrl,
       '',
+      language === 'id'
+        ? 'Setelah mengisi form, konfirmasi booking akan kami kirim otomatis di sini.'
+        : 'Once you\'ve filled in the form, we\'ll confirm your booking right here automatically.',
+    );
+  } else {
+    lines.push(
+      language === 'id'
+        ? 'Jika Anda ingin membuat booking baru, silakan hubungi admin kami langsung — kami akan segera membalas.'
+        : 'If you would like to make a new booking, please contact our admin directly — we will reply as soon as possible.',
     );
   }
-  lines.push(
-    language === 'id'
-      ? 'Setelah mengisi form, kirim pesan lagi di sini agar booking Anda terhubung.'
-      : 'Once you have filled the form, message us again here to connect your booking.',
-  );
   return lines.join('\n');
 }
 

@@ -92,7 +92,7 @@ function post(body: string, secret?: string) {
 }
 
 describe('POST /api/webhooks/telegram — keamanan', () => {
-  it('project soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
+  it('bisnis soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
     app = await buildApp();
     isWorkspaceActiveMock.mockResolvedValue(false);
     const res = await post(validBody());

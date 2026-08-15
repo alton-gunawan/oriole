@@ -31,7 +31,7 @@ export const telegramWebhookRoutes = new Hono().post(
     const workspaceId = c.req.param('workspaceId');
     const body = c.req.valid('json') as TelegramUpdate;
 
-    // Project soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
+    // Bisnis soft-deleted / sudah dihapus permanen → drop update (ack 200 agar
     // Telegram tidak me-retry; pesan tidak akan pernah diproses).
     if (!(await isWorkspaceActive(workspaceId))) {
       return c.json({ received: true, disabled: true });

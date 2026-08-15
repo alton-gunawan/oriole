@@ -73,3 +73,30 @@
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Dark mode ───────────────────────────────────────────────
+ * Field di atas memakai nilai light-only (hex). Saat data-theme='dark'
+ * di <html>, blok ini menukarnya ke palet gelap senada token astryx
+ * (mirip blok dark-mode kalender & Tremor di index.css). */
+
+html[data-theme='dark'] .PhoneInputInput {
+  border-color: #3f3f46;     /* zinc-700 */
+  background: #27272a;       /* zinc-800 */
+  color: #e4e4e7;            /* zinc-200 */
+}
+
+html[data-theme='dark'] .PhoneInputInput::placeholder {
+  color: #71717a;            /* zinc-500 */
+}
+
+html[data-theme='dark'] .PhoneInputInput:hover {
+  border-color: #52525b;     /* zinc-600 */
+}
+
+html[data-theme='dark'] .phone-country-flag {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14); /* garis tipis antar bendera gelap */
+}
+
+html[data-theme='dark'] .phone-country-code {
+  color: #71717a;            /* zinc-500 */
+}

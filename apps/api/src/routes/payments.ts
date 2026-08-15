@@ -145,7 +145,7 @@ export const paymentsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     }
     if (!isPaddlePaymentsConfigured()) {
       return c.json(
-        { error: 'PADDLE_API_KEY belum dikonfigurasi di server. Hubungi administrator project.' },
+        { error: 'PADDLE_API_KEY belum dikonfigurasi di server. Hubungi administrator.' },
         503,
       );
     }
@@ -161,7 +161,7 @@ export const paymentsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     }
 
     // bookingId (bila ada) harus milik workspace ini — jangan biarkan link
-    // menaut ke booking project lain.
+    // menaut ke booking bisnis lain.
     if (body.bookingId) {
       const [booking] = await db
         .select({ id: bookings.id })
@@ -169,7 +169,7 @@ export const paymentsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .where(and(eq(bookings.id, body.bookingId), eq(bookings.workspaceId, workspaceId)))
         .limit(1);
       if (!booking) {
-        return c.json({ error: 'Booking tidak ditemukan di project ini.' }, 400);
+        return c.json({ error: 'Booking tidak ditemukan di bisnis ini.' }, 400);
       }
     }
 

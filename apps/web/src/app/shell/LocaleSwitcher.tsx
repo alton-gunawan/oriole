@@ -103,7 +103,7 @@ export function LocaleSwitcher({ placement = 'below' }: { placement?: 'above' | 
         variant: 'ghost',
         size: 'sm',
         children: (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
             <span className="text-sm leading-none">{current.flag}</span>
             <span className="tracking-wide">{current.short}</span>
           </span>

@@ -46,7 +46,7 @@ export function ReloadMenuButton({
         variant: 'ghost',
         size: 'md',
         isIconOnly: true,
-        icon: <IconDotsVertical className="size-4 text-zinc-500" />,
+        icon: <IconDotsVertical className="size-4 text-zinc-500 dark:text-zinc-400" />,
         // Border tanpa background: ghost = transparan, border diberi lewat
         // inline agar setara dengan tombol "New booking" di sebelahnya.
         style: { border: '1px solid var(--color-border-emphasized)' },
@@ -86,9 +86,9 @@ export function PageHeader({
       <div>
         <div className="flex items-center gap-3">
           {Icon && <Icon className="size-6 shrink-0 text-amber-600" />}
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h1>
         </div>
-        {description && <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-zinc-500">{description}</p>}
+        {description && <p className="mt-1.5 max-w-xl text-base leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>}
       </div>
       {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
     </div>
@@ -139,8 +139,8 @@ export function StatCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">{label}</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-zinc-900">{value}</p>
-          {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+          <p className="mt-2 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{value}</p>
+          {hint && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{hint}</p>}
         </div>
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
           <Icon className="size-5" />
@@ -150,7 +150,9 @@ export function StatCard({
         <div className="mt-3 flex items-center gap-1.5 text-xs">
           <span
             className={`rounded-md px-1.5 py-0.5 font-semibold ${
-              trend.positive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+              trend.positive
+                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400'
+                : 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400'
             }`}
           >
             {trend.positive ? '▲' : '▼'} {trend.label}
@@ -169,10 +171,10 @@ export function SessionExpiredCard() {
   const { t } = useTranslation();
   return (
     <Card className="flex flex-col items-center gap-4 p-10 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-zinc-100">
+      <span className="flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
         <Spinner size="md" />
       </span>
-      <p className="text-sm text-zinc-500">{t('errors.sessionExpired')}</p>
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('errors.sessionExpired')}</p>
     </Card>
   );
 }
@@ -242,16 +244,16 @@ export function ConfirmDialog({
       <Layout
         content={
           <LayoutContent>
-            <h2 id={titleId} className="text-lg font-bold text-zinc-900">{title}</h2>
-            <p id={descriptionId} className="mt-1.5 text-sm leading-relaxed text-zinc-500">{description}</p>
+            <h2 id={titleId} className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{title}</h2>
+            <p id={descriptionId} className="mt-1.5 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>
 
             {hasConfirm && (
               <div className="mt-4 space-y-1.5">
-                <p className="text-xs font-medium leading-relaxed text-zinc-500">
+                <p className="text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
                   <Trans
                     i18nKey="confirm.typeToConfirm"
                     values={{ name: confirmText }}
-                    components={{ strong: <strong className="font-semibold text-zinc-900" /> }}
+                    components={{ strong: <strong className="font-semibold text-zinc-900 dark:text-zinc-100" /> }}
                   />
                 </p>
                 <TextInput
@@ -314,11 +316,11 @@ export function EmptyState({
 }) {
   return (
     <Card className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <span className="flex size-14 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400">
+      <span className="flex size-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
         <Icon className="size-7" />
       </span>
-      <h3 className="mt-5 text-base font-semibold text-zinc-900">{title}</h3>
-      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-zinc-500">{description}</p>
+      <h3 className="mt-5 text-base font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
+      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>
       {action && (
         <Button
           className="mt-6"

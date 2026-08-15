@@ -16,6 +16,7 @@ import { ErrorScreen } from './app/shell/RouteErrorElement';
 import { ConsentBanner } from './app/components/ConsentBanner';
 import { useTranslation } from 'react-i18next';
 import { analyticsInitOptions, applyAnalyticsConsent } from './lib/analytics';
+import { applyStoredTheme } from './lib/theme';
 import { readStoredConsent } from './stores/consent';
 
 // ── PostHog analytics ────────────────────────────────────────
@@ -77,6 +78,10 @@ function RootErrorFallback({ error }: { error: Error }) {
 }
 
 import './index.css';
+
+// Terapkan tema tersimpan sebelum render pertama (menghindari flash &
+// membuat halaman di luar AppShell — mis. auth — ikut bertema).
+applyStoredTheme();
 
 // Pulihkan sesi (token sessionStorage → status store) sebelum render pertama.
 void restoreSession();

@@ -6,7 +6,7 @@ import { decryptSecret } from './crypto.ts';
 
 /* ────────────────────────────────────────────────────────────
  * Notion integration — Notion berfungsi sebagai database
- * eksternal untuk aplikasi: kontak project di-sync menjadi
+ * eksternal untuk aplikasi: kontak bisnis di-sync menjadi
  * baris (page) di sebuah database Notion milik user.
  * ──────────────────────────────────────────────────────────── */
 

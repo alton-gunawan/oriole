@@ -76,7 +76,7 @@ export function GoalCustomizer({
 
   if (!autoConfig) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-500">
+      <div className="flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2.5 text-sm text-zinc-500 dark:text-zinc-400">
         <IconPhone className="size-4 text-zinc-400" />
         {autoDecision.reason}
       </div>
@@ -86,7 +86,7 @@ export function GoalCustomizer({
   const active = effectiveConfig ?? autoConfig;
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/60 dark:bg-amber-950/30">
       {/* Status otomatis — pengalaman default */}
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
@@ -94,12 +94,12 @@ export function GoalCustomizer({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-zinc-900">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               {isCustomized ? active.title : autoConfig.title}
             </p>
             {isCustomized && <Badge variant="neutral" label={t('goal.customized')} />}
           </div>
-          <p className="mt-0.5 text-xs leading-relaxed text-zinc-600">
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
             {active.summary}. {autoDecision.reason}
           </p>
         </div>
@@ -143,7 +143,7 @@ export function GoalCustomizer({
           </div>
 
           {/* Preview goal final */}
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant="neutral" label={t(goalTypeKey(active.goalType)!)} />
               <Badge

@@ -122,7 +122,7 @@ function sign(body: string): string {
 }
 
 describe('POST /api/webhooks/waha — keamanan', () => {
-  it('project soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
+  it('bisnis soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
     app = await buildApp();
     isWorkspaceActiveMock.mockResolvedValue(false);
     const res = await app.request('/api/webhooks/waha/ws-1', {

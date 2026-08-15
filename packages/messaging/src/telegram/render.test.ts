@@ -6,6 +6,7 @@ import {
   renderAiDisabledReply,
   renderAiHandoffReply,
   renderAskPhoneReply,
+  renderBookingReceivedReply,
   renderBookingReminder,
   renderBusinessInfoReply,
   renderFormInvitation,
@@ -13,6 +14,12 @@ import {
   renderNoFormReply,
   renderPhoneMismatchReply,
   renderOptOutReply,
+  renderReEngagement,
+  renderReviewRequest,
+  renderWaitlistBookedReply,
+  renderWaitlistDeclinedReply,
+  renderWaitlistJoined,
+  renderWaitlistOffer,
 } from './render.ts';
 import { buildCallbackData } from './parse.ts';
 
@@ -25,6 +32,26 @@ const reminderInput = {
   scheduledAt: '2026-08-15T07:00:00.000Z',
   timezone: 'Asia/Jakarta',
 };
+
+describe('renderBookingReceivedReply', () => {
+  it('default Inggris: sapaan + booking diterima + waktu + pengingat, tanpa placeholder menggantung', () => {
+    const rendered = renderBookingReceivedReply(reminderInput);
+    expect(rendered).toContain('Hello Budi');
+    expect(rendered).toContain('has been received');
+    expect(rendered).toContain('Scaling Gigi');
+    expect(rendered).toContain('Klinik Gigi Sehat');
+    expect(rendered).toContain('reminder before your appointment');
+    expect(rendered).not.toContain('undefined');
+  });
+
+  it('bahasa Indonesia (id): booking diterima + pengingat sebelum jadwal', () => {
+    const rendered = renderBookingReceivedReply(reminderInput, 'id');
+    expect(rendered).toContain('Halo Budi');
+    expect(rendered).toContain('telah kami terima');
+    expect(rendered).toContain('pengingat sebelum jadwal');
+    expect(rendered).not.toContain('undefined');
+  });
+});
 
 describe('renderBookingReminder', () => {
   it('default bahasa Inggris: nama bisnis, judul booking, waktu terformat (en-US), tombol EN', () => {
@@ -179,7 +206,8 @@ describe('renderNoBookingReply', () => {
     expect(rendered).toContain('could not find an active booking');
     expect(rendered).toContain('make a new booking');
     expect(rendered).toContain('https://docs.google.com/forms/d/e/abc/viewform');
-    expect(rendered).toContain('message us again');
+    expect(rendered).toContain('confirm your booking right here automatically');
+    expect(rendered).not.toContain('message us again');
     expect(rendered).not.toContain('undefined');
   });
 
@@ -188,14 +216,16 @@ describe('renderNoBookingReply', () => {
     expect(rendered).toContain('tidak menemukan booking aktif');
     expect(rendered).toContain('Mau membuat booking baru?');
     expect(rendered).toContain('https://tally.so/r/xyz');
-    expect(rendered).toContain('kirim pesan lagi di sini');
+    expect(rendered).toContain('konfirmasi booking akan kami kirim otomatis di sini');
+    expect(rendered).not.toContain('kirim pesan lagi di sini');
   });
 
-  it('tanpa tautan form → penjelasan + ajakan hubungi lagi, tanpa URL', () => {
+  it('tanpa tautan form → penjelasan + arahkan hubungi admin, tanpa URL', () => {
     const rendered = renderNoBookingReply(null);
     expect(rendered).toContain('could not find an active booking');
     expect(rendered).not.toContain('http');
-    expect(rendered).toContain('message us again');
+    expect(rendered).toContain('contact our admin');
+    expect(rendered).not.toContain('filled the form');
   });
 });
 
@@ -214,6 +244,125 @@ describe('renderOptOutReply', () => {
     const rendered = renderOptOutReply();
     expect(rendered).toContain('stopped receiving');
     expect(rendered).toContain('resubscribe');
+    expect(rendered).not.toContain('undefined');
+  });
+});
+
+describe('renderWaitlistOffer', () => {
+  it('default Inggris: menawarkan slot kosong + instruksi balas Yes/No', () => {
+    const rendered = renderWaitlistOffer({
+      serviceName: 'Potong Rambut',
+      scheduledAt: '2026-08-15T07:00:00.000Z',
+      timezone: 'Asia/Jakarta',
+    });
+    expect(rendered).toContain('Potong Rambut');
+    expect(rendered).toContain('just opened up');
+    expect(rendered).toContain('Yes');
+    expect(rendered).toContain('No');
+    expect(rendered).not.toContain('undefined');
+  });
+
+  it('bahasa Indonesia (id): tawaran + instruksi Ya/Tidak', () => {
+    const rendered = renderWaitlistOffer(
+      { serviceName: 'Potong Rambut', scheduledAt: '2026-08-15T07:00:00.000Z', timezone: 'Asia/Jakarta' },
+      'id',
+    );
+    expect(rendered).toContain('Slot untuk Potong Rambut');
+    expect(rendered).toContain('baru saja kosong');
+    expect(rendered).toContain('Ya');
+    expect(rendered).toContain('Tidak');
+  });
+
+  it('tanpa nama layanan → fallback generik', () => {
+    const rendered = renderWaitlistOffer({ serviceName: null, scheduledAt: '2026-08-15T07:00:00.000Z' });
+    expect(rendered).toContain('your service');
+    expect(rendered).not.toContain('undefined');
+  });
+});
+
+describe('renderWaitlistJoined', () => {
+  it('default Inggris + id', () => {
+    expect(renderWaitlistJoined()).toContain('waitlist');
+    expect(renderWaitlistJoined('id')).toContain('daftar tunggu');
+  });
+});
+
+describe('renderWaitlistDeclinedReply', () => {
+  it('default Inggris + id, tanpa placeholder menggantung', () => {
+    expect(renderWaitlistDeclinedReply()).toContain('another time');
+    expect(renderWaitlistDeclinedReply('id')).toContain('lain waktu');
+    expect(renderWaitlistDeclinedReply()).not.toContain('undefined');
+  });
+});
+
+describe('renderWaitlistBookedReply', () => {
+  it('default Inggris: konfirmasi slot sudah dibookingkan', () => {
+    const rendered = renderWaitlistBookedReply({
+      customerName: 'Budi',
+      serviceName: 'Potong Rambut',
+      scheduledAt: '2026-08-15T07:00:00.000Z',
+      timezone: 'Asia/Jakarta',
+    });
+    expect(rendered).toContain('Hello Budi');
+    expect(rendered).toContain('has been booked for you');
+    expect(rendered).toContain('Potong Rambut');
+    expect(rendered).not.toContain('undefined');
+  });
+
+  it('bahasa Indonesia (id): konfirmasi slot dibookingkan', () => {
+    const rendered = renderWaitlistBookedReply(
+      { customerName: 'Budi', serviceName: 'Potong Rambut', scheduledAt: '2026-08-15T07:00:00.000Z', timezone: 'Asia/Jakarta' },
+      'id',
+    );
+    expect(rendered).toContain('sudah kami bookingkan');
+    expect(rendered).toContain('Potong Rambut');
+  });
+});
+
+describe('renderReviewRequest', () => {
+  it('default Inggris: sapaan + terima kasih + instruksi nilai 1–5', () => {
+    const rendered = renderReviewRequest({ businessName: 'Klinik Gigi Sehat', customerName: 'Budi' });
+    expect(rendered).toContain('Hello Budi');
+    expect(rendered).toContain('Thank you for choosing Klinik Gigi Sehat');
+    expect(rendered).toContain('1–5');
+    expect(rendered).not.toContain('undefined');
+  });
+
+  it('bahasa Indonesia (id): ucapan terima kasih + minta nilai 1–5', () => {
+    const rendered = renderReviewRequest({ businessName: 'Klinik Gigi Sehat', customerName: 'Budi' }, 'id');
+    expect(rendered).toContain('Halo Budi');
+    expect(rendered).toContain('Terima kasih sudah menggunakan layanan Klinik Gigi Sehat');
+    expect(rendered).toContain('1–5');
+  });
+
+  it('tanpa nama bisnis → fallback generik', () => {
+    const rendered = renderReviewRequest({ businessName: null });
+    expect(rendered).toContain('Thank you for choosing us');
+    expect(rendered).not.toContain('undefined');
+  });
+});
+
+describe('renderReEngagement', () => {
+  it('no-show Inggris: sapaan + ajakan jadwal ulang', () => {
+    const rendered = renderReEngagement({
+      businessName: 'Klinik Gigi Sehat',
+      customerName: 'Budi',
+      reason: 'no-show',
+    });
+    expect(rendered).toContain('Hello Budi');
+    expect(rendered).toContain('missed your last appointment');
+    expect(rendered).toContain('rescheduling');
+    expect(rendered).not.toContain('undefined');
+  });
+
+  it('dorman Indonesia: ajakan booking kembali', () => {
+    const rendered = renderReEngagement(
+      { businessName: 'Klinik Gigi Sehat', customerName: 'Budi', reason: 'dormant' },
+      'id',
+    );
+    expect(rendered).toContain('Halo Budi');
+    expect(rendered).toContain('Sudah lama tidak bertemu');
+    expect(rendered).toContain('booking lagi');
     expect(rendered).not.toContain('undefined');
   });
 });

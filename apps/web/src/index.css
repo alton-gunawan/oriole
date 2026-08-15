@@ -20,6 +20,11 @@
  */
 @source "../node_modules/@ilamy/calendar/dist";
 
+/* Variant `dark:` Tailwind mengikuti atribut data-theme di <html> (dari
+   AppShell) — bukan prefers-color-scheme — sehingga toggle tema app
+   menguasai semuanya, termasuk mode 'system' yang di-resolve ke light/dark. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 /**
  * Token shadcn — DI-SCOPE ke wadah `.ilamy-calendar-scope` agar tidak mengganggu
  * variabel global Astryx (`--color-*`).
@@ -332,7 +337,6 @@
  * ───────────────────────────────────────────────────────────── */
 @layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400..800;1,400..800&display=swap');
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/preflight.css' layer(base);
 @import '@astryxdesign/core/reset.css';
@@ -385,8 +389,8 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Figtree — clean sans-serif typography for the public experience.
- * Maple Mono remains available for product surfaces that use the code style.
+ * Maple Mono — satu-satunya typeface untuk seluruh UI
+ * (dipasang di html, diwarisi semua elemen).
  * ───────────────────────────────────────────────────────────── */
 @font-face {
   font-family: 'Maple Mono';
@@ -502,29 +506,32 @@
 }
 
 /* Tanpa layer → menang atas seluruh layer (reset/theme/astryx) sehingga
-   Maple Mono dipakai di SEMUA elemen. */
+   Maple Mono dipakai di SEMUA elemen; turunan mewarisi lewat `* inherit`
+   di bawah. */
 html {
   font-family: 'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Token astryx memakai light-dark() dan mengikuti preferensi OS. Desain
-   Oriole sengaja light-only (konten putih + sidebar abu-abu terang + teks
-   zinc gelap yang fixed), jadi paksa light agar tidak berubah jadi dark
-   (bg gelap + teks gelap = tak terbaca) saat OS/browser prefer dark.
+/* ── Tema app — light / dark / system ────────────────────────
+ * Tema diatur lewat atribut data-theme di <html> (disetel AppShell):
+ * - data-theme="light" / "dark" → mode paksa.
+ * - tanpa data-theme → mengikuti preferensi OS (color-scheme: light dark).
+ * Token astryx memakai light-dark() native yang merespons color-scheme
+ * elemen; Tailwind `dark:` diaktifkan oleh @custom-variant dark di bagian
+ * atas file saat data-theme="dark" — termasuk mode 'system' yang di-resolve
+ * AppShell ke light/dark dan ditulis ke data-theme. */
+:root {
+  color-scheme: light dark;
+}
 
-   Reset astryx meng-set color-scheme:light dark (via :where(html)) dan
-   provider astryx menaruhnya juga di #root + turunannya, sehingga elemen
-   app resolve ke cabang dark walau :root sudah light. `:root, #root,
-   #root *` (tanpa layer → menang atas semua layer astryx) memaksa light
-   di seluruh subtree app; cakupan sengaja tidak `*` global agar hook
-   theming astryx (html[data-theme], [data-astryx-media]) tetap bekerja
-   untuk konten di luar app bila nanti dipakai. */
-:root,
-#root,
-#root * {
+html[data-theme='light'] {
   color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 * {
@@ -590,4 +597,253 @@ dialog[open] {
  * dari kelas stylex astryx, dan berada di luar layer → menang. */
 div[popover]:has(div.menu-open-left) {
   position-area: self-block-end span-self-inline-start;
+}
+
+/* ── Dark mode — override surface custom ─────────────────────
+ * Kelas di atas memakai nilai light-only (hex / token shadcn-Tremor).
+ * Saat data-theme="dark" di <html> (disetel AppShell), blok ini menukar
+ * nilainya ke palet gelap yang senada dengan token astryx. */
+
+html[data-theme='dark'] body {
+  background-color: #171717;
+}
+
+/* Kalender booking — scope shadcn (.ilamy-calendar-scope) + presentasi
+   .bookings-calendar (dua-duanya dipasang di elemen yang sama). */
+html[data-theme='dark'] .ilamy-calendar-scope {
+  --background: #171717;
+  --foreground: #e4e4e4;
+  --card: #1c1c1f;
+  --card-foreground: #e4e4e4;
+  --popover: #1c1c1f;
+  --popover-foreground: #e4e4e4;
+  --primary: #f59e0b;
+  --primary-foreground: #171717;
+  --secondary: #26262b;
+  --secondary-foreground: #d4d4d4;
+  --muted: #26262b;
+  --muted-foreground: #a3a3a3;
+  --accent: #3f2d0e;
+  --accent-foreground: #fbbf24;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #ffffff;
+  --border: #333338;
+  --input: #3f3f46;
+  --ring: #f59e0b;
+}
+
+html[data-theme='dark'] .bookings-calendar {
+  --secondary: #1f1f23;
+  --muted: #1f1f23;
+  --accent: #3f2d0e;
+  --accent-foreground: #fbbf24;
+  --border: #333338;
+  --input: #3f3f46;
+}
+
+html[data-theme='dark'] .bookings-calendar-card {
+  border-color: #333338 !important;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
+}
+
+html[data-theme='dark'] .bookings-calendar-loading,
+html[data-theme='dark'] .bookings-calendar-error {
+  border-color: #333338;
+  background: rgb(23 23 26 / 0.9);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  color: #a3a3a3;
+}
+
+html[data-theme='dark'] .bookings-calendar-error {
+  color: #fca5a5;
+}
+
+html[data-theme='dark'] .bookings-calendar-hour {
+  color: #a3a3a3;
+}
+
+html[data-theme='dark'] .bookings-calendar-button-group {
+  border-color: #333338;
+  background: #1c1c1f;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+
+html[data-theme='dark'] .bookings-calendar-button-group button + button {
+  border-left-color: #2a2a2e;
+}
+
+html[data-theme='dark'] .bookings-calendar-header {
+  border-bottom-color: #2a2a2e;
+  background: linear-gradient(180deg, #1c1c1f 0%, #17171a 100%);
+}
+
+html[data-theme='dark'] .bookings-calendar-toolbar {
+  border-color: #333338;
+  background: #1c1c1f;
+}
+
+/* Background event kalender (dipakai via var(--booking-bg-*) di
+   lib/bookings-calendar.ts) — tint gelap senada token astryx. */
+html[data-theme='dark'] {
+  --booking-bg-pending: #452a04;     /* amber-950 */
+  --booking-bg-confirmed: #052e1c;   /* emerald-950 */
+  --booking-bg-completed: #27272a;   /* zinc-800 */
+  --booking-bg-cancelled: #450a0a;   /* red-950 */
+}
+
+html[data-theme='dark'] .bookings-calendar .bookings-calendar-view-header {
+  background: #17171a;
+  border-color: #2a2a2e;
+}
+
+html[data-theme='dark'] .bookings-calendar .bookings-calendar-native-header {
+  border-color: #2a2a2e;
+}
+
+html[data-theme='dark'] .bookings-calendar [class~='border-r'],
+html[data-theme='dark'] .bookings-calendar [class~='border-l'],
+html[data-theme='dark'] .bookings-calendar [class~='border-t'],
+html[data-theme='dark'] .bookings-calendar [class~='border-b'] {
+  border-color: #333338;
+}
+
+html[data-theme='dark'] .bookings-calendar .bg-muted {
+  background-color: #1f1f23;
+}
+
+html[data-theme='dark'] .bookings-calendar .bg-accent {
+  background-color: #3f2d0e;
+}
+
+html[data-theme='dark'] .bookings-calendar :where(
+  [class~='hover:bg-accent'],
+  [class~='hover:bg-muted']
+):hover {
+  background-color: #26262b !important;
+}
+
+/* Token chart Tremor — palet gelap (sumber: tema dark resmi tremor.so). */
+html[data-theme='dark'] {
+  --color-tremor-brand-faint: #172554;
+  --color-tremor-brand-muted: #1e40af;
+  --color-tremor-brand-subtle: #3b82f6;
+  --color-tremor-brand: #60a5fa;
+  --color-tremor-brand-emphasis: #93c5fd;
+  --color-tremor-brand-inverted: #0f172a;
+
+  --color-tremor-background-muted: #111827;
+  --color-tremor-background-subtle: #1f2937;
+  --color-tremor-background: #0f172a;
+  --color-tremor-background-emphasis: #f9fafb;
+
+  --color-tremor-border: #1f2937;
+  --color-tremor-ring: #1f2937;
+
+  --color-tremor-content-subtle: #6b7280;
+  --color-tremor-content: #9ca3af;
+  --color-tremor-content-emphasis: #d1d5db;
+  --color-tremor-content-strong: #f9fafb;
+  --color-tremor-content-inverted: #0f172a;
+}
+
+/* ── Dark mode — token Astryx (neutral theme) ────────────────
+ * Astryx mendefinisikan token semantiknya dengan light-dark() yang
+ * mengikuti color-scheme ELEMEN. Masalahnya: wrapper <Theme> astryx
+ * meng-hardcode `color-scheme: light dark` pada div-nya (kelas stylex
+ * x108lcm5), yang menimpa color-scheme dari html[data-theme='dark'] untuk
+ * seluruh subtree app. Akibatnya light-dark() terselesaikan oleh preferensi
+ * OS, BUKAN toggle tema app — saat OS terang & app gelap, permukaan halaman
+ * (bg-surface), kartu, dan popover (dropdown footer sidebar) tetap putih.
+ *
+ * Solusi — pola sama seperti token Tremor/kalender di atas: ganti nilai
+ * token astryx secara EKSPLISIT saat data-theme='dark', dengan selector yang
+ * menang atas scope neutral astryx (spesifisitas lebih tinggi + di luar
+ * layer). Nilai gelap = palet resmi theme-neutral (argumen kedua
+ * light-dark()). Tailwind `dark:` tidak terpengaruh (berbasis atribut
+ * data-theme), jadi sidebar & teks zinc sudah benar — ini menutup celah
+ * untuk SEMUA permukaan yang memakai token astryx. */
+html[data-theme='dark'] [data-astryx-theme] {
+  --color-background-surface: #262626;
+  --color-background-body: #1b1b1b;
+  --color-background-card: #1b1b1b;
+  --color-background-popover: #1b1b1b;
+  --color-background-muted: #1b1b1b;
+
+  --color-accent: #ebebeb;
+  --color-accent-muted: #262626;
+  --color-neutral: #ffffff1a;
+  --color-overlay: #000000cc;
+  --color-overlay-hover: #ffffff0d;
+  --color-overlay-pressed: #ffffff1a;
+  --color-tint-hover: white;
+
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a3a3a3;
+  --color-text-disabled: #525252;
+  --color-text-accent: #ebebeb;
+
+  --color-on-dark: #ffffff;
+  --color-on-light: #171717;
+  --color-on-accent: #171717;
+  --color-on-success: #171717;
+  --color-on-error: #171717;
+  --color-on-warning: #171717;
+
+  --color-icon-accent: #ebebeb;
+  --color-icon-primary: #fafafa;
+  --color-icon-secondary: #a3a3a3;
+  --color-icon-disabled: #525252;
+
+  --color-success: #9fe59b;
+  --color-error: #ffc6c1;
+  --color-warning: #fdcf4f;
+  --color-success-muted: #84c9803d;
+  --color-error-muted: #ff9e973d;
+  --color-warning-muted: #deb4333d;
+
+  --color-border: #ffffff1a;
+  --color-border-emphasized: #525252;
+  --color-skeleton: #525252;
+  --color-shadow: #0000004d;
+
+  --color-background-red: #ff9e973d;
+  --color-border-red: #ff6f6c;
+  --color-icon-red: #ff9e97;
+  --color-text-red: #ffc6c1;
+  --color-background-orange: #ffa2583d;
+  --color-border-orange: #e2883e;
+  --color-icon-orange: #ffa258;
+  --color-text-orange: #ffc9a2;
+  --color-background-yellow: #deb4333d;
+  --color-border-yellow: #c0990e;
+  --color-icon-yellow: #deb433;
+  --color-text-yellow: #fdcf4f;
+  --color-background-green: #84c9803d;
+  --color-border-green: #69ad67;
+  --color-icon-green: #84c980;
+  --color-text-green: #9fe59b;
+  --color-background-teal: #7ec6b83d;
+  --color-border-teal: #63ab9d;
+  --color-icon-teal: #7ec6b8;
+  --color-text-teal: #99e2d3;
+  --color-background-cyan: #83c2d43d;
+  --color-border-cyan: #67a7b8;
+  --color-icon-cyan: #83c2d4;
+  --color-text-cyan: #9edef0;
+  --color-background-blue: #9eb7ff3d;
+  --color-border-blue: #6d9cfe;
+  --color-icon-blue: #9eb7ff;
+  --color-text-blue: #c7d3ff;
+  --color-background-purple: #f297ff3d;
+  --color-border-purple: #dd74f0;
+  --color-icon-purple: #f297ff;
+  --color-text-purple: #fac1ff;
+  --color-background-pink: #ff99c33d;
+  --color-border-pink: #f273aa;
+  --color-icon-pink: #ff99c3;
+  --color-text-pink: #ffc3da;
+  --color-background-gray: #ffffff1a;
+  --color-border-gray: #262626;
+  --color-icon-gray: #a3a3a3;
+  --color-text-gray: #e5e5e5;
 }

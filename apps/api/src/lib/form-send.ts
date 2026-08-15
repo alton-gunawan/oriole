@@ -17,9 +17,11 @@ import {
 } from '@oriole/messaging';
 
 import { db } from '../db/index.ts';
-import { formPublicUrl, type FormIntegrationType } from './form-links.ts';
+import { formPublicUrlForCustomer, type FormIntegrationType } from './form-links.ts';
 import { encryptMessageContent } from './message-encryption.ts';
 import { TelegramApiError, telegramSendMessage } from './telegram.ts';
+import { LineApiError, lineBuildMessages, linePushMessage } from './line.ts';
+import { resolveLineChannel } from './line-handler.ts';
 import { resend } from '../services/email.ts';
 import {
   resolveWhatsAppChannel,
@@ -48,9 +50,11 @@ export class FormSendError extends Error {
   }
 }
 
+export type FormSendChannel = 'whatsapp' | 'telegram' | 'email' | 'line';
+
 export interface FormSendResult {
   sent: true;
-  channel: 'whatsapp' | 'telegram' | 'email';
+  channel: FormSendChannel;
   formUrl: string;
 }
 
@@ -60,7 +64,7 @@ export interface FormSendInput {
   formId: string;
   formName: string | null;
   contactId: string;
-  channel: 'whatsapp' | 'telegram' | 'email';
+  channel: FormSendChannel;
 }
 
 /** Resolve contact milik workspace (null bila tidak ada). */
@@ -103,7 +107,7 @@ async function findBusinessName(workspaceId: string): Promise<{
  */
 async function findOptedInChannel(
   workspaceId: string,
-  channelType: 'whatsapp' | 'telegram',
+  channelType: FormSendChannel,
   phone: string,
 ): Promise<string | null> {
   const canonical = canonicalPhone(phone);
@@ -157,7 +161,7 @@ async function findTelegramBotToken(workspaceId: string): Promise<string | null>
 /** Siapkan percakapan unified inbox (find-or-create per channel+externalId). */
 async function upsertConversation(input: {
   workspaceId: string;
-  channelType: 'whatsapp' | 'telegram' | 'email';
+  channelType: FormSendChannel;
   externalId: string;
   customerName: string | null;
 }): Promise<string | null> {
@@ -199,7 +203,24 @@ export async function dispatchFormInvitation(input: FormSendInput): Promise<Form
     throw new FormSendError('Kontak tidak ditemukan.', 404);
   }
 
-  const formUrl = formPublicUrl(input.integrationType, input.formId);
+  // Tally: nomor HP + nama customer disuntikkan ke URL → field phone/nama
+  // terisi otomatis (hidden field `phone`/`name`; diabaikan Tally bila form
+  // belum punya field itu). Kanonikalisasi (0812… → 62812…) dilakukan di
+  // formPublicUrlForCustomer.
+  if (input.integrationType === 'tally') {
+    // Self-heal: form Tally yang belum punya hidden field prefill/token chat
+    // diperbarui otomatis saat tautan dikirim (fire-and-forget — tidak
+    // memperlambat atau menggagalkan pengiriman undangan).
+    void import('./tally.ts')
+      .then((m) => m.ensureTallyFormEnhanced(input.workspaceId))
+      .catch(() => {});
+  }
+  const formUrl = formPublicUrlForCustomer(
+    input.integrationType,
+    input.formId,
+    contact.phone,
+    contact.name,
+  );
   const business = await findBusinessName(input.workspaceId);
   const text = renderFormInvitation(
     {
@@ -263,6 +284,32 @@ export async function dispatchFormInvitation(input: FormSendInput): Promise<Form
     send = async () => {
       const result = await telegramSendMessage({ token, chatId: identifier, text });
       return { providerMessageId: String(result.messageId) };
+    };
+  } else if (input.channel === 'line') {
+    if (!contact.phone) {
+      throw new FormSendError('Kontak belum memiliki nomor telepon untuk Line.', 400);
+    }
+    const phone = normalizePhone(contact.phone);
+    const channel = await resolveLineChannel(input.workspaceId);
+    if (!channel) {
+      throw new FormSendError('Channel Line belum dikonfigurasi untuk workspace ini.', 409);
+    }
+    if (!channel.isActive) {
+      throw new FormSendError('Channel Line sedang dijeda (nonaktif).', 409);
+    }
+    const identifier = phone ? await findOptedInChannel(input.workspaceId, 'line', phone) : null;
+    if (!identifier) {
+      throw new FormSendError('Customer belum terhubung ke Line atau sudah berhenti berlangganan.', 409);
+    }
+    externalId = identifier;
+    send = async () => {
+      // Push message ke userId Line — teks undangan form (tanpa tombol).
+      await linePushMessage({
+        accessToken: channel.accessToken,
+        to: identifier,
+        messages: lineBuildMessages(text),
+      });
+      return { providerMessageId: null };
     };
   } else {
     if (!contact.email) {
@@ -365,6 +412,9 @@ export async function dispatchFormInvitation(input: FormSendInput): Promise<Form
     }
     if (error instanceof TelegramApiError) {
       throw new FormSendError(`Telegram menolak pesan: ${error.message}`, 502);
+    }
+    if (error instanceof LineApiError) {
+      throw new FormSendError(`Line menolak pesan: ${error.message}`, 502);
     }
     throw error;
   }

@@ -137,12 +137,12 @@ export function CallsPage() {
       {/* Error state */}
       {showError && (
         <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
             <IconAlertTriangle className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900">{t('errors.callsLoadTitle')}</h3>
-            <p className="mt-1 text-sm text-zinc-500">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('errors.callsLoadTitle')}</h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               {error instanceof ApiError
                 ? t('errors.apiStatus', { status: error.status })
                 : t('errors.apiConnection')}
@@ -177,7 +177,7 @@ export function CallsPage() {
       {/* Call list */}
       {!isPending && !isError && data && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             {t('calls.history')}
           </h2>
 
@@ -188,11 +188,11 @@ export function CallsPage() {
               description={t('calls.noCallsDesc')}
             />
           ) : (
-            <Card className="divide-y divide-zinc-100">
+            <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {data.calls.map((call) => (
                 <div
                   key={call.id}
-                  className="flex flex-col gap-3 p-4 transition hover:bg-zinc-50/60 sm:flex-row sm:items-center sm:gap-5"
+                  className="flex flex-col gap-3 p-4 transition hover:bg-zinc-50/60 dark:hover:bg-zinc-900/60 sm:flex-row sm:items-center sm:gap-5"
                 >
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
                     <IconPhone className="size-5" />
@@ -200,16 +200,16 @@ export function CallsPage() {
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <p className="text-sm font-semibold text-zinc-900">{call.phone}</p>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{call.phone}</p>
                       <Badge variant={statusBadge(call.status)} label={statusLabel(call.status, t)} />
                     </div>
-                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {resultSnippet(call.result, t)}
                     </p>
                   </div>
 
                   <div className="shrink-0 text-right">
-                    <p className="text-xs font-medium text-zinc-700">{formatDateTime(call.createdAt)}</p>
+                    <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{formatDateTime(call.createdAt)}</p>
                     {call.task && <p className="mt-0.5 text-xs text-zinc-400">{call.task}</p>}
                   </div>
                 </div>

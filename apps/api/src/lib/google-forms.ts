@@ -13,7 +13,7 @@ import {
 
 /* ────────────────────────────────────────────────────────────
  * Google Forms integration — form submission menjadi kontak
- * project. Polling terjadwal (Inngest cron) mengambil response
+ * bisnis. Polling terjadwal (Inngest cron) mengambil response
  * baru setelah kursor (lastSubmittedAt) dan menciptakan kontak
  * (find-or-create per nomor telepon, unik per workspace).
  * ──────────────────────────────────────────────────────────── */

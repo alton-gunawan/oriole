@@ -14,8 +14,8 @@ export const requireWorkspace: MiddlewareHandler<{ Variables: WorkspaceVariables
     return c.json({ error: 'Workspace wajib dipilih' }, 400);
   }
 
-  // Project soft-deleted diperlakukan seperti tidak ada (404) — user tidak
-  // boleh mengakses data project yang sedang dalam masa tenggang penghapusan.
+  // Bisnis soft-deleted diperlakukan seperti tidak ada (404) — user tidak
+  // boleh mengakses data bisnis yang sedang dalam masa tenggang penghapusan.
   const [workspace] = await db
     .select({ id: workspaces.id })
     .from(workspaces)

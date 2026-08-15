@@ -63,7 +63,7 @@ export function OnboardingPage() {
           </span>
           <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-amber-600">{t('onboarding.kicker')}</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950">{t('onboarding.title')}</h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-500">
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
             {t('onboarding.subtitle')}
           </p>
         </div>
@@ -83,8 +83,8 @@ export function OnboardingPage() {
             <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} name={name || '?'} />
 
             <fieldset>
-              <legend className="text-sm font-semibold text-zinc-800">{t('onboarding.businessQuestion')}</legend>
-              <p className="mt-1 text-xs text-zinc-500">
+              <legend className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('onboarding.businessQuestion')}</legend>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                 {t('onboarding.businessDesc')}
               </p>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -94,7 +94,7 @@ export function OnboardingPage() {
                     <label
                       key={item.id}
                       className={`group relative cursor-pointer rounded-xl border p-4 transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm ${
-                        selected ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15' : 'border-zinc-200 bg-white'
+                        selected ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-500/15' : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
                       }`}
                     >
                       <input
@@ -106,14 +106,14 @@ export function OnboardingPage() {
                         className="sr-only"
                       />
                       <span className="flex items-start gap-3">
-                        <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg text-base ${selected ? 'bg-amber-500 text-zinc-950' : 'bg-zinc-100 text-zinc-500 group-hover:bg-amber-100 group-hover:text-amber-700'}`}>
+                        <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg text-base ${selected ? 'bg-amber-500 text-zinc-950' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 group-hover:bg-amber-100 group-hover:text-amber-700'}`}>
                           {item.emoji}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold text-zinc-900">{t(item.labelKey)}</span>
-                          <span className="mt-1 block text-xs leading-relaxed text-zinc-500">{t(item.descriptionKey)}</span>
+                          <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t(item.labelKey)}</span>
+                          <span className="mt-1 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t(item.descriptionKey)}</span>
                         </span>
-                        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-amber-500 bg-amber-500 text-zinc-950' : 'border-zinc-300 text-transparent'}`}>
+                        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-amber-500 bg-amber-500 text-zinc-950' : 'border-zinc-300 dark:border-zinc-600 text-transparent'}`}>
                           <IconCheck className="size-3" />
                         </span>
                       </span>
@@ -123,7 +123,7 @@ export function OnboardingPage() {
               </div>
             </fieldset>
 
-            {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+            {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">{error}</p>}
 
             <Button
               label={t('onboarding.submit')}

@@ -37,10 +37,10 @@ export function ConsentBanner() {
     <div
       role="region"
       aria-label={t('consent.bannerLabel')}
-      className="fixed inset-x-0 bottom-0 z-[70] border-t border-zinc-200 bg-white/95 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur-sm sm:px-6"
+      className="fixed inset-x-0 bottom-0 z-[70] border-t border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur-sm sm:px-6"
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-2xl text-sm leading-relaxed text-zinc-600">
+        <p className="max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           {t('consent.bannerBody')}
         </p>
         <div className="flex shrink-0 items-center gap-2">

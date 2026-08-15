@@ -162,6 +162,27 @@
       "when": 1798000000000,
       "tag": "0022_tally_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1799000000000,
+      "tag": "0023_rapid_meteorite",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1800000000000,
+      "tag": "0024_waitlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1801000000000,
+      "tag": "0025_reengagement",
+      "breakpoints": true
     }
   ]
 }

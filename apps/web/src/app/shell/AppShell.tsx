@@ -1,12 +1,13 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { DropdownMenu, DropdownMenuItem, IconButton, Spinner } from '@astryxdesign/core';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import type { UnreadSummaryResponse } from '../../lib/messaging';
 import { signOut } from '../../lib/session';
+import { applyTheme, readStoredTheme, storeTheme, type AppTheme } from '../../lib/theme';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
@@ -28,6 +29,8 @@ import {
   IconLogout,
   IconPlus,
   IconMenu,
+  IconMonitor,
+  IconMoon,
   IconPanelLeftClose,
   IconPanelLeftOpen,
   IconPhone,
@@ -35,6 +38,8 @@ import {
   IconServices,
   IconSettings,
   IconStaff,
+  IconSun,
+  IconSunMoon,
   IconUsers,
   IconX,
   type IconProps,
@@ -160,6 +165,27 @@ export function AppShell() {
     }
   });
   const navigate = useNavigate();
+  // Tema SELURUH app: 'system' mengikuti OS, 'light'/'dark' memaksa.
+  // Disimpan per-perangkat di localStorage — logika di lib/theme.ts.
+  const [sidebarTheme, setSidebarTheme] = useState<AppTheme>(readStoredTheme);
+
+  // Terapkan saat mount & saat pilihan berubah; saat mode system, ikuti
+  // perubahan preferensi OS (light/dark) secara live.
+  useEffect(() => {
+    applyTheme(sidebarTheme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if (sidebarTheme === 'system') applyTheme('system');
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [sidebarTheme]);
+
+  const changeSidebarTheme = (theme: AppTheme) => {
+    setSidebarTheme(theme);
+    applyTheme(theme);
+    storeTheme(theme);
+  };
 
   const toggleSidebarCollapsed = () => {
     setIsSidebarCollapsed((collapsed) => {
@@ -245,7 +271,7 @@ export function AppShell() {
     // ganda/aneh. Tinggi item ikon memakai h-11 FIXED (bukan aspect-square)
     // agar tinggi tidak ikut membesar saat lebar rail sedang bertransisi.
     return (
-    <aside id="app-sidebar" className="flex h-full w-full flex-col border-r border-zinc-200 bg-zinc-50">
+    <aside id="app-sidebar" className="flex h-full w-full flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
       <Logo collapsed={collapsed} />
 
       <div className="px-2.5 pb-2">
@@ -270,7 +296,7 @@ export function AppShell() {
                 <span className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
                   <WorkspaceAvatar workspace={activeWorkspace ?? { name: '?' }} size={24} />
                   {!collapsed && (
-                    <span className="min-w-0 flex-1 truncate text-left text-base font-semibold text-zinc-800">
+                    <span className="min-w-0 flex-1 truncate text-left text-base font-semibold text-zinc-800 dark:text-zinc-200">
                       {activeWorkspace?.name ?? t('nav.selectProject')}
                     </span>
                   )}
@@ -325,7 +351,7 @@ export function AppShell() {
 
             {/* Tanpa p-1.5: popover astryx sudah punya padding sendiri (--_dropdown-menu-padding),
                 jadi wrapper tanpa padding membuat tombol selebar item menu di atasnya. */}
-            <div className="border-t border-zinc-200/70 dark:border-zinc-700/60">
+            <div className="border-t border-zinc-200/70 dark:border-zinc-700/70">
               <NavLink
                 to="/app/workspaces"
                 onClick={() => {
@@ -348,7 +374,7 @@ export function AppShell() {
           selebar rail penuh. */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-1">
         {!collapsed && (
-          <p className="px-2.5 pb-1 pt-0.5 text-xs font-normal uppercase tracking-widest text-zinc-500">
+          <p className="px-2.5 pb-1 pt-0.5 text-xs font-normal uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
             {t('nav.menu')}
           </p>
         )}
@@ -366,14 +392,14 @@ export function AppShell() {
               } ${
                 isActive
                   ? 'bg-amber-500/10 text-amber-600'
-                  : 'text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`
             }
           >
             {({ isActive }) => (
               <>
                 <item.icon
-                  className={`size-4 shrink-0 transition ${isActive ? 'text-amber-600' : 'text-zinc-400 group-hover:text-zinc-600'}`}
+                  className={`size-4 shrink-0 transition ${isActive ? 'text-amber-600' : 'text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-400'}`}
                 />
                 {!collapsed && t(item.labelKey)}
                 {/* Badge unread khusus item Inbox (workspace aktif). */}
@@ -390,7 +416,8 @@ export function AppShell() {
         ))}
       </nav>
 
-      <div className="border-t border-zinc-200/80 p-2.5">
+      {/* Tema diterapkan app-wide via data-theme di <html> (applyTheme). */}
+      <div className="border-t border-zinc-200/80 dark:border-zinc-700/80 p-2.5">
         <DropdownMenu
           placement="above"
           hasChevron={false}
@@ -410,10 +437,10 @@ export function AppShell() {
                 </span>
                 {!collapsed && (
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-left text-sm font-normal text-zinc-800">
+                    <span className="block truncate text-left text-sm font-normal text-zinc-800 dark:text-zinc-200">
                       {user?.name ?? t('nav.user')}
                     </span>
-                    <span className="block truncate text-left text-sm text-zinc-500">
+                    <span className="block truncate text-left text-sm text-zinc-500 dark:text-zinc-400">
                       {user?.email ?? ''}
                     </span>
                   </span>
@@ -440,6 +467,37 @@ export function AppShell() {
           />
           {/* Pemilihan bahasa — submenu flyout berisi pilihan EN/ID. */}
           <LanguageSubMenu />
+          {/* Tema popover — submenu flyout (sama seperti Language) berisi
+              pilihan Light / Dark / System dengan centang pada pilihan aktif. */}
+          <DropdownMenuSubMenu
+            label={t('nav.theme')}
+            icon={<IconSunMoon className="size-4" />}
+          >
+            <DropdownMenuItem
+              label={t('nav.themeLight')}
+              icon={<IconSun className="size-4" />}
+              onClick={() => changeSidebarTheme('light')}
+              endContent={
+                sidebarTheme === 'light' ? <IconCheck className="size-3.5 text-amber-500" /> : undefined
+              }
+            />
+            <DropdownMenuItem
+              label={t('nav.themeDark')}
+              icon={<IconMoon className="size-4" />}
+              onClick={() => changeSidebarTheme('dark')}
+              endContent={
+                sidebarTheme === 'dark' ? <IconCheck className="size-3.5 text-amber-500" /> : undefined
+              }
+            />
+            <DropdownMenuItem
+              label={t('nav.themeSystem')}
+              icon={<IconMonitor className="size-4" />}
+              onClick={() => changeSidebarTheme('system')}
+              endContent={
+                sidebarTheme === 'system' ? <IconCheck className="size-3.5 text-amber-500" /> : undefined
+              }
+            />
+          </DropdownMenuSubMenu>
           <DropdownMenuItem
             label={t('common.logout')}
             icon={<IconLogout className="size-4" />}
@@ -467,7 +525,7 @@ export function AppShell() {
                 `flex size-7 shrink-0 items-center justify-center rounded-lg transition ${
                   isActive
                     ? 'bg-amber-500/10 text-amber-600'
-                    : 'text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600'
+                    : 'text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 hover:text-zinc-600 dark:hover:text-zinc-400'
                 }`
               }
             >
@@ -483,7 +541,7 @@ export function AppShell() {
               title={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
               aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
               aria-expanded={!collapsed}
-              className={`flex shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-200/70 hover:text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+              className={`flex shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 hover:text-zinc-600 dark:hover:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                 collapsed ? 'h-11 w-full' : 'size-7'
               }`}
             >
@@ -544,9 +602,9 @@ export function AppShell() {
           aria-live="polite"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-surface/70 backdrop-blur-[2px]"
         >
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-8 py-6 shadow-lg">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8 py-6 shadow-lg">
             <Spinner size="xl" />
-            <p className="text-sm font-semibold text-zinc-700">{t('nav.switchingProject')}</p>
+            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('nav.switchingProject')}</p>
           </div>
         </div>
       )}

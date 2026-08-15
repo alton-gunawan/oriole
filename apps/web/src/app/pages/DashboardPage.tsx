@@ -6,12 +6,11 @@ import { Badge, EmptyState, Skeleton, type BadgeVariant } from '@astryxdesign/co
 
 import { ApiError, apiFetch } from '../../lib/api';
 import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
-import type { IntegrationListResponse } from '../../lib/integrations';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { bookingStatusKey } from '../../i18n/enums';
 import { formatDateTime } from '../../i18n/format';
-import { IconCalendar, IconChart, IconDashboard, IconPhone, IconPlus, IconRefreshCw, IconUsers } from '../shell/icons';
+import { IconCalendar, IconChart, IconDashboard, IconPhone, IconPlus, IconUsers } from '../shell/icons';
 import { Card, PageHeader, StatCard } from '../shell/ui';
 
 const QUICK_LINKS = [
@@ -31,22 +30,6 @@ const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
 function statusLabel(status: string | null, t: TFunction): string {
   const key = bookingStatusKey(status);
   return key ? t(key) : (status ?? '');
-}
-
-/**
- * Integrasi yang melakukan sinkronisasi data (punya lastSyncAt) — webhook
- * keluar tidak termasuk karena bukan "data sync".
- */
-const DATA_SYNC_TYPES = ['google-forms', 'tally', 'google-calendar', 'notion'];
-
-/** Waktu relatif ringkas untuk status sync (locale-aware via i18n). */
-function relativeSyncTime(iso: string, t: TFunction): string {
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return t('dashboard.syncJustNow');
-  if (minutes < 60) return t('dashboard.syncMinutes', { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('dashboard.syncHours', { count: hours });
-  return t('dashboard.syncDays', { count: Math.floor(hours / 24) });
 }
 
 /** Mirrors GET /api/analytics/overview — agregat per workspace aktif. */
@@ -97,61 +80,13 @@ export function DashboardPage() {
   const callsValue = summary === undefined ? '…' : String(summary.callsThisMonth);
   const attentionValue = summary === undefined ? '…' : String(summary.needsAttention);
 
-  // Status sinkronisasi data — lastSyncAt termuda di antara integrasi data.
-  // Refetch berkala agar chip ikut ter-update saat cron Google Forms / webhook
-  // Tally berjalan tanpa perlu reload halaman.
-  const { data: integrationsData } = useQuery({
-    queryKey: ['integrations', activeWorkspaceId],
-    queryFn: () => apiFetch<IntegrationListResponse>('/integrations'),
-    enabled: Boolean(activeWorkspaceId),
-    refetchInterval: 60_000,
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
-  });
-
-  const syncIntegrations = (integrationsData?.integrations ?? []).filter((item) =>
-    DATA_SYNC_TYPES.includes(item.integrationType),
-  );
-  const latestSyncAt =
-    syncIntegrations
-      .map((item) => item.lastSyncAt)
-      .filter((value): value is string => Boolean(value))
-      .sort()
-      .at(-1) ?? null;
-
-  // Chip hanya tampil bila sudah ter-load (hindari flicker) DAN ada integrasi
-  // data terhubung — tanpa integrasi, status sync tidak relevan di header.
-  const syncChip =
-    integrationsData !== undefined && syncIntegrations.length > 0 ? (
-      <Link
-        to="/app/integrations"
-        title={t('integrations.title')}
-        className="group flex items-center gap-2.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 transition hover:border-amber-300 hover:bg-amber-50/50"
-      >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-400 transition group-hover:bg-amber-500/10 group-hover:text-amber-600">
-          <IconRefreshCw className="size-3.5" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-[10px] font-medium uppercase tracking-wider text-zinc-400">
-            {t('dashboard.syncLabel')}
-          </span>
-          <span className="block truncate text-xs font-semibold text-zinc-700">
-            {latestSyncAt
-              ? relativeSyncTime(latestSyncAt, t)
-              : t('dashboard.syncNever')}
-          </span>
-        </span>
-      </Link>
-    ) : null;
-
-  return (
+    return (
     <div className="space-y-8">
       <PageHeader
         title={t('dashboard.greeting', { name: firstName })}
         description={t('dashboard.description')}
         icon={IconDashboard}
-      >
-        {syncChip}
-      </PageHeader>
+      />
 
       {/* Stat cards — data riil per workspace */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -184,11 +119,11 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Recent bookings — daftar riil */}
         <div className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             {t('dashboard.recentBookings')}
           </h2>
           {isRecentPending ? (
-            <Card className="divide-y divide-zinc-100">
+            <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center gap-4 px-5 py-4">
                   <Skeleton width="40%" height={14} />
@@ -197,18 +132,18 @@ export function DashboardPage() {
               ))}
             </Card>
           ) : hasRealBookings ? (
-            <Card className="divide-y divide-zinc-100 p-0">
+            <Card className="divide-y divide-zinc-100 dark:divide-zinc-800 p-0">
               {recentBookings.map((booking) => (
                 <Link
                   key={booking.id}
                   to={`/app/bookings/${booking.id}`}
-                  className="group flex items-center gap-4 px-5 py-4 transition hover:bg-amber-50/60"
+                  className="group flex items-center gap-4 px-5 py-4 transition hover:bg-amber-50/60 dark:hover:bg-amber-950/30"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-zinc-900 transition group-hover:text-amber-700">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100 transition group-hover:text-amber-700">
                       {booking.title}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-zinc-500">
+                    <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
                       {formatDateTime(booking.scheduledAt)}
                       {booking.customerName ? ` · ${booking.customerName}` : ''}
                     </p>
@@ -241,7 +176,7 @@ export function DashboardPage() {
 
         {/* Quick actions */}
         <div>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             {t('dashboard.quickMenu')}
           </h2>
           <Card className="p-2">
@@ -249,7 +184,7 @@ export function DashboardPage() {
               <Link
                 key={item.to}
                 to={item.to}
-                className={`flex items-center justify-between rounded-xl px-3 py-3 text-sm font-medium text-zinc-700 transition hover:bg-amber-50 hover:text-amber-700 ${
+                className={`flex items-center justify-between rounded-xl px-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 transition hover:bg-amber-50 hover:text-amber-700 ${
                   i > 0 ? 'mt-0.5' : ''
                 }`}
               >
@@ -257,7 +192,7 @@ export function DashboardPage() {
                 <IconPlus className="size-4 text-zinc-300" />
               </Link>
             ))}
-            <div className="mt-0.5 border-t border-zinc-100 px-3 pb-2 pt-3">
+            <div className="mt-0.5 border-t border-zinc-100 dark:border-zinc-800 px-3 pb-2 pt-3">
               <p className="text-xs leading-relaxed text-zinc-400">{t('dashboard.note')}</p>
             </div>
           </Card>

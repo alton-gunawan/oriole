@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 
 import { db } from '../../db/index.ts';
-import { inngest } from '../../inngest/client.ts';
 import { env } from '../../lib/env.ts';
 import {
   loadTallyConfig,
+  syncTallySubmissionToContacts,
   tallyWebhookPayloadSchema,
   verifyTallySignature,
   type TallyWebhookPayload,
@@ -23,12 +23,18 @@ import { isWorkspaceActive } from '../../lib/workspace-lifecycle.ts';
  * `workspaceId:submissionId` di tabel webhook_events (Tally melakukan
  * at-least-once delivery dengan retry).
  *
+ * Processing: submission diproses SINCRON di route (kontak + booking +
+ * konfirmasi Telegram) — TIDAK antre ke Inngest, supaya alur inti tidak
+ * bergantung pada worker Inngest yang berjalan (di dev, worker tidak selalu
+ * aktif). Kegagalan → 500 → Tally me-retry webhook; idempotensi internal
+ * (booking unique sourceRef + find-or-create kontak) membuat retry aman.
+ *
  * URL: POST /api/webhooks/tally/:workspaceId
  */
 export const tallyWebhookRoutes = new Hono().post('/:workspaceId', async (c) => {
   const workspaceId = c.req.param('workspaceId');
 
-  // Project soft-deleted / sudah dihapus permanen → drop (ack 200 agar
+  // Bisnis soft-deleted / sudah dihapus permanen → drop (ack 200 agar
   // Tally tidak me-retry; submission tidak akan pernah diproses).
   if (!(await isWorkspaceActive(workspaceId))) {
     return c.json({ received: true, disabled: true });
@@ -88,10 +94,17 @@ export const tallyWebhookRoutes = new Hono().post('/:workspaceId', async (c) => 
     return c.json({ duplicate: true, eventId }, 200);
   }
 
-  await inngest.send({
-    name: 'tally/form.response',
-    data: { workspaceId, payload },
-  });
+  try {
+    // Proses langsung (sinkron): kontak + booking + konfirmasi Telegram
+    // best-effort di dalam. Gagal → 500 agar Tally me-retry (idempoten).
+    await syncTallySubmissionToContacts(workspaceId, payload);
+  } catch (error) {
+    console.error('[webhook:tally] gagal memproses submission:', error);
+    return c.json({ error: 'Gagal memproses submission' }, 500);
+  }
+
+  // Hanya tandai processed SETELAH sukses — retry Tally tetap memproses ulang
+  // bila langkah di atas gagal di tengah jalan.
   await markWebhookProcessed(db, 'tally', eventId);
 
   return c.json({ received: true, eventId });

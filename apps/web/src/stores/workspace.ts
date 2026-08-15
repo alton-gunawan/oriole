@@ -10,14 +10,14 @@ interface WorkspaceState {
   activeWorkspaceId: string | null;
   initialized: boolean;
   /**
-   * true saat pindah project sedang berlangsung — UI (AppShell) menampilkan
+   * true saat pindah bisnis sedang berlangsung — UI (AppShell) menampilkan
    * overlay loader sampai data workspace baru selesai dimuat.
    */
   isSwitching: boolean;
   /**
    * Waktu (ISO) terakhir kali workspace dibuka/dipilih — dilacak di sisi
    * client (per-device) dan di-persist ke localStorage. Dipakai switcher
-   * project di sidebar untuk menampilkan "last opened".
+   * bisnis di sidebar untuk menampilkan "last opened".
    */
   lastOpenedAt: Record<string, string>;
   setWorkspaces: (workspaces: Workspace[]) => void;

@@ -168,7 +168,7 @@ export function SettingsDialog({
                       className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
                         active
                           ? 'bg-amber-500/10 text-amber-700'
-                          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
                       }`}
                     >
                       <section.icon
@@ -189,10 +189,10 @@ export function SettingsDialog({
                         {(user?.name ?? user?.email ?? 'U').slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-base font-semibold text-zinc-900">
+                        <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">
                           {user?.name ?? t('common.noName')}
                         </p>
-                        <p className="truncate text-sm text-zinc-500">{user?.email ?? ''}</p>
+                        <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">{user?.email ?? ''}</p>
                       </div>
                     </div>
 
@@ -216,22 +216,22 @@ export function SettingsDialog({
 
                 {activeSection === 'projects' && (
                   <div className="space-y-4">
-                    <p className="text-sm leading-relaxed text-zinc-500">{t('settings.projectsDesc')}</p>
+                    <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t('settings.projectsDesc')}</p>
 
                     <div className="space-y-2">
                       {workspaces.length === 0 ? (
-                        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
+                        <p className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-600 px-4 py-8 text-center text-sm text-zinc-400">
                           {t('settings.projectsEmpty')}
                         </p>
                       ) : (
                         workspaces.map((workspace) => (
                           <div
                             key={workspace.id}
-                            className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 transition hover:border-zinc-300"
+                            className="flex items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 transition hover:border-zinc-300 dark:hover:border-zinc-600"
                           >
                             <WorkspaceAvatar workspace={workspace} size={36} radiusClass="rounded-lg" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-zinc-900">{workspace.name}</p>
+                              <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</p>
                               {workspace.id === activeWorkspaceId && (
                                 <p className="text-xs font-medium text-amber-600">{t('nav.activeProject')}</p>
                               )}
@@ -260,9 +260,9 @@ export function SettingsDialog({
 
                 {activeSection === 'privacy' && (
                   <div className="space-y-4">
-                    <p className="text-sm leading-relaxed text-zinc-500">{t('consent.privacyDesc')}</p>
+                    <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t('consent.privacyDesc')}</p>
 
-                    <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 px-4">
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4">
                       <Switch
                         label={t('consent.sessionReplayLabel')}
                         description={t('consent.sessionReplayDesc')}
@@ -291,7 +291,7 @@ export function SettingsDialog({
                 )}
 
                 {activeSection === 'notifications' && (
-                  <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 px-4">
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4">
                     <Switch
                       label={t('settings.transactionalEmail')}
                       description={t('settings.transactionalEmailDesc')}
@@ -361,7 +361,7 @@ export function SettingsDialog({
         description={
           <Trans
             i18nKey="ws.deleteQuestion"
-            components={{ strong: <strong className="font-bold text-black" /> }}
+            components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
           />
         }
         cancelLabel={t('common.cancel')}

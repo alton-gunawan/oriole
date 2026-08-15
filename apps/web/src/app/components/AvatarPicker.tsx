@@ -149,15 +149,15 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
     `rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
       active
         ? 'bg-zinc-950 text-white shadow-sm'
-        : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800'
+        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 hover:text-zinc-800 dark:hover:text-zinc-200'
     }`;
 
   return (
     <div>
-      <span className="mb-2 block text-sm font-semibold text-zinc-800">{t('ws.avatarLabel')}</span>
-      <p className="mb-3 text-xs text-zinc-500">{t('ws.avatarDesc')}</p>
+      <span className="mb-2 block text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('ws.avatarLabel')}</span>
+      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">{t('ws.avatarDesc')}</p>
 
-      <div className="mb-4 inline-flex gap-1 rounded-xl bg-zinc-100 p-1">
+      <div className="mb-4 inline-flex gap-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1">
         <button type="button" className={tabClass(mode === 'planet')} onClick={() => setMode('planet')}>
           {t('ws.avatarPlanetTab')}
         </button>
@@ -249,7 +249,7 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
               )}
             </div>
           </div>
-          <p className="text-xs leading-relaxed text-zinc-500">{t('ws.avatarUploadHint')}</p>
+          <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('ws.avatarUploadHint')}</p>
           <input
             ref={inputRef}
             type="file"
@@ -283,7 +283,7 @@ function Preview({ value, name, size }: { value: string | null; name: string; si
     );
   }
   return (
-    <span className="flex shrink-0 items-center justify-center rounded-xl bg-zinc-100 ring-1 ring-zinc-200" style={{ width: size, height: size }}>
+    <span className="flex shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200" style={{ width: size, height: size }}>
       <PlanetIcon name={name} size={Math.round(size * 0.62)} radiusClass="rounded-lg" />
     </span>
   );

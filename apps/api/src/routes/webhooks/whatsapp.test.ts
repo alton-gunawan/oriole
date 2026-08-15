@@ -20,7 +20,7 @@ vi.mock('../../services/whatsapp.ts', () => ({
   resolveWhatsAppChannel: resolveChannelMock,
 }));
 
-// Guard soft-delete project — default: workspace aktif.
+// Guard soft-delete bisnis — default: workspace aktif.
 vi.mock('../../lib/workspace-lifecycle.ts', () => ({
   isWorkspaceActive: isWorkspaceActiveMock,
 }));
@@ -95,7 +95,7 @@ function sign(body: string): string {
 }
 
 describe('POST /api/webhooks/whatsapp — keamanan', () => {
-  it('project soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
+  it('bisnis soft-deleted → 200 disabled tanpa proses & tanpa queue', async () => {
     app = await buildApp();
     isWorkspaceActiveMock.mockResolvedValue(false);
     const res = await app.request('/api/webhooks/whatsapp/ws-1', {

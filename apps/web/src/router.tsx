@@ -31,6 +31,9 @@ const SignInPage = lazy(() =>
 const SignUpPage = lazy(() =>
   import('./app/auth/SignUpPage').then((m) => ({ default: m.SignUpPage })),
 );
+const ForgotPasswordPage = lazy(() =>
+  import('./app/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
+);
 const CallbackPage = lazy(() =>
   import('./app/auth/CallbackPage').then((m) => ({ default: m.CallbackPage })),
 );
@@ -50,7 +53,7 @@ function withSuspense(Component: ComponentType) {
         <main className="flex min-h-screen items-center justify-center bg-surface">
           <span
             aria-hidden
-            className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-300 border-t-amber-500"
+            className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-600 border-t-amber-500"
           />
         </main>
       }
@@ -134,6 +137,10 @@ export const router = createBrowserRouter([
       {
         path: '/auth/sign-up',
         element: withSuspense(SignUpPage),
+      },
+      {
+        path: '/auth/forgot-password',
+        element: withSuspense(ForgotPasswordPage),
       },
       {
         path: '/auth/callback',

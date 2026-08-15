@@ -11,7 +11,7 @@ import { captureWorkspaceEvent } from '../lib/analytics.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
 import { rescheduleWorkspaceAutoCalls } from '../lib/reminders.ts';
 
-/** Avatar project: URL planet DiceBear (dipilih dari picker) atau data URL
+/** Avatar bisnis: URL planet DiceBear (dipilih dari picker) atau data URL
  *  gambar upload (sudah di-crop 1:1 + di-compress client-side). */
 const DICEBEAR_PLANETS_PREFIX = 'https://api.dicebear.com/10.x/planets/svg';
 /** Data URL gambar max ~370KB biner (512×512 WebP hasil compress client). */
@@ -52,7 +52,7 @@ const aiKnowledgeSchema = z.object({
 const workspaceSchema = z.object({
   name: z.string().trim().min(2).max(120),
   templateCategory: z.enum(WORKSPACE_TEMPLATE_CATEGORY_IDS),
-  /** Avatar project (planet DiceBear / upload 1:1). null = planet dari nama. */
+  /** Avatar bisnis (planet DiceBear / upload 1:1). null = planet dari nama. */
   avatarUrl: avatarUrlField,
   /**
    * Industri bisnis (opsional) — dipakai untuk goal CALL-E otomatis.
@@ -86,7 +86,7 @@ const profilePatchSchema = z.object({
   name: z.string().trim().min(1, 'Nama tidak boleh kosong').max(80, 'Nama maksimal 80 karakter'),
 });
 
-/** Identitas user + daftar store/project yang dimiliki akun. */
+/** Identitas user + daftar bisnis yang dimiliki akun. */
 export const meRoutes = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
     const userId = c.get('userId');
@@ -95,7 +95,7 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       .from(profiles)
       .where(eq(profiles.id, userId))
       .limit(1);
-    // Project soft-deleted disembunyikan — daftar hanya project aktif.
+    // Bisnis soft-deleted disembunyikan — daftar hanya bisnis aktif.
     const userWorkspaces = await db
       .select()
       .from(workspaces)
@@ -112,8 +112,8 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
     });
   })
   /* ── Profil — simpan nama tampilan (upsert ke tabel profiles) ── */
-  /* ── Ringkasan unread per project — badge di project switcher sidebar ──
-   * Total unreadCount percakapan inbox per workspace, hanya untuk project
+  /* ── Ringkasan unread per bisnis — badge di switcher bisnis sidebar ──
+   * Total unreadCount percakapan inbox per workspace, hanya untuk bisnis
    * milik user ini. Ringan (aggregate SQL) — dipanggil client + polling.
    * ──────────────────────────────────────────────────────────── */
   .get('/unread-summary', requireAuth, async (c) => {
@@ -333,12 +333,12 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       });
     },
   )
-  /* ── Hapus project — SOFT DELETE ───────────────────────────
-   * Baris tidak dihapus; `deletedAt` disetel sehingga project hilang dari
-   * semua read path (daftar project, switcher, akses workspace). Penghapusan
+  /* ── Hapus bisnis — SOFT DELETE ───────────────────────────
+   * Baris tidak dihapus; `deletedAt` disetel sehingga bisnis hilang dari
+   * semua read path (daftar bisnis, switcher, akses workspace). Penghapusan
    * permanen dilakukan job pembersih Inngest setelah masa tenggang
    * (WORKSPACE_DELETE_GRACE_DAYS) — FK cascade membersihkan data terkait.
-   * Idempoten untuk request ganda: project yang sudah soft-deleted → 404.
+   * Idempoten untuk request ganda: bisnis yang sudah soft-deleted → 404.
    * ─────────────────────────────────────────────────────────── */
   .delete(
     '/workspaces/:id',

@@ -29,22 +29,22 @@ export function ErrorScreen({
     // AppShell (error halaman /app), jadi main bertingkat harus dihindari.
     <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-6 py-12">
       <div className="w-full max-w-md text-center">
-        <span className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+        <span className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
           <IconAlertTriangle className="size-8" />
         </span>
-        <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">{title}</h1>
-        <p className="mt-3 text-sm leading-relaxed text-zinc-500">{description}</p>
+        <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h1>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>
 
         {actions && <div className="mt-8 flex flex-wrap items-center justify-center gap-3">{actions}</div>}
 
         {/* Detail teknis hanya untuk pengembang — bisa berisi data error
             mentah yang sensitif; di produksi disembunyikan. */}
         {import.meta.env.DEV && technicalDetails && (
-          <details className="mt-8 rounded-xl border border-zinc-200 bg-zinc-50 text-left">
-            <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-medium text-zinc-500 transition hover:text-zinc-700">
+          <details className="mt-8 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-left">
+            <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 transition hover:text-zinc-700 dark:hover:text-zinc-300">
               {t('errors.technicalDetails')}
             </summary>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-zinc-200 px-4 py-3 font-mono text-[11px] leading-relaxed text-zinc-500">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-zinc-200 dark:border-zinc-700 px-4 py-3 font-mono text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               {technicalDetails}
             </pre>
           </details>
@@ -141,7 +141,7 @@ export function RouteErrorElement() {
           />
           <Link
             to={homeTo}
-            className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
           >
             <IconHome className="size-4" />
             {homeLabel}

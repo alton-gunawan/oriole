@@ -4,10 +4,10 @@ import { workspaces } from '@oriole/database';
 import { db } from '../db/index.ts';
 
 /**
- * Soft-delete project (P1).
+ * Soft-delete bisnis (P1).
  *
  * Alur: `DELETE /me/workspaces/:id` hanya menyetel `workspaces.deletedAt`
- * (bukan menghapus baris) — project hilang dari semua read path (setiap
+ * (bukan menghapus baris) — bisnis hilang dari semua read path (setiap
  * query workspace memfilter `deleted_at IS NULL`). Job pembersih Inngest
  * (cron harian `purgeDeletedWorkspaces`) menghapus baris secara permanen
  * setelah masa tenggang lewat; FK cascade menghapus seluruh data terkait
@@ -78,7 +78,7 @@ export async function purgeExpiredWorkspaces(now: Date = new Date()): Promise<nu
 
 /**
  * Apakah workspace masih ada dan TIDAK soft-deleted? Dipakai entry point
- * eksternal (webhook Telegram/WhatsApp) agar project yang sedang menunggu
+ * eksternal (webhook Telegram/WhatsApp) agar bisnis yang sedang menunggu
  * penghapusan permanen tidak lagi memproses pesan customer.
  */
 export async function isWorkspaceActive(workspaceId: string): Promise<boolean> {

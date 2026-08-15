@@ -1,11 +1,11 @@
 # Multi-Channel Messaging — Architecture & Ops Runbook
 
 Oriole mengirim reminder & menerima balasan customer lewat **Telegram**, **WhatsApp**,
-dan **email**, ter-orchestrasi dari satu pipeline yang sama dengan panggilan AI (Vapi).
+**Line**, dan **email**, ter-orchestrasi dari satu pipeline yang sama dengan panggilan AI (Vapi).
 
 Keputusan arsitektur (dikunci saat riset):
 
-- **(b) Onboarding per-workspace via partner** — tiap project punya bot/nomor sendiri
+- **(b) Onboarding per-workspace via partner** — tiap bisnis punya bot/nomor sendiri
   (`workspace_channels.providerConfig`), diatur dari UI **Channels**.
 - **BSP: 360dialog** untuk WhatsApp Cloud API.
 - **Telegram dulu, lalu WhatsApp** (sudah selesai), email sebagai channel outbound.
@@ -25,11 +25,12 @@ Inngest `remindBooking` ── sleepUntil(reminderAt) ── cancelOn booking/ca
    ▼ guard: status masih pending/confirmed?
    ├── Telegram  → sendMessage + tombol (bk:<id>:confirm|reschedule|cancel)
    ├── WhatsApp  → Message Template (wajib di luar 24h window)
+   ├── Line      → push/reply + template tombol (postback bk:<id>:…)
    └── Email     → Resend (email dari tabel contacts)
         ▼ balasan customer (webhook)
-   Telegram/WhatsApp webhook → verify secret/HMAC → dedup webhook_events
+   Telegram/WhatsApp/Line webhook → verify secret/HMAC → dedup webhook_events
         ▼
-   handler state machine: opt-out > tombol > reschedule 2-langkah > needsAttention
+   handler state machine (chat-engine.ts, lintas channel): opt-out > tombol > reschedule 2-langkah > needsAttention
         ▼
    Unified inbox (conversations + messages) → staff balas dari UI Inbox
 ```
@@ -44,9 +45,9 @@ Tabel baru (migrasi `0003` + `0004`):
 - `conversations` — thread ter-unifikasi; `state` jsonb (state machine &
   `needsAttention`); `unreadCount` + `lastMessageAt` untuk inbox.
 - `messages` — riwayat pesan; dedup per (conversation, provider_message_id).
-- `workspaces.reminder_lead_minutes` — lead time reminder per project (default 120 menit).
+- `workspaces.reminder_lead_minutes` — lead time reminder per bisnis (default 120 menit).
 - `workspaces.call_goal_language` — bahasa panggilan AI / Vapi (default `en`; `id` disiapkan).
-- `workspaces.auto_call_enabled` + `workspaces.auto_call_lead_hours` — auto-call Vapi otomatis per project (default mati; lead default 24 jam sebelum jadwal). Migrasi: `drizzle.gen/0005_brave_vivisector.sql`.
+- `workspaces.auto_call_enabled` + `workspaces.auto_call_lead_hours` — auto-call Vapi otomatis per bisnis (default mati; lead default 24 jam sebelum jadwal). Migrasi: `drizzle.gen/0005_brave_vivisector.sql`.
 
 ### Apply migrasi (di mesin normal, sandbox tidak bisa menulis `drizzle/`)
 
@@ -125,8 +126,9 @@ Bot Telegram tidak pernah menerima nomor telepon user secara otomatis. Alur link
    ia menandai percakapan `needsAttention` (terlihat staf di inbox) dan mengarahkan
    ke **form booking terintegrasi** (Google Forms/Tally) bila ada — customer yang
    ingin booking dari awal langsung bisa. Tanpa form → balasan handoff
-   (`renderNoFormReply`). Input yang bukan nomor valid → bot minta ulang dengan
-   tombol request_contact (bukan penolakan).
+   (`renderNoBookingReply` tanpa URL: jelaskan tidak ada booking aktif + hubungi
+   admin). Input yang bukan nomor valid → bot minta ulang dengan tombol
+   request_contact (bukan penolakan).
 
 ## 4. Setup WhatsApp (360dialog)
 
@@ -148,6 +150,26 @@ Catatan operasional WhatsApp:
 - Di luar window, satu-satunya cara kontak adalah **Message Template** —
   inilah yang dipakai reminder (fallback `WHATSAPP_TEMPLATE_REMINDER`).
 - Balasan customer (tombol `bk:...`) otomatis membuka window 24 jam baru.
+
+## 4b. Setup Line (Messaging API)
+
+1. Buat channel **Messaging API** di [Line Developers Console](https://developers.line.biz/console/)
+   (bukan LINE Login). Catat **Channel access token** (long-lived) dan **Channel secret**.
+2. Buka **Channels** → **Line** → tempel access token + channel secret → **Hubungkan Line**.
+   Token divalidasi via `GET /v2/bot/info`; webhook endpoint didaftarkan otomatis via
+   `PUT /v2/bot/channel/webhook/endpoint` ke
+   `{API_URL}/api/webhooks/line/{workspaceId}`.
+3. Di Console → Messaging API settings, pastikan toggle **Use webhook** aktif.
+
+Catatan operasional Line:
+
+- Kredensial disimpan **terenkripsi at-rest** (AES-256-GCM) di `providerConfig`.
+- Setiap request webhook diverifikasi `X-Line-Signature` (HMAC-SHA256 channel secret);
+  tanpa signature → 401.
+- Balasan inbound memakai `replyToken` sekali pakai (window 1 menit); reminder &
+  konfirmasi memakai **push message**. Tombol reminder → template `buttons`
+  (postback `bk:<id>:confirm|reschedule|cancel`), teks panjang → `shortPrompt`.
+- Tidak ada fallback env — Line selalu per-workspace (mirip WhatsApp).
 
 ## 5. Env vars
 
@@ -189,6 +211,7 @@ dkk. terdaftar (lihat `apps/api/src/inngest/functions.ts`).
 | GET | `/api/channels` | Status channel + webhook URL (tanpa kredensial) |
 | POST | `/api/channels/telegram/setup` | Validasi token + setWebhook |
 | POST | `/api/channels/telegram/rewebhook` | Re-register webhook |
+| GET | `/api/channels/telegram/webhook-health` | URL webhook terdaftar + update tertunda (getWebhookInfo) |
 | POST | `/api/channels/whatsapp/setup` | Validasi API key 360dialog |
 | PATCH | `/api/channels/:type` | Aktif / nonaktif |
 | DELETE | `/api/channels/:type` | Lepas channel |
@@ -229,13 +252,89 @@ Form submission → kontak + booking otomatis didukung oleh **Google Forms**
 (polling) dan **Tally** (webhook real-time). Tally menggantikan Typeform
 sepenuhnya:
 
-- **Connect** (halaman Integrations): tempel API key Tally (sekali) → pilih
-  form → webhook `FORM_RESPONSE` didaftarkan otomatis via `POST /webhooks`
-  (Tally tidak menyediakan OAuth — API key Bearer adalah satu-satunya auth).
-  Pintasan "Get your API key" di dialog mengarah ke `tally.so/settings/api-keys`.
+- **Connect** (halaman Integrations): tempel API key Tally (sekali) → klik
+  "Hubungkan Tally" → form booking baru **di-generate otomatis** dari API
+  (`POST /integrations/tally/generate` → `POST /forms`), tanpa memilih form —
+  lalu webhook `FORM_RESPONSE` didaftarkan (`POST /webhooks`) dan integrasi
+  terhubung dalam satu langkah. Konten form **menyesuaikan industri workspace**
+  (label layanan + field tambahan per industri via `INDUSTRY_FORM_PROFILES`,
+  mis. restaurant → "Jenis Reservasi" + jumlah tamu; dental → "Perawatan Gigi"
+  + dokter pilihan). Label/tipe dipilih agar cocok dengan mapping field di
+  bawah. Pintasan "Get your API key" di dialog mengarah ke
+  `tally.so/settings/api-keys`.
+- **Connect form lama (API saja)**: `POST /integrations/tally/connect` tetap
+  mendukung menghubungkan form Tally yang sudah ada, dengan opsi opsional
+  `updateContent: true` yang menimpa isi form dengan field booking standar
+  (`PATCH /forms/:id`, industri-aware) sebelum webhook didaftarkan — gagal di
+  langkah ini membatalkan connect. UI web memakai alur generate otomatis di
+  atas (tidak lagi menawarkan pilihan form); endpoint ini untuk konsumen API
+  yang ingin menyambungkan form miliknya sendiri.
+- **Auto-respond (otomatis, tanpa pesan ulang)**: saat submission
+  menghasilkan booking, owner diberi tahu lewat email DAN customer menerima
+  konfirmasi "booking diterima" segera via Telegram
+  (`dispatchTelegramConfirmation`, dedup `confirmationBookingId` — terpisah
+  dari reminder terjadwal). Bot tidak lagi meminta customer "kirim pesan lagi"
+  setelah mengisi form: tautan yang dikirim bot menyuntikkan **token chat
+  asal** (hidden field `orioleChatId` di URL `?orioleChatId=<chat id>`),
+  submission membawanya kembali, webhook memverifikasi token itu milik
+  percakapan Telegram workspace (cegah token palsu mengarahkan konfirmasi ke
+  chat lain), lalu konfirmasi dikirim **langsung ke chat tersebut** — bahkan
+  bila nomor customer belum pernah di-link ke bot. Sekaligus chat ↔ nomor
+  dikuatkan (opt-in) supaya reminder/review berikutnya bisa menjangkau
+  customer lewat nomor. Fallback tetap ada: tanpa token (form dibuka via email
+  / link umum), konfirmasi dikirim bila nomor sudah terhubung (perilaku lama).
+  **Self-heal + visibilitas**: saat bot mengirim tautan form, form Tally yang
+  belum punya blok enhanced (prefill + token chat) di-PATCH otomatis
+  (`ensureTallyFormEnhanced`, fire-and-forget, throttle 1 jam) — tidak perlu
+  owner membuka halaman Integrations lebih dulu. Chat ↔ nomor juga di-link
+  (opt-in) saat customer mengirim nomornya walau belum ada booking aktif,
+  sehingga konfirmasi by-phone berfungsi. Semua kegagalan konfirmasi /
+  sinkronisasi dicatat di `providerConfig` (`lastConfirmationError` /
+  `lastContentSyncError`) dan ditampilkan di kartu Tally — tidak pernah
+  "diam tanpa kabar".
+- **Prefill phone & nama (+ token chat)**: form yang di-generate memuat
+  **hidden field `phone`, `name`, dan `orioleChatId`** — input nomor HP dan
+  nama memakai hidden field masing-masing sebagai default answer. Payload mengikuti **OpenAPI resmi
+  Tally** (`api.tally.so/openapi.json`): blok `HIDDEN_FIELDS` dengan
+  `payload.hiddenFields: [{uuid, name}]`, dan input dengan `hasDefaultAnswer:
+  true` + `defaultAnswer` berupa **referensi Field** (`{uuid, type:
+  'HIDDEN_FIELD', questionType: 'HIDDEN_FIELDS', blockGroupUuid, title}`) ke
+  hidden field yang bersangkutan. Best-effort dengan fallback berjenjang:
+  Tally menolak blok prefill → form dibuat ulang tanpa prefill, tidak pernah
+  gagal. Setiap pengiriman tautan ke customer — `dispatchFormInvitation`
+  (Integrations), balasan bot "mau booking" di WhatsApp/Telegram/Line —
+  menambahkan `?phone=<nomor-kanonik>` dan `?name=<nama>` ke URL
+  (`formPublicUrlForCustomer`), sehingga nomor HP + nama terisi otomatis dan
+  customer tidak perlu mengetiknya. **Auto-sync**: form yang sudah terhubung
+  tapi belum punya prefill/dropdown (mis. terhubung sebelum fitur ini ada)
+  di-PATCH ulang otomatis saat halaman Integrations dibuka (guard: sekali per
+  kunjungan + 24 jam sejak percobaan terakhir, agar kegagalan Tally tidak
+  menekan API tiap halaman dimuat; `contentSyncAttemptedAt` tersimpan di
+  providerConfig dan `lastContentSyncAt` di-expose ke UI). Form lama tanpa
+  hidden field (manual): ketik `/hidden` di editor Tally → field `phone`/
+  `name` → Default answer pada pertanyaan → pilih hidden field-nya; parameter
+  URL tetap aman dikirim (diabaikan Tally bila field tidak ada).
+- **Dropdown layanan**: pertanyaan layanan di form yang di-generate memakai
+  **DROPDOWN berisi layanan dari katalog** (halaman Services, urut sortOrder,
+  nama dobel dibuang) alih-alih teks bebas — mengurangi typo dan cocok dengan
+  pencocokan layanan di pipeline booking. Payload `DROPDOWN_OPTION` (satu
+  `groupUuid`, `index`/`isFirst`/`isLast`) sesuai dokumentasi resmi Tally,
+  dengan fallback berjenjang: Tally menolak blok dropdown → form dibuat ulang
+  tanpa dropdown (tetap teks bebas), tidak pernah gagal. `serviceDropdown`
+  menandakan hasil; tombol "Sinkronkan opsi layanan" di kartu integrasi
+  memanggil `POST /integrations/tally/update-content` untuk memperbarui form
+  yang sudah ada setelah daftar layanan berubah (industri-aware, best-effort).
+  Nilai jawaban single-select (ID option) di-resolve ke teks layanan saat
+  submission diproses.
 - **Webhook masuk**: `POST /api/webhooks/tally/:workspaceId`, verifikasi header
   `Tally-Signature` (base64 HMAC-SHA256 raw body, `signingSecret`), idempotent
-  per `submissionId` (tabel `webhook_events`).
+  per `submissionId` (tabel `webhook_events`). **Submission diproses SINCRON di
+  route** (kontak + booking + konfirmasi Telegram) — TIDAK antre ke Inngest,
+  agar alur inti tidak bergantung pada worker Inngest yang berjalan (di dev,
+  worker tidak selalu aktif; tanpa ini, submission tidak pernah terproses).
+  Kegagalan → 500 → Tally me-retry webhook (at-least-once); idempotensi
+  internal (booking unique `sourceRef` + find-or-create kontak) membuat retry
+  aman. Event hanya ditandai `processed` SETELAH sukses.
 - **Mapping field**: tipe `INPUT_PHONE_NUMBER`/`INPUT_EMAIL`/`INPUT_DATE`/
   `INPUT_TIME` dipakai langsung; nama/catatan/layanan heuristic judul — sama
   dengan Google Forms. Pilihan (multiple choice dll.) di-resolve ke teks option.
@@ -244,6 +343,32 @@ sepenuhnya:
   `'tally'` dalam keadaan NONAKTIF (`provider_config = {"migratedFrom":"typeform"}`)
   — API key Typeform lama tidak bisa dipakai Tally. UI menampilkan banner
   "migrated" dan workspace tinggal hubungkan ulang dengan API key Tally.
+
+## 7c. Notifikasi booking ke chat bisnis (Telegram alerts)
+
+Saat booking dibuat — dari form Tally/Google Forms, route POST /bookings,
+waitlist, AI chat, atau panggilan Vapi inbound — owner bisnis bisa menerima
+**kartu notifikasi instan di chat Telegram** (pola sama dengan Slack, tetapi
+via bot Telegram workspace yang sudah dipakai):
+
+- **Bind chat**: halaman Integrations → kartu "Telegram Booking Alerts" →
+  tombol membuka deep-link `https://t.me/<bot>?start=oriole_<token>` (token
+  acak 48 hex, disimpan di `workspace_integrations.providerConfig`). Owner
+  menekan Start pada bot → webhook menerima `/start oriole_<token>` → chat
+  terikat (`providerConfig.chatId`/`chatName`), token **dirotasi** (link bekas
+  tidak bisa dipakai ulang). Pesan bind TIDAK masuk inbox customer.
+- **Event**: `booking.created` (semua sumber) dikirim sebagai kartu
+  (`🆕 New booking` + judul + customer + waktu + telepon). Map meta mendukung
+  cancelled/completed/updated/deleted — tinggal emit dari jalur terkait.
+- **Alur**: route mengirim event `telegram-alert/booking.event` (hanya bila
+  integrasi aktif — `emitTelegramBookingAlert`) → Inngest
+  `deliverTelegramBookingAlert` → `deliverTelegramBusinessAlert` memuat
+  chatId + token channel, memformat pesan, dan mengirim via Telegram API.
+  Belum terkonfigurasi/belum bind → `skipped` (tidak retry); kegagalan
+  pengiriman dilempar → retry built-in Inngest.
+- **Endpoint**: `POST /integrations/telegram-alerts/connect` (tautan bind),
+  `/test` (ping uji), PATCH toggle, DELETE lepas. `chatId` tidak pernah
+  di-expose ke frontend (hanya status bind + nama chat).
 
 ## 8. Extension point berikutnya
 

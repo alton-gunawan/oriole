@@ -118,7 +118,7 @@ aktifkan panggilan keluar lewat Outbound Voice Profile.
    enable destinasi (mis. ID) → tambahkan koneksi yang dipakai Vapi ke profil.
    Tanpa ini panggilan keluar gagal.
 5. Cek status kapan saja: `pnpm --filter @oriole/api telnyx:status`.
-6. **Per-workspace:** setelah nomor terdaftar, setiap project bisa memilih
+6. **Per-workspace:** setelah nomor terdaftar, setiap bisnis bisa memilih
    nomor keluar di halaman **Integrations → Voice AI calls** (tanpa kredensial
    — cukup pilih nomor; tersimpan di `workspace_integrations` tipe `vapi`).
    Tanpa pilihan, panggilan memakai default server (`VAPI_PHONE_NUMBER_ID`).

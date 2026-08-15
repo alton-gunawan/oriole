@@ -170,7 +170,7 @@ export async function shutdownAnalytics(): Promise<void> {
 /* ────────────────────────────────────────────────────────────
  * Helper domain — event bisnis dengan properti terkontrol (no-PII).
  * Semua helper mengikat event ke group `workspace` agar PostHog bisa
- * meng-agregasi per project (dashboard per workspace).
+ * meng-agregasi per bisnis (dashboard per workspace).
  * ──────────────────────────────────────────────────────────── */
 
 export interface BookingAnalyticsInput {

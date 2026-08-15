@@ -214,7 +214,7 @@ describe('PATCH /api/me — simpan nama tampilan (upsert profiles)', () => {
   });
 });
 
-describe('POST /api/me/workspaces — avatar project (DiceBear / upload 1:1)', () => {
+describe('POST /api/me/workspaces — avatar bisnis (DiceBear / upload 1:1)', () => {
   const postWorkspace = (payload: Record<string, unknown>) =>
     app.request('/api/me/workspaces', {
       method: 'POST',
@@ -396,7 +396,7 @@ describe('PATCH /api/me/workspaces/:id — bahasa balasan chat (chatLanguage)', 
   });
 });
 
-describe('DELETE /api/me/workspaces/:id — soft delete project', () => {
+describe('DELETE /api/me/workspaces/:id — soft delete bisnis', () => {
   const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
   const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({
     id: WORKSPACE_ID,

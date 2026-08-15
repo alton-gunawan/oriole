@@ -8,7 +8,12 @@ import { assertSlotAvailable, getAvailableSlots, type AvailabilityAssert } from 
 import { loadServices, type ServiceSnapshot } from './service-catalog.ts';
 import { syncBookingContact } from './contact-sync.ts';
 import { emitAutoCallScheduled, emitBookingCreated } from './reminders.ts';
-import { emitCalendarBookingEvent, emitOutgoingWebhookEvent, emitSlackBookingEvent } from './integration-events.ts';
+import {
+  emitCalendarBookingEvent,
+  emitOutgoingWebhookEvent,
+  emitSlackBookingEvent,
+  emitTelegramBookingAlert,
+} from './integration-events.ts';
 import { loadStaffAvailability } from './availability.ts';
 import { zonedDayStart, zonedTimeToUtc } from './timezone.ts';
 import {
@@ -703,6 +708,17 @@ async function createBookingFromInbound(
     workspaceId,
     title: matched.service.name,
     status: row.status,
+  });
+  // Telegram alerts — kartu lengkap (customer/waktu/telepon) untuk bisnis.
+  await emitTelegramBookingAlert(workspaceId, 'booking.created', {
+    id: row.id,
+    workspaceId,
+    title: matched.service.name,
+    status: row.status,
+    scheduledAt: row.scheduledAt.toISOString(),
+    timezone: row.timezone,
+    customerName: row.customerName,
+    phone: row.phone,
   });
 
   return {

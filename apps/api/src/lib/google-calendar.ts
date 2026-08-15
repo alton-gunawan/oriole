@@ -7,7 +7,7 @@ import { GoogleApiError, googleFetch, parseServiceAccount, type GoogleServiceAcc
 import { setBookingVideoLink } from './video.ts';
 
 /* ────────────────────────────────────────────────────────────
- * Google Calendar integration — booking project dicerminkan
+ * Google Calendar integration — booking bisnis dicerminkan
  * menjadi event di kalender Google yang dibagikan ke service
  * account. Mapping booking → event disimpan di providerConfig
  * (`eventIds: Record<bookingId, googleEventId>`) sehingga tidak

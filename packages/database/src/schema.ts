@@ -75,7 +75,7 @@ export const profiles = pgTable(
 );
 
 /**
- * Workspace / store / project milik user. Satu akun dapat memiliki banyak
+ * Workspace / bisnis milik user. Satu akun dapat memiliki banyak
  * workspace, masing-masing dengan template bisnis yang berbeda.
  */
 export const workspaces = pgTable(
@@ -100,7 +100,7 @@ export const workspaces = pgTable(
      */
     chatLanguage: text('chat_language').default('en').notNull(),
     /**
-     * Avatar project. null = planet DiceBear deterministik dari nama project;
+     * Avatar bisnis. null = planet DiceBear deterministik dari nama bisnis;
      * selain itu bisa berupa URL planet DiceBear (hasil pemilihan di picker)
      * atau data URL gambar upload (sudah di-crop 1:1 + di-compress di client).
      */
@@ -119,7 +119,7 @@ export const workspaces = pgTable(
     /** Knowledge base AI chat: layanan+harga, jam buka, lokasi, kebijakan, FAQ. */
     aiKnowledge: jsonb('ai_knowledge').$type<AiKnowledge | null>(),
     /**
-     * Soft-delete: project dihapus (hilang dari UI) dengan menyetel kolom ini;
+     * Soft-delete: bisnis dihapus (hilang dari UI) dengan menyetel kolom ini;
      * baris + semua data terkait (booking, kontak, chat, ...) dihapus permanen
      * oleh job pembersih (Inngest cron) setelah masa tenggang 3 hari.
      */
@@ -340,6 +340,12 @@ export const contacts = pgTable(
     phone: text('phone').notNull(),
     email: text('email'),
     notes: text('notes'),
+    /**
+     * Kapan terakhir kali kontak ini ditawari re-engagement otomatis
+     * (pesan "kami rindu Anda" untuk pelanggan dorman / no-show). Dipakai
+     * cooldown agar customer tidak di-spam setiap run cron.
+     */
+    lastReEngagedAt: timestamp('last_re_engaged_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -580,6 +586,63 @@ export const workspaceIntegrations = pgTable(
 );
 
 /**
+ * Status koneksi WhatsApp Business (Meta Embedded Signup — Tech Provider).
+ * `connecting`  : flow signup Meta sedang berjalan (state dibuat sebelum redirect).
+ * `connected`   : onboarding selesai, WABA + nomor tersimpan & webhook subscribe.
+ * `error`       : onboarding/refresh gagal — pesan error ramah disimpan.
+ * `disconnected`: tenant memutus koneksi (token dihapus, metadata dipertahankan).
+ */
+export const whatsappConnectionStatus = pgEnum('whatsapp_connection_status', [
+  'connecting',
+  'connected',
+  'error',
+  'disconnected',
+]);
+
+/**
+ * Koneksi WhatsApp Business per tenant (Meta Cloud API via Embedded Signup).
+ *
+ * Satu baris per workspace (unique workspace_id). `accessTokenEncrypted` adalah
+ * business integration system user access token (per tenant) — dienkripsi
+ * at-rest via `encryptSecret` (AES-256-GCM), TIDAK pernah dikirim ke frontend.
+ * Tenant di-resolve dari webhook via `phone_number_id` (unique per nomor).
+ *
+ * Kehadiran baris ini TIDAK mengganggu channel WhatsApp lama (360dialog/WAHA)
+ * yang disimpan di workspace_channels — provider 'meta' ditambahkan sebagai
+ * opsi ketiga di resolveWhatsAppChannel.
+ */
+export const whatsappConnections = pgTable(
+  'whatsapp_connections',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    wabaId: text('waba_id'),
+    phoneNumberId: text('phone_number_id'),
+    displayPhoneNumber: text('display_phone_number'),
+    businessName: text('business_name'),
+    status: whatsappConnectionStatus('status').default('connecting').notNull(),
+    errorMessage: text('error_message'),
+    /** Business token per tenant — terenkripsi at-rest (encryptSecret). */
+    accessTokenEncrypted: text('access_token_encrypted'),
+    /** State CSRF alur Embedded Signup (dibuat di /connect, diverifikasi di callback). */
+    signupState: text('signup_state'),
+    /** Metadata integrasi (verified_name, quality_rating, dll.) — tanpa secret. */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    connectedAt: timestamp('connected_at', { withTimezone: true }),
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+    disconnectedAt: timestamp('disconnected_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('whatsapp_connections_workspace_idx').on(t.workspaceId),
+    index('whatsapp_connections_phone_number_id_idx').on(t.phoneNumberId),
+  ],
+);
+
+/**
  * Nomor telepon MASUK (inbound) per workspace — customer menelepon nomor ini
  * dan dilayani agen Voice AI (Vapi). Satu nomor Vapi hanya bisa milik satu
  * workspace (unique vapiPhoneNumberId) — ini yang dipakai webhook untuk
@@ -615,6 +678,69 @@ export const vapiInboundNumbers = pgTable(
     // Satu nomor Vapi → satu workspace (basis resolve webhook inbound).
     uniqueIndex('vapi_inbound_numbers_vapi_phone_number_id_idx').on(t.vapiPhoneNumberId),
     index('vapi_inbound_numbers_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+/**
+ * Status entri daftar tunggu (waitlist).
+ * - `waiting`: menunggu slot kosong.
+ * - `offered`: slot kosong sudah ditawarkan (menunggu jawaban customer).
+ * - `booked`: customer menerima tawaran, slot sudah dibooking.
+ * - `declined`: customer menolak tawaran.
+ * - `expired`: tawaran tidak dijawab / kadaluarsa.
+ */
+export const waitlistStatus = pgEnum('waitlist_status', [
+  'waiting',
+  'offered',
+  'booked',
+  'declined',
+  'expired',
+]);
+
+/**
+ * Daftar tunggu (waitlist) per workspace — customer yang ingin slot tertentu
+ * tapi belum tersedia. Saat booking dibatalkan dan slot kosong, entri
+ * berikutnya yang cocok ditawari slot tersebut lewat channel mereka.
+ * `contactPhone` opsional (bisa belum share nomor); `channelType` +
+ * `channelIdentifier` menentukan cara menghubungi (mis. chat_id Telegram).
+ */
+export const waitlistEntries = pgTable(
+  'waitlist_entries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Layanan yang diinginkan (null = bebas / belum ditentukan). */
+    serviceId: uuid('service_id').references(() => services.id, { onDelete: 'set null' }),
+    /** Staf pilihan (null = bebas / belum ditentukan). */
+    staffId: uuid('staff_id').references(() => staffMembers.id, { onDelete: 'set null' }),
+    customerName: text('customer_name'),
+    contactPhone: text('contact_phone'),
+    /** Channel untuk menghubungi customer saat slot kosong (mis. 'telegram'). */
+    channelType: text('channel_type').default('telegram').notNull(),
+    /** Identifier eksternal channel (chat_id Telegram) — untuk kirim tawaran. */
+    channelIdentifier: text('channel_identifier'),
+    /** Tanggal pilihan (YYYY-MM-DD) — opsional. */
+    preferredDate: text('preferred_date'),
+    /** Preferensi waktu bebas ('sore', 'setelah jam 3') — opsional. */
+    timePreference: text('time_preference'),
+    status: waitlistStatus('status').default('waiting').notNull(),
+    offeredAt: timestamp('offered_at', { withTimezone: true }),
+    /** Slot yang ditawarkan saat booking dibatalkan — dipakai untuk booking ulang. */
+    offeredSlotAt: timestamp('offered_slot_at', { withTimezone: true }),
+    offeredServiceId: uuid('offered_service_id').references(() => services.id, { onDelete: 'set null' }),
+    offeredStaffId: uuid('offered_staff_id').references(() => staffMembers.id, { onDelete: 'set null' }),
+    offeredDurationMinutes: integer('offered_duration_minutes'),
+    offeredTimezone: text('offered_timezone'),
+    filledAt: timestamp('filled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('waitlist_entries_workspace_id_idx').on(t.workspaceId),
+    index('waitlist_entries_workspace_status_idx').on(t.workspaceId, t.status),
+    index('waitlist_entries_workspace_service_idx').on(t.workspaceId, t.serviceId),
   ],
 );
 
