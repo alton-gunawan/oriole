@@ -51,6 +51,22 @@ describe('determineCallGoal', () => {
     expect(decision.goalType).toBe('final-follow-up');
   });
 
+  it('maxFailedAttempts dikonfigurasi lebih tinggi → belum final-follow-up', () => {
+    const decision = determineCallGoal(
+      { ...BASE, failedCallAttempts: FAILED_ATTEMPT_THRESHOLD },
+      { maxFailedAttempts: 3 },
+    );
+    expect(decision.goalType).toBe('confirm-attendance');
+  });
+
+  it('maxFailedAttempts dikonfigurasi lebih rendah → final-follow-up lebih awal', () => {
+    const decision = determineCallGoal(
+      { ...BASE, failedCallAttempts: 1 },
+      { maxFailedAttempts: 1 },
+    );
+    expect(decision.goalType).toBe('final-follow-up');
+  });
+
   it('riwayat no-show → confirm-with-accountability', () => {
     const decision = determineCallGoal({ ...BASE, noShowCount: 1 });
     expect(decision.goalType).toBe('confirm-with-accountability');

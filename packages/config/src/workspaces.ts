@@ -22,22 +22,24 @@ export type WorkspaceTemplateCategory = (typeof WORKSPACE_TEMPLATE_CATEGORY_IDS)
  * memilih satu kategori (UX), `industry` diturunkan otomatis di level API agar
  * prompt AI call selalu relevan — tanpa menanyakan hal yang sama dua kali.
  *
- * Nilai harus selalu ∈ INDUSTRIES (dijamin oleh tipe `Industry`).
- * Override per-workspace/per-booking tetap didukung di level data.
+ * Kategori dipertahankan sebagai kosakata onboarding; industri yang diturunkan
+ * disederhanakan ke 6 nilai INDUSTRIES (kategori selain klinik/salon/fitness/
+ * spa/dental jatuh ke `other`). Nilai harus selalu ∈ INDUSTRIES (dijamin oleh
+ * tipe `Industry`). Override per-workspace/per-booking tetap didukung.
  */
 export const WORKSPACE_TEMPLATE_CATEGORY_INDUSTRY: Record<WorkspaceTemplateCategory, Industry> = {
-  'beauty-wellness': 'wellness',
-  'healthcare-clinics': 'medical_clinic',
+  'beauty-wellness': 'spa',
+  'healthcare-clinics': 'clinic',
   fitness: 'fitness',
-  'professional-services': 'professional_services',
-  'home-services': 'home_services',
-  automotive: 'automotive',
-  'education-coaching': 'education_coaching',
-  'photography-creative': 'photography_creative',
-  'hospitality-events': 'restaurant',
-  'real-estate': 'real_estate',
-  'pet-care': 'pet_care',
-  'space-rental': 'space_rental',
+  'professional-services': 'other',
+  'home-services': 'other',
+  automotive: 'other',
+  'education-coaching': 'other',
+  'photography-creative': 'other',
+  'hospitality-events': 'other',
+  'real-estate': 'other',
+  'pet-care': 'other',
+  'space-rental': 'other',
 };
 
 /** Industri default untuk sebuah kategori — dipakai API saat industry tidak dikirim. */

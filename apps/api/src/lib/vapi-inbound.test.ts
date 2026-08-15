@@ -323,7 +323,7 @@ function baseWorkspace(overrides: Record<string, unknown> = {}) {
     userId: 'user-1',
     name: 'Salon Cantik',
     templateCategory: 'beauty-wellness',
-    industry: 'wellness',
+    industry: 'spa',
     callGoalLanguage: 'id',
     chatLanguage: 'en',
     reminderLeadMinutes: 120,

@@ -37,6 +37,10 @@ export interface VapiCallContext {
   language: 'en' | 'id';
   businessName?: string | null;
   customerName?: string | null;
+  /** Nama asisten voice AI (settings Voice AI) — dipakai greeting + label asisten. */
+  assistantName?: string | null;
+  /** Voice ID ElevenLabs — null = default server (env VAPI_VOICE_ID). */
+  voiceId?: string | null;
   /**
    * Nama panggilan — dipakai sebagai jejak audit + basis guard duplikat.
    * Format: `booking:<bookingId>:<goalType>:<source>`.
@@ -71,7 +75,7 @@ export function buildVapiAssistant(params: VapiCallContext): Vapi.CreateAssistan
   }
 
   return {
-    name: `oriole-${params.callName}`,
+    name: params.assistantName?.trim() || `oriole-${params.callName}`,
     transcriber: {
       provider: 'deepgram',
       model: 'nova-2',
@@ -85,7 +89,7 @@ export function buildVapiAssistant(params: VapiCallContext): Vapi.CreateAssistan
     },
     voice: {
       provider: '11labs',
-      voiceId: env.VAPI_VOICE_ID as Vapi.ElevenLabsVoiceId,
+      voiceId: (params.voiceId || env.VAPI_VOICE_ID) as Vapi.ElevenLabsVoiceId,
       language: params.language,
     },
     firstMessage: firstMessageFor(params),
@@ -97,17 +101,18 @@ export function buildVapiAssistant(params: VapiCallContext): Vapi.CreateAssistan
   };
 }
 
-/** Kalimat pembuka panggilan keluar — sesuai bahasa & nama (bila ada). */
+/** Kalimat pembuka panggilan keluar — sesuai bahasa, nama asisten & bisnis. */
 function firstMessageFor(params: VapiCallContext): string {
   const business = params.businessName ?? 'your provider';
+  const assistant = params.assistantName?.trim() || 'your assistant';
   if (params.language === 'id') {
     return params.customerName
-      ? `Halo, saya menelepon dari ${business}. Apakah saya berbicara dengan ${params.customerName}?`
-      : `Halo, saya menelepon dari ${business} mengenai jadwal Anda.`;
+      ? `Halo, saya ${assistant} dari ${business}. Apakah saya berbicara dengan ${params.customerName}?`
+      : `Halo, saya ${assistant} dari ${business} mengenai jadwal Anda.`;
   }
   return params.customerName
-    ? `Hello, this is ${business} calling. Am I speaking with ${params.customerName}?`
-    : `Hello, this is ${business} calling about your upcoming appointment.`;
+    ? `Hi, I'm ${assistant} from ${business}. Am I speaking with ${params.customerName}?`
+    : `Hi, I'm ${assistant} from ${business} calling about your upcoming appointment.`;
 }
 
 /**

@@ -49,11 +49,20 @@ export async function restoreSession(): Promise<void> {
         email?: string;
         /** Nama tampilan dari tabel profiles — null bila belum pernah di-set. */
         name?: string | null;
+        /** Preferensi UI dari tabel profiles — null = ikuti browser. */
+        language?: string | null;
+        timezone?: string | null;
         workspaces: Workspace[];
       }>('/me');
       useWorkspaceStore.getState().setWorkspaces(me.workspaces);
       store.setStatus('authenticated');
-      store.setUser({ id: me.userId, email: me.email, name: me.name ?? undefined });
+      store.setUser({
+        id: me.userId,
+        email: me.email,
+        name: me.name ?? undefined,
+        language: me.language ?? null,
+        timezone: me.timezone ?? null,
+      });
       // Analitik: tautkan event anonim → user dikenal + group workspace aktif.
       void identifyAnalyticsUser({
         id: me.userId,

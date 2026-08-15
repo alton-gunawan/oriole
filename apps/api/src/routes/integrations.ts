@@ -944,17 +944,26 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           401,
         );
       }
+      // Selalu pakai URL SEGAR dari konfigurasi saat ini — config.webhookUrl
+      // lama bisa menyimpan base yang sudah tidak berlaku (mis. API_URL internal
+      // http://api:3000) sehingga webhook Tally tidak pernah sampai.
+      const webhookUrl = tallyWebhookUrl(workspaceId);
       const webhook = await registerTallyWebhook(
         apiKey,
         config.formId,
-        config.webhookUrl ?? tallyWebhookUrl(workspaceId),
+        webhookUrl,
         config.webhookSecret,
       );
-      // Simpan webhookId terbaru agar disconnect tetap bisa mencabutnya.
+      // Simpan webhookId & webhookUrl terbaru agar disconnect tetap bisa
+      // mencabutnya & UI menampilkan URL yang benar.
       await db
         .update(workspaceIntegrations)
         .set({
-          providerConfig: { ...config, webhookId: webhook.id || config.webhookId },
+          providerConfig: {
+            ...config,
+            webhookUrl,
+            webhookId: webhook.id || config.webhookId,
+          },
           updatedAt: new Date(),
         })
         .where(

@@ -1,19 +1,15 @@
+/**
+ * Industri bisnis — dipilih user di settings bisnis. Disederhanakan dari
+ * 16 nilai sempit menjadi 6 kategori luas (clinic, salon, fitness, spa,
+ * dental, other) agar mudah dipahami pemilik bisnis; prompt CALL-E tetap
+ * disesuaikan per industri via INDUSTRY_PROFILES.
+ */
 export const INDUSTRIES = [
-  'dental',
-  'medspa',
-  'hair_salon',
-  'medical_clinic',
-  'restaurant',
-  'wellness',
+  'clinic',
+  'salon',
   'fitness',
-  'professional_services',
-  'home_services',
-  'automotive',
-  'education_coaching',
-  'photography_creative',
-  'real_estate',
-  'pet_care',
-  'space_rental',
+  'spa',
+  'dental',
   'other',
 ] as const;
 
@@ -71,6 +67,12 @@ export interface BusinessGoalContext {
 export interface GoalDecisionOptions {
   /** Jendela reminder (jam sebelum jadwal) — default 24. */
   reminderWindowHours?: number;
+  /**
+   * Ambang percobaan panggilan gagal sebelum goal jadi final follow-up
+   * (default 2 — FAILED_ATTEMPT_THRESHOLD). Bisa dikonfigurasi per
+   * workspace (settings Voice AI).
+   */
+  maxFailedAttempts?: number;
 }
 
 /** Hasil mesin keputusan. `goalType === null` berarti tidak perlu panggilan. */

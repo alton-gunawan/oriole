@@ -20,15 +20,38 @@ export interface AiKnowledge {
   faq?: { q: string; a: string }[];
 }
 
+/**
+ * Satu baris jam buka mingguan bisnis — bentuk sama dengan staff_schedules
+ * (0=Sunday .. 6=Saturday, menit sejak tengah malam).
+ */
+export interface BusinessHoursEntry {
+  dayOfWeek: number;
+  startMinutes: number;
+  endMinutes: number;
+}
+
 export interface Workspace {
   id: string;
   name: string;
   templateCategory: string;
   industry?: string | null;
+  /** Info bisnis detail (opsional) — website, kontak, lokasi, jam buka. */
+  website?: string | null;
+  phone?: string | null;
+  country?: string | null;
+  city?: string | null;
+  address?: string | null;
+  businessHours?: BusinessHoursEntry[] | null;
   /** Menit sebelum jadwal reminder otomatis dikirim (default 120). */
   reminderLeadMinutes?: number;
   /** Bahasa panggilan CALL-E (default 'en'). */
   callGoalLanguage?: string;
+  /** Nama asisten voice AI — greeting & label asisten Vapi (default 'Sarah'). */
+  callAssistantName?: string;
+  /** Voice ID ElevenLabs — null = default server (env). */
+  callVoiceId?: string | null;
+  /** Ambang percobaan panggilan gagal sebelum final follow-up (default 2). */
+  maxCallAttempts?: number;
   /** Bahasa balasan bot chat — Telegram / WhatsApp / email (default 'en'). */
   chatLanguage?: string;
   /** Auto-call CALL-E aktif/mati (default mati). */
@@ -134,4 +157,31 @@ export const RECOMMENDED_TEMPLATE_CATEGORIES = [
 export function getTemplateCategoryLabelKey(categoryId: string): TranslationKey | null {
   const category = RECOMMENDED_TEMPLATE_CATEGORIES.find((item) => item.id === categoryId);
   return category?.labelKey ?? null;
+}
+
+/**
+ * Industri default per kategori template — mirror dari
+ * `WORKSPACE_TEMPLATE_CATEGORY_INDUSTRY` di @oriole/config (API). Dipakai
+ * client untuk me-reset dropdown industri saat user mengganti kategori
+ * di dialog edit bisnis, agar perilaku "industri mengikuti kategori"
+ * tetap konsisten sebelum data tersimpan.
+ */
+const CATEGORY_DEFAULT_INDUSTRY: Record<string, string> = {
+  'beauty-wellness': 'spa',
+  'healthcare-clinics': 'clinic',
+  fitness: 'fitness',
+  'professional-services': 'other',
+  'home-services': 'other',
+  automotive: 'other',
+  'education-coaching': 'other',
+  'photography-creative': 'other',
+  'hospitality-events': 'other',
+  'real-estate': 'other',
+  'pet-care': 'other',
+  'space-rental': 'other',
+};
+
+/** Industri default untuk sebuah kategori — fallback 'other' bila tidak dikenal. */
+export function defaultIndustryForCategory(categoryId: string): string {
+  return CATEGORY_DEFAULT_INDUSTRY[categoryId] ?? 'other';
 }

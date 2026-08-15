@@ -9,7 +9,7 @@ import type {
 /** Jendela reminder default: di bawah nilai ini, booking terkonfirmasi diingatkan ulang. */
 export const REMINDER_WINDOW_HOURS = 24;
 
-/** Ambang percobaan gagal sebelum goal jadi final follow-up. */
+/** Ambang percobaan gagal sebelum goal jadi final follow-up (default). */
 export const FAILED_ATTEMPT_THRESHOLD = 2;
 
 const VALID_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 'cancelled', 'completed'];
@@ -60,7 +60,10 @@ export function determineCallGoal(
     };
   }
 
-  if (booking.failedCallAttempts >= FAILED_ATTEMPT_THRESHOLD) {
+  // Ambang percobaan gagal bisa dikonfigurasi per workspace (settings Voice AI)
+  // — default FAILED_ATTEMPT_THRESHOLD.
+  const maxFailedAttempts = options.maxFailedAttempts ?? FAILED_ATTEMPT_THRESHOLD;
+  if (booking.failedCallAttempts >= maxFailedAttempts) {
     return {
       goalType: 'final-follow-up',
       reason: `${booking.failedCallAttempts} percobaan panggilan gagal — final follow-up.`,

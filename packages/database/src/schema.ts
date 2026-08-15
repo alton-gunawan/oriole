@@ -68,6 +68,10 @@ export const profiles = pgTable(
       .primaryKey()
       .references(() => authUser.id, { onDelete: 'cascade' }),
     displayName: text('display_name'),
+    /** Preferensi UI user: bahasa aplikasi ('en' | 'id') — null = ikuti browser. */
+    language: text('language'),
+    /** Preferensi zona waktu user (IANA, mis. 'Asia/Jakarta') — null = ikuti browser. */
+    timezone: text('timezone'),
     plan: text('plan').default('free').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -93,6 +97,15 @@ export const workspaces = pgTable(
     reminderLeadMinutes: integer('reminder_lead_minutes').default(120).notNull(),
     /** Bahasa panggilan CALL-E (default en; id = extension point yang belum aktif). */
     callGoalLanguage: text('call_goal_language').default('en').notNull(),
+    /** Nama asisten voice AI (dipakai greeting & label asisten Vapi). */
+    callAssistantName: text('call_assistant_name').default('Sarah').notNull(),
+    /** Voice ID ElevenLabs untuk panggilan keluar — null = default server (env). */
+    callVoiceId: text('call_voice_id'),
+    /**
+     * Ambang percobaan panggilan gagal sebelum goal jadi final follow-up
+     * (default 2 — sama dengan FAILED_ATTEMPT_THRESHOLD di call-goals).
+     */
+    maxCallAttempts: integer('max_call_attempts').default(2).notNull(),
     /**
      * Bahasa balasan bot chat (Telegram / WhatsApp / email) — default en.
      * Terpisah dari callGoalLanguage agar bahasa bot bisa diatur independen
@@ -118,6 +131,22 @@ export const workspaces = pgTable(
     aiEnabled: boolean('ai_enabled').default(false).notNull(),
     /** Knowledge base AI chat: layanan+harga, jam buka, lokasi, kebijakan, FAQ. */
     aiKnowledge: jsonb('ai_knowledge').$type<AiKnowledge | null>(),
+    /** Situs web bisnis (opsional). */
+    website: text('website'),
+    /** Nomor telepon bisnis (opsional). */
+    phone: text('phone'),
+    /** Negara lokasi bisnis. */
+    country: text('country'),
+    /** Kota lokasi bisnis. */
+    city: text('city'),
+    /** Alamat lengkap bisnis. */
+    address: text('address'),
+    /**
+     * Jam buka mingguan — array { dayOfWeek: 0-6 (0=Minggu), startMinutes,
+     * endMinutes } menit sejak tengah malam. Bentuk sama dengan
+     * staff_schedules agar helper availability bisa dipakai ulang.
+     */
+    businessHours: jsonb('business_hours').$type<BusinessHoursEntry[] | null>(),
     /**
      * Soft-delete: bisnis dihapus (hilang dari UI) dengan menyetel kolom ini;
      * baris + semua data terkait (booking, kontak, chat, ...) dihapus permanen
@@ -165,6 +194,18 @@ export interface AiKnowledge {
   policy?: string;
   /** FAQ tambahan di luar field di atas. */
   faq?: { q: string; a: string }[];
+}
+
+/**
+ * Satu baris jam buka mingguan bisnis — bentuk sama dengan staff_schedules
+ * agar helper availabilitas bisa dipakai untuk keduanya.
+ */
+export interface BusinessHoursEntry {
+  /** 0=Sunday .. 6=Saturday. */
+  dayOfWeek: number;
+  /** Menit sejak tengah malam (zona waktu bisnis). */
+  startMinutes: number;
+  endMinutes: number;
 }
 
 /**

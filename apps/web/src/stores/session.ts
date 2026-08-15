@@ -15,6 +15,10 @@ export interface SessionUser {
   id: string;
   email?: string;
   name?: string;
+  /** Preferensi bahasa UI dari profil server — null = ikuti browser. */
+  language?: string | null;
+  /** Preferensi zona waktu (IANA) dari profil server — null = ikuti browser. */
+  timezone?: string | null;
 }
 
 interface SessionState {

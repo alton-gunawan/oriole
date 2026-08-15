@@ -8,6 +8,7 @@ import { bookings, conversations, profiles, workspaces } from '@oriole/database'
 
 import { db } from '../db/index.ts';
 import { captureWorkspaceEvent } from '../lib/analytics.ts';
+import { isValidTimezone } from '../lib/form-booking.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
 import { rescheduleWorkspaceAutoCalls } from '../lib/reminders.ts';
 
@@ -64,6 +65,12 @@ const workspaceSchema = z.object({
   reminderLeadMinutes: z.number().int().min(5).max(10_080).optional(),
   /** Bahasa panggilan CALL-E (hanya 'en' aktif saat ini; 'id' = extension point). */
   callGoalLanguage: z.enum(['en', 'id']).optional(),
+  /** Nama asisten voice AI — greeting + label asisten Vapi. */
+  callAssistantName: z.string().trim().min(1).max(80).optional(),
+  /** Voice ID ElevenLabs — null = default server (env VAPI_VOICE_ID). */
+  callVoiceId: z.string().trim().max(100).nullable().optional(),
+  /** Ambang percobaan panggilan gagal sebelum goal jadi final follow-up (default 2). */
+  maxCallAttempts: z.number().int().min(1).max(10).optional(),
   /** Bahasa balasan bot chat (Telegram / WhatsApp / email) — default 'en'. */
   chatLanguage: z.enum(['en', 'id']).optional(),
   /** Auto-call CALL-E aktif/mati. */
@@ -74,6 +81,26 @@ const workspaceSchema = z.object({
   aiEnabled: z.boolean().optional(),
   /** Knowledge base AI chat — null = hapus KB (kembali ke kosong). */
   aiKnowledge: aiKnowledgeSchema.nullable().optional(),
+  /** Situs web bisnis — null = hapus. */
+  website: z.string().trim().max(200).nullable().optional(),
+  /** Nomor telepon bisnis — null = hapus. */
+  phone: z.string().trim().max(40).nullable().optional(),
+  /** Lokasi bisnis — null = hapus. */
+  country: z.string().trim().max(80).nullable().optional(),
+  city: z.string().trim().max(80).nullable().optional(),
+  address: z.string().trim().max(500).nullable().optional(),
+  /** Jam buka mingguan — null = hapus (tidak ada jam buka tersimpan). */
+  businessHours: z
+    .array(
+      z.object({
+        dayOfWeek: z.number().int().min(0).max(6),
+        startMinutes: z.number().int().min(0).max(1440),
+        endMinutes: z.number().int().min(0).max(1440),
+      }),
+    )
+    .max(7)
+    .nullable()
+    .optional(),
 });
 
 /** PATCH bersifat parsial — cukup kirim field yang ingin diubah. */
@@ -81,9 +108,18 @@ const workspacePatchSchema = workspaceSchema.partial();
 
 const workspaceIdParamSchema = z.object({ id: z.string().uuid() });
 
-/** Nama tampilan profil (tabel `profiles.display_name`) — 1:1 dengan identitas Neon Auth. */
+/** Profil user (tabel `profiles`) — nama tampilan + preferensi bahasa/zona waktu. */
 const profilePatchSchema = z.object({
   name: z.string().trim().min(1, 'Nama tidak boleh kosong').max(80, 'Nama maksimal 80 karakter'),
+  /** Preferensi bahasa UI ('en' | 'id') — null/undefined = ikuti browser. */
+  language: z.enum(['en', 'id']).nullable().optional(),
+  /** Preferensi zona waktu (IANA, mis. 'Asia/Jakarta') — null/undefined = ikuti browser. */
+  timezone: z
+    .string()
+    .trim()
+    .refine((value) => isValidTimezone(value), 'Zona waktu tidak valid')
+    .nullable()
+    .optional(),
 });
 
 /** Identitas user + daftar bisnis yang dimiliki akun. */
@@ -91,7 +127,7 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
     const userId = c.get('userId');
     const [profile] = await db
-      .select({ displayName: profiles.displayName })
+      .select({ displayName: profiles.displayName, language: profiles.language, timezone: profiles.timezone })
       .from(profiles)
       .where(eq(profiles.id, userId))
       .limit(1);
@@ -108,6 +144,10 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       // Nama tampilan dari profil aplikasi (bisa diubah via PATCH /me);
       // null bila user belum pernah set — client memakai nama Neon Auth.
       name: profile?.displayName ?? null,
+      // Preferensi UI user — null = ikuti browser (client memakai nilai ini
+      // sebagai default bahasa/zona waktu saat sesi dipulihkan).
+      language: profile?.language ?? null,
+      timezone: profile?.timezone ?? null,
       workspaces: userWorkspaces,
     });
   })
@@ -136,17 +176,37 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .patch('/', requireAuth, zValidator('json', profilePatchSchema), async (c) => {
     const userId = c.get('userId');
-    const { name } = c.req.valid('json');
+    const body = c.req.valid('json');
+    const { name } = body;
+    // language/timezone hanya diubah bila dikirim (undefined = jangan sentuh
+    // nilai tersimpan; null = bersihkan preferensi → ikuti browser).
+    const set: {
+      displayName: string;
+      updatedAt: Date;
+      language?: string | null;
+      timezone?: string | null;
+    } = { displayName: name, updatedAt: new Date() };
+    if (body.language !== undefined) set.language = body.language;
+    if (body.timezone !== undefined) set.timezone = body.timezone;
 
     await db
       .insert(profiles)
-      .values({ id: userId, displayName: name })
+      .values({
+        id: userId,
+        displayName: name,
+        ...(body.language !== undefined ? { language: body.language } : {}),
+        ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+      })
       .onConflictDoUpdate({
         target: profiles.id,
-        set: { displayName: name, updatedAt: new Date() },
+        set,
       });
 
-    return c.json({ name });
+    return c.json({
+      name,
+      ...(body.language !== undefined ? { language: body.language } : {}),
+      ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+    });
   })
   .post('/workspaces', requireAuth, zValidator('json', workspaceSchema), async (c) => {
     const body = c.req.valid('json');
@@ -159,6 +219,15 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
         templateCategory: body.templateCategory,
         industry,
         ...(body.avatarUrl !== undefined ? { avatarUrl: body.avatarUrl } : {}),
+        ...(body.website !== undefined ? { website: body.website } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone } : {}),
+        ...(body.country !== undefined ? { country: body.country } : {}),
+        ...(body.city !== undefined ? { city: body.city } : {}),
+        ...(body.address !== undefined ? { address: body.address } : {}),
+        ...(body.businessHours !== undefined ? { businessHours: body.businessHours } : {}),
+        ...(body.callAssistantName !== undefined ? { callAssistantName: body.callAssistantName } : {}),
+        ...(body.callVoiceId !== undefined ? { callVoiceId: body.callVoiceId } : {}),
+        ...(body.maxCallAttempts !== undefined ? { maxCallAttempts: body.maxCallAttempts } : {}),
       })
       .returning();
 
@@ -192,7 +261,16 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
         body.autoCallLeadHours === undefined &&
         body.avatarUrl === undefined &&
         body.aiEnabled === undefined &&
-        body.aiKnowledge === undefined
+        body.aiKnowledge === undefined &&
+        body.website === undefined &&
+        body.phone === undefined &&
+        body.country === undefined &&
+        body.city === undefined &&
+        body.address === undefined &&
+        body.businessHours === undefined &&
+        body.callAssistantName === undefined &&
+        body.callVoiceId === undefined &&
+        body.maxCallAttempts === undefined
       ) {
         return c.json({ error: 'Tidak ada field yang diubah' }, 400);
       }
@@ -238,6 +316,18 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
           ...(body.aiEnabled !== undefined ? { aiEnabled: body.aiEnabled } : {}),
           // null = hapus knowledge base AI chat.
           ...(body.aiKnowledge !== undefined ? { aiKnowledge: body.aiKnowledge } : {}),
+          // null = hapus field info bisnis.
+          ...(body.website !== undefined ? { website: body.website } : {}),
+          ...(body.phone !== undefined ? { phone: body.phone } : {}),
+          ...(body.country !== undefined ? { country: body.country } : {}),
+          ...(body.city !== undefined ? { city: body.city } : {}),
+          ...(body.address !== undefined ? { address: body.address } : {}),
+          ...(body.businessHours !== undefined ? { businessHours: body.businessHours } : {}),
+          // Settings Voice AI.
+          ...(body.callAssistantName !== undefined ? { callAssistantName: body.callAssistantName } : {}),
+          // null = kembali ke voice default server.
+          ...(body.callVoiceId !== undefined ? { callVoiceId: body.callVoiceId } : {}),
+          ...(body.maxCallAttempts !== undefined ? { maxCallAttempts: body.maxCallAttempts } : {}),
           updatedAt: new Date(),
         })
         .where(and(eq(workspaces.id, id), eq(workspaces.userId, userId), isNull(workspaces.deletedAt)))

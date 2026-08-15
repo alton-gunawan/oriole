@@ -62,6 +62,9 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
       name: workspaces.name,
       industry: workspaces.industry,
       callGoalLanguage: workspaces.callGoalLanguage,
+      callAssistantName: workspaces.callAssistantName,
+      callVoiceId: workspaces.callVoiceId,
+      maxCallAttempts: workspaces.maxCallAttempts,
     })
     .from(workspaces)
     .where(and(eq(workspaces.id, input.workspaceId), isNull(workspaces.deletedAt)))
@@ -90,6 +93,7 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
 
   const decision = determineCallGoal(context, {
     reminderWindowHours: input.reminderWindowHours,
+    maxFailedAttempts: workspace.maxCallAttempts,
   });
   const business: BusinessGoalContext = {
     id: input.workspaceId,
@@ -129,6 +133,8 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
     language: config.language,
     businessName: workspace.name,
     customerName: booking.customerName,
+    assistantName: workspace.callAssistantName,
+    voiceId: workspace.callVoiceId,
     goalType: config.goalType,
     callName: `booking:${booking.id}:${config.goalType}:auto-call:${input.autoCallAt ?? 'now'}`,
   });

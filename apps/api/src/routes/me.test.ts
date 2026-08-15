@@ -214,6 +214,78 @@ describe('PATCH /api/me — simpan nama tampilan (upsert profiles)', () => {
   });
 });
 
+describe('PATCH /api/me — preferensi bahasa & zona waktu (profiles)', () => {
+  const patchProfile = (payload: Record<string, unknown>) =>
+    app.request('/api/me', {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('language + timezone valid → tersimpan & di-echo', async () => {
+    const res = await patchProfile({ name: 'Alice', language: 'id', timezone: 'Asia/Jakarta' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; language: string; timezone: string };
+    expect(body).toMatchObject({ name: 'Alice', language: 'id', timezone: 'Asia/Jakarta' });
+
+    const rows = dbState.tables.get('profiles') ?? [];
+    expect(rows[0]).toMatchObject({ id: 'test-user-1', language: 'id', timezone: 'Asia/Jakarta' });
+  });
+
+  it('hanya language dikirim → timezone tersimpan tidak disentuh', async () => {
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', displayName: 'Alice', language: 'en', timezone: 'Asia/Jakarta' },
+    ]);
+    const res = await patchProfile({ name: 'Alice', language: 'id' });
+    expect(res.status).toBe(200);
+    const rows = dbState.tables.get('profiles') ?? [];
+    expect(rows[0]).toMatchObject({ language: 'id', timezone: 'Asia/Jakarta' });
+  });
+
+  it('language/timezone null → preferensi dibersihkan (ikuti browser)', async () => {
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', displayName: 'Alice', language: 'id', timezone: 'Asia/Jakarta' },
+    ]);
+    const res = await patchProfile({ name: 'Alice', language: null, timezone: null });
+    expect(res.status).toBe(200);
+    const rows = dbState.tables.get('profiles') ?? [];
+    expect(rows[0]).toMatchObject({ language: null, timezone: null });
+  });
+
+  it('timezone bukan IANA valid → 400', async () => {
+    const res = await patchProfile({ name: 'Alice', timezone: 'Bukan/Zone' });
+    expect(res.status).toBe(400);
+    const rows = dbState.tables.get('profiles') ?? [];
+    expect(rows).toHaveLength(0);
+  });
+
+  it('language di luar en/id → 400', async () => {
+    const res = await patchProfile({ name: 'Alice', language: 'fr' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/me — preferensi bahasa & zona waktu', () => {
+  it('belum ada preferensi → language/timezone null', async () => {
+    const res = await app.request('/api/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { language: string | null; timezone: string | null };
+    expect(body.language).toBeNull();
+    expect(body.timezone).toBeNull();
+  });
+
+  it('profil punya preferensi → dikembalikan', async () => {
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', displayName: 'Alice', language: 'id', timezone: 'Asia/Jakarta' },
+    ]);
+    const res = await app.request('/api/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { language: string | null; timezone: string | null };
+    expect(body.language).toBe('id');
+    expect(body.timezone).toBe('Asia/Jakarta');
+  });
+});
+
 describe('POST /api/me/workspaces — avatar bisnis (DiceBear / upload 1:1)', () => {
   const postWorkspace = (payload: Record<string, unknown>) =>
     app.request('/api/me/workspaces', {
@@ -392,6 +464,207 @@ describe('PATCH /api/me/workspaces/:id — bahasa balasan chat (chatLanguage)', 
   it('nilai di luar en/id → 400', async () => {
     dbState.tables.set('workspaces', [baseWorkspace()]);
     const res = await patchChat({ chatLanguage: 'fr' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /api/me/workspaces/:id — info bisnis detail (website/phone/lokasi/jam buka)', () => {
+  const WORKSPACE_ID = '44444444-4444-4444-8444-444444444444';
+  const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({
+    id: WORKSPACE_ID,
+    userId: 'test-user-1',
+    name: 'Northside Studio',
+    templateCategory: 'beauty-wellness',
+    deletedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  const patchInfo = (payload: Record<string, unknown>) =>
+    app.request(`/api/me/workspaces/${WORKSPACE_ID}`, {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('website/phone/lokasi/jam buka lengkap → tersimpan & di-echo', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const businessHours = [
+      { dayOfWeek: 1, startMinutes: 9 * 60, endMinutes: 17 * 60 },
+      { dayOfWeek: 2, startMinutes: 9 * 60, endMinutes: 17 * 60 },
+    ];
+    const res = await patchInfo({
+      website: 'https://northside.example.com',
+      phone: '+62 812-3456-7890',
+      country: 'Indonesia',
+      city: 'Jakarta',
+      address: 'Jl. Merdeka No. 1',
+      businessHours,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      workspace: {
+        website?: string;
+        phone?: string;
+        country?: string;
+        city?: string;
+        address?: string;
+        businessHours?: unknown;
+      };
+    };
+    expect(body.workspace).toMatchObject({
+      website: 'https://northside.example.com',
+      phone: '+62 812-3456-7890',
+      country: 'Indonesia',
+      city: 'Jakarta',
+      address: 'Jl. Merdeka No. 1',
+      businessHours,
+    });
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ website: 'https://northside.example.com', businessHours });
+  });
+
+  it('businessHours null → hapus jam buka', async () => {
+    dbState.tables.set('workspaces', [
+      baseWorkspace({ businessHours: [{ dayOfWeek: 1, startMinutes: 480, endMinutes: 1020 }] }),
+    ]);
+    const res = await patchInfo({ businessHours: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workspace: { businessHours?: unknown } };
+    expect(body.workspace.businessHours).toBeNull();
+  });
+
+  it('dayOfWeek di luar 0-6 → 400', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchInfo({ businessHours: [{ dayOfWeek: 7, startMinutes: 480, endMinutes: 1020 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('endMinutes melebihi 1440 → 400', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchInfo({ businessHours: [{ dayOfWeek: 1, startMinutes: 480, endMinutes: 1500 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('lebih dari 7 hari → 400', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const days = Array.from({ length: 8 }, (_, i) => ({
+      dayOfWeek: i % 7,
+      startMinutes: 480,
+      endMinutes: 1020,
+    }));
+    const res = await patchInfo({ businessHours: days });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/me/workspaces — info bisnis detail saat buat bisnis', () => {
+  const createWithInfo = (payload: Record<string, unknown>) =>
+    app.request('/api/me/workspaces', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('website/phone/lokasi tersimpan saat buat bisnis baru', async () => {
+    const res = await createWithInfo({
+      name: 'Northside Studio',
+      templateCategory: 'beauty-wellness',
+      website: 'https://northside.example.com',
+      phone: '+62 812-3456-7890',
+      country: 'Indonesia',
+      city: 'Jakarta',
+      address: 'Jl. Merdeka No. 1',
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      workspace: {
+        website?: string;
+        phone?: string;
+        country?: string;
+        city?: string;
+        address?: string;
+      };
+    };
+    expect(body.workspace).toMatchObject({
+      website: 'https://northside.example.com',
+      phone: '+62 812-3456-7890',
+      country: 'Indonesia',
+      city: 'Jakarta',
+      address: 'Jl. Merdeka No. 1',
+    });
+  });
+});
+
+describe('PATCH /api/me/workspaces/:id — settings Voice AI (asisten/voice/max attempts)', () => {
+  const WORKSPACE_ID = '55555555-5555-4555-8555-555555555555';
+  const baseWorkspace = (overrides: Record<string, unknown> = {}) => ({
+    id: WORKSPACE_ID,
+    userId: 'test-user-1',
+    name: 'Northside Studio',
+    templateCategory: 'beauty-wellness',
+    callAssistantName: 'Sarah',
+    callVoiceId: null,
+    maxCallAttempts: 2,
+    autoCallEnabled: false,
+    autoCallLeadHours: 24,
+    deletedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  const patchVoice = (payload: Record<string, unknown>) =>
+    app.request(`/api/me/workspaces/${WORKSPACE_ID}`, {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+  it('nama asisten + voice + max attempts → tersimpan & di-echo', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchVoice({
+      callAssistantName: 'Bella',
+      callVoiceId: 'EXAVITQu4vr4xnSDxMaL',
+      maxCallAttempts: 3,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      workspace: {
+        callAssistantName?: string;
+        callVoiceId?: string;
+        maxCallAttempts?: number;
+      };
+    };
+    expect(body.workspace).toMatchObject({
+      callAssistantName: 'Bella',
+      callVoiceId: 'EXAVITQu4vr4xnSDxMaL',
+      maxCallAttempts: 3,
+    });
+
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({
+      callAssistantName: 'Bella',
+      callVoiceId: 'EXAVITQu4vr4xnSDxMaL',
+      maxCallAttempts: 3,
+    });
+  });
+
+  it('callVoiceId null → kembali ke voice default server', async () => {
+    dbState.tables.set('workspaces', [
+      baseWorkspace({ callVoiceId: 'EXAVITQu4vr4xnSDxMaL' }),
+    ]);
+    const res = await patchVoice({ callVoiceId: null });
+    expect(res.status).toBe(200);
+    const rows = dbState.tables.get('workspaces') ?? [];
+    expect(rows[0]).toMatchObject({ callVoiceId: null });
+  });
+
+  it('maxCallAttempts di luar 1-10 → 400', async () => {
+    dbState.tables.set('workspaces', [baseWorkspace()]);
+    const res = await patchVoice({ maxCallAttempts: 0 });
     expect(res.status).toBe(400);
   });
 });

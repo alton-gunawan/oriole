@@ -70,13 +70,18 @@ export function CallbackPage() {
         // BELUM terinisialisasi: RequireAuth tidak akan me-redirect ke
         // onboarding (mencegah pembuatan project duplikat), shell menampilkan
         // state kosong, dan reload berikutnya memulihkan daftar project.
-        let me: { workspaces: Workspace[]; name?: string | null } | null = null;
+        let me: { workspaces: Workspace[]; name?: string | null; language?: string | null; timezone?: string | null } | null = null;
         for (let attempt = 0; attempt < 3 && !me; attempt += 1) {
           if (attempt > 0) {
             await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
           }
           try {
-            me = await apiFetch<{ workspaces: Workspace[]; name?: string | null }>('/me');
+            me = await apiFetch<{
+              workspaces: Workspace[];
+              name?: string | null;
+              language?: string | null;
+              timezone?: string | null;
+            }>('/me');
           } catch {
             me = null;
           }
@@ -86,7 +91,12 @@ export function CallbackPage() {
           // Nama tampilan profil (diubah via PATCH /me) lebih baru daripada
           // nama OAuth dari sesi Neon — pakai itu bila sudah di-set.
           if (me.name && store.user) {
-            store.setUser({ ...store.user, name: me.name });
+            store.setUser({
+              ...store.user,
+              name: me.name,
+              language: me.language ?? null,
+              timezone: me.timezone ?? null,
+            });
           }
         }
         // Hardening: hand-off JWT ke cookie HttpOnly (best-effort —

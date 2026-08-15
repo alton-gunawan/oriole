@@ -23,22 +23,20 @@ describe('industryForTemplateCategory', () => {
     }
   });
 
-  it('maps every category to its own dedicated industry (1:1)', () => {
-    expect(industryForTemplateCategory('healthcare-clinics')).toBe('medical_clinic');
-    expect(industryForTemplateCategory('beauty-wellness')).toBe('wellness');
-    expect(industryForTemplateCategory('hospitality-events')).toBe('restaurant');
-    expect(industryForTemplateCategory('professional-services')).toBe('professional_services');
-    expect(industryForTemplateCategory('home-services')).toBe('home_services');
-    expect(industryForTemplateCategory('automotive')).toBe('automotive');
-    expect(industryForTemplateCategory('education-coaching')).toBe('education_coaching');
-    expect(industryForTemplateCategory('photography-creative')).toBe('photography_creative');
-    expect(industryForTemplateCategory('real-estate')).toBe('real_estate');
-    expect(industryForTemplateCategory('pet-care')).toBe('pet_care');
-    expect(industryForTemplateCategory('space-rental')).toBe('space_rental');
+  it('maps every category to its (simplified) industry', () => {
+    // Kategori dengan industri khusus → nilai sempitnya.
+    expect(industryForTemplateCategory('healthcare-clinics')).toBe('clinic');
+    expect(industryForTemplateCategory('beauty-wellness')).toBe('spa');
     expect(industryForTemplateCategory('fitness')).toBe('fitness');
-    // Setiap kategori memetakan ke industri yang BERBEDA — tidak ada dua
-    // kategori yang berbagi template panggilan generik.
-    const values = Object.values(WORKSPACE_TEMPLATE_CATEGORY_INDUSTRY);
-    expect(new Set(values).size).toBe(values.length);
+    // Kategori lain jatuh ke industri generik `other` (daftar disederhanakan).
+    expect(industryForTemplateCategory('hospitality-events')).toBe('other');
+    expect(industryForTemplateCategory('professional-services')).toBe('other');
+    expect(industryForTemplateCategory('home-services')).toBe('other');
+    expect(industryForTemplateCategory('automotive')).toBe('other');
+    expect(industryForTemplateCategory('education-coaching')).toBe('other');
+    expect(industryForTemplateCategory('photography-creative')).toBe('other');
+    expect(industryForTemplateCategory('real-estate')).toBe('other');
+    expect(industryForTemplateCategory('pet-care')).toBe('other');
+    expect(industryForTemplateCategory('space-rental')).toBe('other');
   });
 });

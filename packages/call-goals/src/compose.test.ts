@@ -77,7 +77,7 @@ describe('composeCallGoal', () => {
     const dental = composeCallGoal({ booking: BASE, business: BUSINESS })!;
     const salon = composeCallGoal({
       booking: BASE,
-      business: { name: 'Hair House', industry: 'hair_salon' },
+      business: { name: 'Hair House', industry: 'salon' },
     })!;
     expect(dental.prompt).toContain('dental appointment');
     expect(salon.prompt).toContain('hair appointment');
@@ -94,13 +94,13 @@ describe('composeCallGoal', () => {
     expect(id.language).toBe('id');
   });
 
-  it('restaurant menghasilkan result schema dengan field party size', () => {
-    const restaurant = composeCallGoal({
+  it('spa menghasilkan result schema dengan field treatment', () => {
+    const spa = composeCallGoal({
       booking: BASE,
-      business: { name: 'Nonna', industry: 'restaurant' },
+      business: { name: 'Glow Spa', industry: 'spa' },
     })!;
-    const properties = restaurant.resultSchema.properties as Record<string, unknown>;
-    expect(properties.partySize).toMatchObject({ type: 'integer' });
-    expect(restaurant.prompt).toContain('number of guests');
+    const properties = spa.resultSchema.properties as Record<string, unknown>;
+    expect(properties.treatment).toMatchObject({ type: 'string' });
+    expect(spa.prompt).toContain('pre-treatment preparation');
   });
 });

@@ -9,21 +9,11 @@ import type { TranslationKey } from './index';
  */
 
 const INDUSTRY_KEYS: Record<Industry, TranslationKey> = {
-  dental: 'industry.dental',
-  medspa: 'industry.medspa',
-  hair_salon: 'industry.hairSalon',
-  medical_clinic: 'industry.medicalClinic',
-  restaurant: 'industry.restaurant',
-  wellness: 'industry.wellness',
+  clinic: 'industry.clinic',
+  salon: 'industry.salon',
   fitness: 'industry.fitness',
-  professional_services: 'industry.professionalServices',
-  home_services: 'industry.homeServices',
-  automotive: 'industry.automotive',
-  education_coaching: 'industry.educationCoaching',
-  photography_creative: 'industry.photographyCreative',
-  real_estate: 'industry.realEstate',
-  pet_care: 'industry.petCare',
-  space_rental: 'industry.spaceRental',
+  spa: 'industry.spa',
+  dental: 'industry.dental',
   other: 'industry.other',
 };
 

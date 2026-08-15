@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from 'react';
+import { INDUSTRIES } from '@oriole/call-goals';
 import {
   Badge,
   Button,
   Dialog,
   DialogHeader,
+  DropdownMenu,
+  DropdownMenuItem,
   IconButton,
   Layout,
   LayoutContent,
@@ -16,15 +19,23 @@ import { Trans, useTranslation } from 'react-i18next';
 import { apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import {
+  defaultIndustryForCategory,
   getTemplateCategoryLabelKey,
   RECOMMENDED_TEMPLATE_CATEGORIES,
   type Workspace,
 } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { industryKey } from '../../i18n/enums';
+import {
+  BusinessInfoForm,
+  businessInfoFromWorkspace,
+  businessInfoToPayload,
+  EMPTY_BUSINESS_INFO,
+  type BusinessInfoValues,
+} from '../components/BusinessInfoForm';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
-import { IconCheck, IconEdit, IconPlus, IconSettings, IconTrash, IconX } from '../shell/icons';
+import { IconCheck, IconChevronDown, IconEdit, IconPlus, IconSettings, IconTrash, IconX } from '../shell/icons';
 import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
 
 /** Pilihan kategori — dipakai form buat & edit project. Industri CALL-E mengikuti kategori otomatis. */
@@ -71,6 +82,60 @@ function CategoryPicker({
   );
 }
 
+/**
+ * Dropdown industri bisnis — dipakai dialog edit project. Opsi dari
+ * INDUSTRIES (@oriole/call-goals), label terjemahan via industryKey.
+ */
+function IndustryDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (industry: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const selected = INDUSTRIES.find((industry) => industry === value);
+  const label = selected ? t(industryKey(selected)) : t(industryKey(value));
+
+  return (
+    <DropdownMenu
+      placement="below"
+      hasChevron={false}
+      menuWidth={260}
+      isMenuOpen={open}
+      onOpenChange={setOpen}
+      button={{
+        label: t('ws.industry'),
+        variant: 'secondary',
+        size: 'sm',
+        children: (
+          <span className="flex w-56 items-center justify-between gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+            <span className="truncate">{label}</span>
+            <IconChevronDown
+              className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
+            />
+          </span>
+        ),
+      }}
+    >
+      {INDUSTRIES.map((industry) => {
+        const selected = industry === value;
+        return (
+          <DropdownMenuItem
+            key={industry}
+            label={t(industryKey(industry))}
+            onClick={() => onChange(industry)}
+            endContent={
+              selected ? <IconCheck className="size-3.5 text-amber-500" /> : undefined
+            }
+          />
+        );
+      })}
+    </DropdownMenu>
+  );
+}
+
 export function WorkspaceSettingsPage() {
   const { t } = useTranslation();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -83,6 +148,7 @@ export function WorkspaceSettingsPage() {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [createInfo, setCreateInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -90,6 +156,8 @@ export function WorkspaceSettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+  const [editIndustry, setEditIndustry] = useState<string>(defaultIndustryForCategory(RECOMMENDED_TEMPLATE_CATEGORIES[0].id));
+  const [editInfo, setEditInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
   const [editAvatar, setEditAvatar] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -110,12 +178,14 @@ export function WorkspaceSettingsPage() {
           name,
           templateCategory: category,
           ...(avatar !== null ? { avatarUrl: avatar } : {}),
+          ...businessInfoToPayload(createInfo),
         }),
       });
       addWorkspace(response.workspace);
       setName('');
       setCategory(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
       setAvatar(null);
+      setCreateInfo(EMPTY_BUSINESS_INFO);
       setIsAdding(false);
     } catch (err) {
       setError(errorMessage(err, t, 'errors.createProject'));
@@ -131,6 +201,8 @@ export function WorkspaceSettingsPage() {
     setEditingId(workspace.id);
     setEditName(workspace.name);
     setEditCategory(workspace.templateCategory);
+    setEditIndustry(workspace.industry ?? defaultIndustryForCategory(workspace.templateCategory));
+    setEditInfo(businessInfoFromWorkspace(workspace));
     setEditAvatar(workspace.avatarUrl ?? null);
     setEditError(null);
   };
@@ -158,7 +230,14 @@ export function WorkspaceSettingsPage() {
         body: JSON.stringify({
           name: editName,
           templateCategory: editCategory,
+          // Industri dikirim eksplisit — user bisa override dari dropdown,
+          // dan saat kategori diganti, dropdown otomatis di-reset ke default
+          // kategori (lihat CategoryPicker onChange).
+          industry: editIndustry,
           ...(avatarChanged ? { avatarUrl: editAvatar } : {}),
+          // Info bisnis detail — form edit adalah sumber kebenaran field ini
+          // (string kosong dikirim null agar field terhapus di DB).
+          ...businessInfoToPayload(editInfo),
         }),
       });
       updateWorkspace(response.workspace);
@@ -198,6 +277,7 @@ export function WorkspaceSettingsPage() {
     setEditingId(null);
     setError(null);
     setAvatar(null);
+    setCreateInfo(EMPTY_BUSINESS_INFO);
     setIsAdding(true);
   };
 
@@ -253,6 +333,7 @@ export function WorkspaceSettingsPage() {
                 />
                 <AvatarPicker key="create-workspace-avatar" value={avatar} onChange={setAvatar} name={name || '?'} />
                 <CategoryPicker value={category} onChange={setCategory} name="workspace-category" />
+                <BusinessInfoForm value={createInfo} onChange={setCreateInfo} />
               </form>
             </LayoutContent>
           }
@@ -309,7 +390,21 @@ export function WorkspaceSettingsPage() {
                 />
                 {/* key=editingId → remount per project agar state picker ikut project. */}
                 <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
-                <CategoryPicker value={editCategory} onChange={setEditCategory} name="edit-workspace-category" />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('ws.industry')}</p>
+                  <p className="mt-1 mb-2 text-xs text-zinc-500 dark:text-zinc-400">{t('ws.industryDesc')}</p>
+                  <IndustryDropdown value={editIndustry} onChange={setEditIndustry} />
+                </div>
+                <CategoryPicker
+                  value={editCategory}
+                  onChange={(categoryId) => {
+                    setEditCategory(categoryId);
+                    // Industri mengikuti kategori baru (konsisten dengan API).
+                    setEditIndustry(defaultIndustryForCategory(categoryId));
+                  }}
+                  name="edit-workspace-category"
+                />
+                <BusinessInfoForm value={editInfo} onChange={setEditInfo} />
               </form>
             </LayoutContent>
           }

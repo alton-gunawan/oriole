@@ -4,11 +4,23 @@ import { createHmac } from 'node:crypto';
 
 // tally.ts mengimpor env + db → env divalidasi saat modul dimuat. Test ini
 // hanya memakai fungsi murni + fetch mock — stub env & db cukup (pola sama
-// dengan form-booking.test.ts).
-vi.mock('../lib/env.ts', () => ({
-  env: { API_URL: 'https://api.example.com', NODE_ENV: 'test' },
+// dengan form-booking.test.ts). envState mutable agar tallyWebhookUrl bisa
+// diuji dengan/ tanpa WEBHOOK_BASE_URL.
+const { envState } = vi.hoisted(() => ({
+  envState: {
+    API_URL: 'https://api.example.com',
+    WEBHOOK_BASE_URL: undefined,
+    NODE_ENV: 'test',
+  } as Record<string, string | undefined>,
 }));
+
+vi.mock('../lib/env.ts', () => ({ env: envState }));
 vi.mock('../db/index.ts', () => ({ db: {} }));
+
+beforeEach(() => {
+  envState.API_URL = 'https://api.example.com';
+  envState.WEBHOOK_BASE_URL = undefined;
+});
 
 import {
   buildTallyBookingFormBlocks,
@@ -19,10 +31,36 @@ import {
   listTallyForms,
   registerTallyWebhook,
   tallyBookingFormTitle,
+  tallyWebhookUrl,
   updateTallyBookingForm,
   verifyTallySignature,
   type TallyWebhookPayload,
 } from './tally.ts';
+
+/* ────────────────────────────────────────────────────────────
+ * URL webhook masuk — base publik dari WEBHOOK_BASE_URL bila disetel
+ * (fallback API_URL). Ini kasus yang pernah bikin submission tidak sampai:
+ * API_URL bisa alamat internal Docker (http://api:3000) yang tidak bisa
+ * dijangkau Tally dari internet.
+ * ──────────────────────────────────────────────────────────── */
+
+describe('tallyWebhookUrl', () => {
+  it('memakai WEBHOOK_BASE_URL saat disetel (base publik, bukan API_URL internal)', () => {
+    vi.mocked(envState).WEBHOOK_BASE_URL = 'https://public.example.com';
+    vi.mocked(envState).API_URL = 'http://api:3000';
+    expect(tallyWebhookUrl('ws-1')).toBe(
+      'https://public.example.com/api/webhooks/tally/ws-1',
+    );
+    vi.mocked(envState).WEBHOOK_BASE_URL = undefined;
+  });
+
+  it('tanpa WEBHOOK_BASE_URL → jatuh ke API_URL', () => {
+    vi.mocked(envState).API_URL = 'https://api.example.com';
+    expect(tallyWebhookUrl('ws-2')).toBe(
+      'https://api.example.com/api/webhooks/tally/ws-2',
+    );
+  });
+});
 
 /* ────────────────────────────────────────────────────────────
  * Signature webhook Tally (base64 HMAC-SHA256 dari raw body)
@@ -274,14 +312,14 @@ describe('buildTallyBookingFormBlocks', () => {
     expect(blocks.filter((b) => b.type.startsWith('INPUT_')).length).toBe(6);
   });
 
-  it('industri menyesuaikan label layanan + field tambahan (restaurant)', () => {
+  it('industri menyesuaikan label layanan + field tambahan (salon)', () => {
     const blocks = buildTallyBookingFormBlocks({
-      businessName: 'Nonna',
-      industry: 'restaurant',
+      businessName: 'Salon Cantik',
+      industry: 'salon',
     });
 
-    // 1 judul + (5 base + 2 tambahan + 1 catatan) × 2 block = 1 + 16 = 17.
-    expect(blocks).toHaveLength(1 + 8 * 2);
+    // 1 judul + (5 base + 1 tambahan + 1 catatan) × 2 block = 1 + 14 = 15.
+    expect(blocks).toHaveLength(1 + 7 * 2);
 
     const labels = blocks
       .filter((b) => b.type === 'TITLE')
@@ -289,11 +327,10 @@ describe('buildTallyBookingFormBlocks', () => {
     expect(labels).toEqual([
       'Nama',
       'Nomor HP / WhatsApp',
-      'Jenis Reservasi',
+      'Jenis Layanan',
       'Tanggal',
       'Jam',
-      'Jumlah tamu',
-      'Acara / keperluan',
+      'Stylist pilihan',
       'Catatan',
     ]);
   });

@@ -258,7 +258,7 @@ sepenuhnya:
   lalu webhook `FORM_RESPONSE` didaftarkan (`POST /webhooks`) dan integrasi
   terhubung dalam satu langkah. Konten form **menyesuaikan industri workspace**
   (label layanan + field tambahan per industri via `INDUSTRY_FORM_PROFILES`,
-  mis. restaurant → "Jenis Reservasi" + jumlah tamu; dental → "Perawatan Gigi"
+  mis. salon → "Jenis Layanan" + stylist pilihan; dental → "Perawatan Gigi"
   + dokter pilihan). Label/tipe dipilih agar cocok dengan mapping field di
   bawah. Pintasan "Get your API key" di dialog mengarah ke
   `tally.so/settings/api-keys`.

@@ -26,6 +26,7 @@ import type {
 } from '../../lib/bookings';
 import type { StaffListResponse } from '../../lib/staff';
 import type { ServiceRecord, ServicesListResponse } from '../../lib/services';
+import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
@@ -48,8 +49,9 @@ export function BookingNewPage() {
   const [phone, setPhone] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [description, setDescription] = useState('');
+  // Zona waktu default: preferensi user (Settings) bila ada, fallback browser.
   const [timezone] = useState(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    () => useSessionStore.getState().user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
   );
   // ── Layanan katalog & staf (availabilitas) ──────────────────
   const [serviceId, setServiceId] = useState<string>('');

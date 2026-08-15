@@ -11,8 +11,8 @@ import {
 
 import { db } from '../db/index.ts';
 import { decryptSecret } from './crypto.ts';
-import { env } from './env.ts';
 import { tallyFormUrl } from './form-links.ts';
+import { webhookBaseUrl } from './webhook-url.ts';
 import { normalizePhone } from './phone.ts';
 import { upsertContactFromSubmission, type ContactSubmission } from './contact-ingest.ts';
 import {
@@ -243,77 +243,25 @@ const BOOKING_FORM_FIELDS: BookingFormField[] = [
  * agar mapping ekstraksi booking tetap bekerja tanpa modifikasi.
  */
 export const INDUSTRY_FORM_PROFILES: Record<Industry, IndustryFormProfile> = {
-  dental: {
-    serviceLabel: 'Perawatan Gigi',
-    extraFields: [{ label: 'Dokter yang diinginkan', type: 'INPUT_TEXT', required: false }],
-  },
-  medspa: {
-    serviceLabel: 'Perawatan Estetik',
-    extraFields: [{ label: 'Terapis yang diinginkan', type: 'INPUT_TEXT', required: false }],
-  },
-  hair_salon: {
-    serviceLabel: 'Jenis Layanan',
-    extraFields: [{ label: 'Stylist pilihan', type: 'INPUT_TEXT', required: false }],
-  },
-  medical_clinic: {
+  clinic: {
     serviceLabel: 'Jenis Pemeriksaan',
     extraFields: [{ label: 'Poli / Dokter', type: 'INPUT_TEXT', required: false }],
   },
-  restaurant: {
-    serviceLabel: 'Jenis Reservasi',
-    extraFields: [
-      { label: 'Jumlah tamu', type: 'INPUT_TEXT', required: false },
-      { label: 'Acara / keperluan', type: 'INPUT_TEXT', required: false },
-    ],
-  },
-  wellness: {
-    serviceLabel: 'Jenis Perawatan',
-    extraFields: [{ label: 'Terapis pilihan', type: 'INPUT_TEXT', required: false }],
+  salon: {
+    serviceLabel: 'Jenis Layanan',
+    extraFields: [{ label: 'Stylist pilihan', type: 'INPUT_TEXT', required: false }],
   },
   fitness: {
     serviceLabel: 'Kelas / Latihan',
     extraFields: [{ label: 'Instruktur pilihan', type: 'INPUT_TEXT', required: false }],
   },
-  professional_services: {
-    serviceLabel: 'Jenis Konsultasi',
-    extraFields: [{ label: 'Topik / keperluan', type: 'INPUT_TEXT', required: false }],
-  },
-  home_services: {
-    serviceLabel: 'Jenis Layanan',
-    extraFields: [{ label: 'Alamat lengkap', type: 'INPUT_TEXT', required: false }],
-  },
-  automotive: {
-    serviceLabel: 'Jenis Servis',
-    extraFields: [
-      { label: 'Merk & model kendaraan', type: 'INPUT_TEXT', required: false },
-      { label: 'Keluhan / kondisi', type: 'INPUT_TEXT', required: false },
-    ],
-  },
-  education_coaching: {
-    serviceLabel: 'Mata Pelajaran / Kelas',
-    extraFields: [{ label: 'Tingkat / level', type: 'INPUT_TEXT', required: false }],
-  },
-  photography_creative: {
-    serviceLabel: 'Jenis Paket / Sesi',
-    extraFields: [{ label: 'Lokasi / tema', type: 'INPUT_TEXT', required: false }],
-  },
-  real_estate: {
-    serviceLabel: 'Jenis Kunjungan',
-    extraFields: [{ label: 'Area / lokasi', type: 'INPUT_TEXT', required: false }],
-  },
-  pet_care: {
+  spa: {
     serviceLabel: 'Jenis Perawatan',
-    extraFields: [
-      { label: 'Hewan & ras', type: 'INPUT_TEXT', required: false },
-      { label: 'Riwayat vaksinasi', type: 'INPUT_TEXT', required: false },
-    ],
+    extraFields: [{ label: 'Terapis pilihan', type: 'INPUT_TEXT', required: false }],
   },
-  space_rental: {
-    serviceLabel: 'Jenis Ruangan / Paket',
-    extraFields: [
-      { label: 'Jumlah tamu', type: 'INPUT_TEXT', required: false },
-      { label: 'Acara / keperluan', type: 'INPUT_TEXT', required: false },
-    ],
+  dental: {
+    serviceLabel: 'Perawatan Gigi',
+    extraFields: [{ label: 'Dokter yang diinginkan', type: 'INPUT_TEXT', required: false }],
   },
   other: { serviceLabel: 'Layanan' },
 };
@@ -653,9 +601,13 @@ export async function removeTallyWebhook(apiKey: string, webhookId: string): Pro
   await tallyFetch(apiKey, `/webhooks/${encodeURIComponent(webhookId)}`, { method: 'DELETE' });
 }
 
-/** URL webhook masuk milik workspace — dipakai saat connect/re-register. */
+/** URL webhook masuk milik workspace — dipakai saat connect/re-register.
+ * Base URL = WEBHOOK_BASE_URL (URL publik, mis. tunnel HTTPS) bila disetel,
+ * jatuh ke API_URL. API_URL bisa berupa alamat internal (mis. http://api:3000
+ * di Docker) yang TIDAK bisa dijangkau Tally dari internet — memakai base
+ * publik yang sama seperti webhook channel lain (webhook-url.ts). */
 export function tallyWebhookUrl(workspaceId: string): string {
-  return `${env.API_URL}/api/webhooks/tally/${workspaceId}`;
+  return `${webhookBaseUrl()}/api/webhooks/tally/${workspaceId}`;
 }
 
 /* ────────────────────────────────────────────────────────────

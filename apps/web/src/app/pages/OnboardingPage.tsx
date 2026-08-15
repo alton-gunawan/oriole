@@ -5,6 +5,12 @@ import { useTranslation } from 'react-i18next';
 
 import { AppLogo } from '../components/AppLogo';
 import { AvatarPicker } from '../components/AvatarPicker';
+import {
+  BusinessInfoForm,
+  businessInfoToPayload,
+  EMPTY_BUSINESS_INFO,
+  type BusinessInfoValues,
+} from '../components/BusinessInfoForm';
 import { apiFetch } from '../../lib/api';
 import { trackEvent } from '../../lib/analytics';
 import { errorMessage } from '../../lib/errors';
@@ -25,6 +31,7 @@ export function OnboardingPage() {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [info, setInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -40,6 +47,7 @@ export function OnboardingPage() {
           name,
           templateCategory: category,
           ...(avatarUrl !== null ? { avatarUrl } : {}),
+          ...businessInfoToPayload(info),
         }),
       });
       addWorkspace(response.workspace);
@@ -122,6 +130,8 @@ export function OnboardingPage() {
                 })}
               </div>
             </fieldset>
+
+            <BusinessInfoForm value={info} onChange={setInfo} />
 
             {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">{error}</p>}
 

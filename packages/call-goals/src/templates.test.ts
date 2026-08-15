@@ -22,8 +22,8 @@ describe('getGoalTemplate', () => {
     }
   });
 
-  it('industri dental/medspa/salon menghasilkan prompt berbeda', () => {
-    const prompts = ['dental', 'medspa', 'hair_salon'].map((industry) =>
+  it('industri dental/clinic/salon menghasilkan prompt berbeda', () => {
+    const prompts = ['dental', 'clinic', 'salon'].map((industry) =>
       getGoalTemplate(industry as (typeof INDUSTRIES)[number], 'confirm-attendance').buildPrompt(
         {
           id: 'x',
@@ -61,38 +61,38 @@ describe('getGoalTemplate', () => {
       previousCallAttempts: 0,
       failedCallAttempts: 0,
     };
-    const restaurant = getGoalTemplate('restaurant', 'confirm-attendance').buildPrompt(ctx, {
+    const clinic = getGoalTemplate('clinic', 'confirm-attendance').buildPrompt(ctx, {
       name: 'Business',
     });
-    const automotive = getGoalTemplate('automotive', 'confirm-attendance').buildPrompt(ctx, {
+    const salon = getGoalTemplate('salon', 'confirm-attendance').buildPrompt(ctx, {
       name: 'Business',
     });
-    const petCare = getGoalTemplate('pet_care', 'reminder-reconfirm').buildPrompt(ctx, {
+    const spa = getGoalTemplate('spa', 'reminder-reconfirm').buildPrompt(ctx, {
       name: 'Business',
     });
-    const realEstate = getGoalTemplate('real_estate', 'confirm-attendance').buildPrompt(ctx, {
+    const fitness = getGoalTemplate('fitness', 'confirm-attendance').buildPrompt(ctx, {
       name: 'Business',
     });
-    // Skenario bisnis yang berbeda muncul di prompt: jumlah tamu, model
-    // kendaraan, vaksinasi hewan, alamat properti.
-    expect(restaurant).toContain('number of guests');
-    expect(automotive).toContain('vehicle make, model, and year');
-    expect(petCare).toContain('vaccination records');
-    expect(realEstate).toContain('property address');
+    // Skenario bisnis yang berbeda muncul di prompt: perlengkapan medis,
+    // stylist, persiapan perawatan spa, pass/membership fitness.
+    expect(clinic).toContain('insurance card');
+    expect(salon).toContain('photo reference');
+    expect(spa).toContain('pre-treatment preparation');
+    expect(fitness).toContain('class pass or membership');
     // Prompt lintas industri tidak boleh identik.
-    expect(new Set([restaurant, automotive, petCare, realEstate]).size).toBe(4);
+    expect(new Set([clinic, salon, spa, fitness]).size).toBe(4);
   });
 
-  it('resultSchema menyertakan field khusus industri (restaurant: party size)', () => {
-    const restaurant = getGoalTemplate('restaurant', 'confirm-attendance');
-    const properties = restaurant.resultSchema.properties as Record<string, unknown>;
-    expect(properties.partySize).toMatchObject({ type: 'integer' });
+  it('resultSchema menyertakan field khusus industri (spa: treatment)', () => {
+    const spa = getGoalTemplate('spa', 'confirm-attendance');
+    const properties = spa.resultSchema.properties as Record<string, unknown>;
+    expect(properties.treatment).toMatchObject({ type: 'string' });
     // Field industri tidak wajib — AI boleh kosongkan bila tidak terjawab.
-    expect(restaurant.resultSchema.required).not.toContain('partySize');
+    expect(spa.resultSchema.required).not.toContain('treatment');
 
     const generic = getGoalTemplate('other', 'confirm-attendance');
     const genericProperties = generic.resultSchema.properties as Record<string, unknown>;
-    expect(genericProperties.partySize).toBeUndefined();
+    expect(genericProperties.treatment).toBeUndefined();
   });
 });
 

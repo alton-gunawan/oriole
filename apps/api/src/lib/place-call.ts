@@ -88,6 +88,10 @@ export interface PlaceBookingCallInput {
   language: 'en' | 'id';
   businessName?: string | null;
   customerName?: string | null;
+  /** Nama asisten voice AI — greeting + label asisten Vapi. */
+  assistantName?: string | null;
+  /** Voice ID ElevenLabs — null = default server (env). */
+  voiceId?: string | null;
   goalType: GoalType;
   /**
    * Nama panggilan Vapi (`booking:<id>:<goalType>:<source>[:...]`) — unik
@@ -164,6 +168,8 @@ export async function placeBookingCall(
       language: input.language,
       businessName: input.businessName,
       customerName: input.customerName,
+      assistantName: input.assistantName,
+      voiceId: input.voiceId,
       callName: input.callName,
       phone: input.phone,
       phoneNumberId: phoneNumberId ?? undefined,
