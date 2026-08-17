@@ -429,7 +429,7 @@ Riset §4.5 menyarankan `workspace_created`, `booking_created`, `call_triggered`
 ### 14.4 Privasi (deviasi #2 — replay OFF, masking ON)
 
 - **Session replay NONAKTIF** — butuh consent banner + kebijakan privasi (dokumentasi cara mengaktifkan ada di `main.tsx` / `lib/analytics.ts`).
-- **`ph-no-capture`** dipasang di: isi pesan inbox (`InboxPage`), input nomor telepon (`PhoneInput` — semua halaman), nama/email customer (`PaymentsDialog`), preview prompt goal (`BookingDetailPage`).
+- **`ph-no-capture`** dipasang di: isi pesan inbox (`InboxPage`), input nomor telepon (`PhoneInput` — semua halaman), nama/email customer (`PaymentsDialog`), nama & nomor customer + input edit (`BookingDetailPage` — tidak ada lagi preview prompt mentah sejak redesign).
 - Properti event diverifikasi **tanpa PII** oleh test (`analytics.test.ts` server: `not.toHaveProperty('phone'/'email'/'customer_name')`).
 - `tracing_headers` (link sesi client↔server) **tidak diaktifkan** — server event sudah merge via `identify(userId)`; menghindari risiko CORS bila API cross-origin.
 

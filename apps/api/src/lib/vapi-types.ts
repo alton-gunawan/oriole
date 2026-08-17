@@ -31,6 +31,8 @@ export interface VapiWebhookMessage {
     endedAt?: string;
     /** Id nomor Vapi yang menerima panggilan — dipakai resolve workspace inbound. */
     phoneNumberId?: string;
+    /** Id asisten permanen yang dipakai call — fallback resolve workspace (Playground). */
+    assistantId?: string;
     customer?: { number?: string } | null;
     metadata?: VapiCallMetadata | null;
     [key: string]: unknown;
@@ -88,6 +90,7 @@ export const vapiWebhookPayloadSchema = z.object({
           startedAt: z.string().optional(),
           endedAt: z.string().optional(),
           phoneNumberId: z.string().optional(),
+          assistantId: z.string().optional(),
           customer: z
             .object({ number: z.string().optional() })
             .nullable()

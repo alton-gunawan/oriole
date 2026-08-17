@@ -1,6 +1,35 @@
 import { determineCallGoal } from './determine-call-goal.ts';
 import { getGoalTemplate } from './templates.ts';
-import type { CallGoalConfig, ComposeCallGoalInput, GoalDecision } from './types.ts';
+import type {
+  BusinessKnowledge,
+  CallGoalConfig,
+  ComposeCallGoalInput,
+  GoalDecision,
+} from './types.ts';
+
+/**
+ * Render knowledge base → blok prompt panggilan. Label sengaja bahasa
+ * Inggris (template panggilan berbahasa Inggris); isi field bebas mengikuti
+ * bahasa bisnis. Kosong → string kosong (prompt tidak berubah).
+ */
+export function formatKnowledge(knowledge: BusinessKnowledge | null | undefined): string {
+  if (!knowledge) return '';
+  const lines: string[] = [];
+  const push = (label: string, value?: string) => {
+    if (value?.trim()) lines.push(`- ${label}: ${value.trim()}`);
+  };
+  push('About the business', knowledge.description);
+  push('Services & prices', knowledge.services);
+  push('Opening hours', knowledge.hours);
+  push('Location', knowledge.location);
+  push('Policy', knowledge.policy);
+  for (const item of knowledge.faq ?? []) {
+    if (item?.q?.trim() && item?.a?.trim()) {
+      lines.push(`- Q: ${item.q.trim()} — A: ${item.a.trim()}`);
+    }
+  }
+  return lines.join('\n');
+}
 
 /**
  * Susun konfigurasi goal final sebelum dikirim ke CALL-E.
@@ -29,6 +58,14 @@ export function composeCallGoal(
   const customInstruction = input.customization?.customInstruction?.trim();
   if (customInstruction) {
     prompt += `\n\nExtra instruction from the business:\n${customInstruction}`;
+  }
+
+  // Knowledge base bisnis (layanan/harga/jam/lokasi/kebijakan/FAQ) —
+  // asisten boleh menjawab pertanyaan dari data ini. Hanya disisipkan
+  // bila ada isinya (tidak mengubah prompt untuk bisnis tanpa KB).
+  const knowledgeBlock = formatKnowledge(input.business.knowledge);
+  if (knowledgeBlock) {
+    prompt += `\n\nBusiness information you can use to answer the customer's questions:\n${knowledgeBlock}`;
   }
 
   // Bahasa panggilan mengikuti setting workspace (default 'en'). Template

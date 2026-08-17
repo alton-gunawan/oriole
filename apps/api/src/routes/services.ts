@@ -8,6 +8,7 @@ import { db } from '../db/index.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 import { findService, loadServices } from '../lib/service-catalog.ts';
+import { emitVapiAssistantSync } from '../lib/vapi-assistant-sync.ts';
 
 /** Mata uang umum (ISO 4217) — picker frontend + validasi backend. */
 const SUPPORTED_CURRENCIES = [
@@ -73,8 +74,60 @@ const updateServiceSchema = z.object({
 const serviceIdParamSchema = z.object({ id: z.string().uuid() });
 
 /**
+ * Teks array legacy (kolom dulu bertipe text, di-wrap jadi text[] di migrasi
+ * #0021): JSON ("[\"a\",\"b\"]") atau literal array PG ("{a,b}" / "{\"a\",\"b\"}")
+ * → daftar item. Kembalikan null bila bukan representasi array.
+ */
+function parseArrayText(text: string): string[] | null {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item));
+    } catch {
+      // Bukan JSON valid — perlakukan sebagai kategori tunggal biasa.
+    }
+    return null;
+  }
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner.trim()) return [];
+    const items: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"') {
+        if (inQuotes && inner[i + 1] === '"') {
+          current += '"';
+          i++;
+          continue;
+        }
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (ch === '\\' && inQuotes && i + 1 < inner.length) {
+        current += inner[i + 1];
+        i++;
+        continue;
+      }
+      if (ch === ',' && !inQuotes) {
+        items.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    items.push(current.trim());
+    return items;
+  }
+  return null;
+}
+
+/**
  * Normalisasi daftar kategori/tag: trim, buang kosong, dedupe (case-insensitive),
- * maksimal 20 item. Kembalikan null bila kosong (konsisten dengan kolom nullable).
+ * maksimal 20 item. String yang ternyata representasi array legacy (JSON / PG)
+ * dipecah menjadi item-itemnya. Kembalikan null bila kosong (kolom nullable).
  */
 function normalizeCategories(value: string | string[] | null | undefined): string[] | null {
   const list = Array.isArray(value)
@@ -87,10 +140,15 @@ function normalizeCategories(value: string | string[] | null | undefined): strin
   for (const raw of list) {
     const item = raw.trim();
     if (!item) continue;
-    const key = item.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
+    const parts = parseArrayText(item) ?? [item];
+    for (const part of parts) {
+      const clean = part.trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(clean);
+    }
   }
   return out.length > 0 ? out.slice(0, 20) : null;
 }
@@ -176,6 +234,8 @@ export const servicesRoutes = new Hono<{ Variables: WorkspaceVariables }>()
     const [detailed] = await loadServices(workspaceId).then((list) =>
       list.filter((service) => service.id === row.id),
     );
+    // Katalog berubah → sinkronkan asisten Vapi permanen (best-effort).
+    emitVapiAssistantSync(workspaceId).catch(() => {});
     return c.json({ service: serialize(detailed) }, 201);
   })
 
@@ -232,6 +292,8 @@ export const servicesRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       }
 
       const updated = await findService(workspaceId, existing.id);
+      // Katalog berubah → sinkronkan asisten Vapi permanen (best-effort).
+      emitVapiAssistantSync(workspaceId).catch(() => {});
       return c.json({ service: serialize(updated!) });
     },
   )
@@ -249,6 +311,8 @@ export const servicesRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .where(and(eq(services.id, id), eq(services.workspaceId, c.get('workspaceId'))))
         .returning({ id: services.id });
       if (!deleted) return c.json({ error: 'Layanan tidak ditemukan' }, 404);
+      // Katalog berubah → sinkronkan asisten Vapi permanen (best-effort).
+      emitVapiAssistantSync(c.get('workspaceId')).catch(() => {});
       return c.json({ ok: true, id: deleted.id });
     },
   );

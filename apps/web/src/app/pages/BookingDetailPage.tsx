@@ -1,36 +1,58 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { composeCallGoal, type GoalCustomization } from '@oriole/call-goals';
 import {
   Badge,
   Button,
   DateTimeInput,
+  Dialog,
+  DialogHeader,
+  DropdownMenu,
+  DropdownMenuItem,
+  Layout,
+  LayoutContent,
   Selector,
   TextArea,
   TextInput,
   type BadgeVariant,
   type ISODateTimeString,
 } from '@astryxdesign/core';
+import type { GoalCustomization } from '@oriole/call-goals';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import type { BookingDetailResponse, BookingRecord, CallRecord } from '../../lib/bookings';
 import type { StaffListResponse } from '../../lib/staff';
 import type { ServicesListResponse } from '../../lib/services';
-import { formatPaymentAmount, type PaymentLinkRecord, type PaymentsListResponse } from '../../lib/payments';
-import type { IntegrationListResponse } from '../../lib/integrations';
+import {
+  callDurationParts,
+  callSummaryText,
+  deriveCallOutcome,
+  type CallDurationParts,
+  type CallOutcome,
+} from '../../lib/booking-detail';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
-import { bookingStatusKey } from '../../i18n/enums';
-import { formatDateTime } from '../../i18n/format';
+import { bookingStatusKey, callStatusKey } from '../../i18n/enums';
+import { formatDateTime, formatShortDateTime } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
-import { GoalCustomizer } from '../shell/GoalCustomizer';
-import { PaymentsDialog } from '../shell/PaymentsDialog';
-import { IconAlertTriangle, IconCalendar, IconCheck, IconChevronLeft, IconCopy, IconCreditCard, IconEdit, IconRepeat, IconServices, IconTrash, IconUsers } from '../shell/icons';
-import { Card, PageHeader } from '../shell/ui';
+import { AiBehaviorCard } from '../shell/AiBehaviorCard';
+import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
+import {
+  IconAlertTriangle,
+  IconArrowRight,
+  IconCalendar,
+  IconCheck,
+  IconChevronDown,
+  IconChevronLeft,
+  IconDotsHorizontal,
+  IconEdit,
+  IconPhone,
+  IconRepeat,
+  IconX,
+} from '../shell/icons';
 
 /** Warna status booking → variant Badge Astryx. */
 const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
@@ -52,13 +74,10 @@ function statusLabel(status: string | null, t: TFunction): string {
   return key ? t(key) : (status ?? '');
 }
 
-function resultSnippet(result: Record<string, unknown> | null, t: TFunction): string {
-  if (!result) return t('bookingDetail.noResult');
-  for (const key of ['summary', 'outcome', 'result']) {
-    const value = result[key];
-    if (typeof value === 'string' && value.trim()) return value;
-  }
-  return t('bookingDetail.resultSaved');
+/** Label status panggilan CALL-E (Completed/Failed/Queued/...) via katalog i18n. */
+function callStatusLabel(status: string | null, t: TFunction): string {
+  const key = callStatusKey(status);
+  return key ? t(key) : (status ?? '');
 }
 
 /** Konversi ISO → value input datetime-local (waktu lokal browser). */
@@ -68,40 +87,135 @@ function toDateTimeLocal(iso: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-const STATUS_OPTIONS: { value: BookingRecord['status']; labelKey: TranslationKey }[] = [
-  { value: 'pending', labelKey: 'status.pending' },
-  { value: 'confirmed', labelKey: 'status.confirmed' },
-  { value: 'completed', labelKey: 'status.completed' },
-  { value: 'cancelled', labelKey: 'status.cancelled' },
-];
+/** Tampilan hero per outcome AI call — label, kalimat ringkasan, ikon, warna. */
+const OUTCOME_META: Record<
+  CallOutcome,
+  { labelKey: TranslationKey; summaryKey: TranslationKey; icon: ReactNode; dotClass: string }
+> = {
+  confirmed: {
+    labelKey: 'bookingDetail.outcome.confirmed',
+    summaryKey: 'bookingDetail.summary.confirmed',
+    icon: <IconCheck className="size-4" />,
+    dotClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400',
+  },
+  'reschedule-requested': {
+    labelKey: 'bookingDetail.outcome.reschedule',
+    summaryKey: 'bookingDetail.summary.reschedule',
+    icon: <IconCalendar className="size-4" />,
+    dotClass: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400',
+  },
+  cancelled: {
+    labelKey: 'bookingDetail.outcome.cancelled',
+    summaryKey: 'bookingDetail.summary.cancelled',
+    icon: <IconX className="size-4" />,
+    dotClass: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400',
+  },
+  'no-answer': {
+    labelKey: 'bookingDetail.outcome.noAnswer',
+    summaryKey: 'bookingDetail.summary.noAnswer',
+    icon: <IconPhone className="size-4" />,
+    dotClass: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+  },
+  failed: {
+    labelKey: 'bookingDetail.outcome.failed',
+    summaryKey: 'bookingDetail.summary.failed',
+    icon: <IconAlertTriangle className="size-4" />,
+    dotClass: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400',
+  },
+  unknown: {
+    labelKey: 'bookingDetail.outcome.unknown',
+    summaryKey: 'bookingDetail.summary.unknown',
+    icon: <IconPhone className="size-4" />,
+    dotClass: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+  },
+};
+
+/** Warna dot kecil di baris Call History — selaras dengan OUTCOME_META. */
+const OUTCOME_DOT: Record<CallOutcome, string> = {
+  confirmed: 'bg-emerald-500',
+  'reschedule-requested': 'bg-amber-500',
+  cancelled: 'bg-red-500',
+  failed: 'bg-red-500',
+  'no-answer': 'bg-zinc-300 dark:bg-zinc-600',
+  unknown: 'bg-zinc-300 dark:bg-zinc-600',
+};
+
+/** Kalimat ringkasan hasil AI call — dari outcome (kalimat turunan). */
+function outcomeSummary(outcome: CallOutcome, name: string, date: string, t: TFunction): string {
+  return t(OUTCOME_META[outcome].summaryKey, { name, date });
+}
+
+/** Durasi panggilan → label (\"32 sec\", \"2 min\", \"2 min 5 sec\"). */
+function formatCallDuration(parts: CallDurationParts | null, t: TFunction): string {
+  if (!parts) return '—';
+  if (parts.minutes === 0) return t('bookingDetail.durationSeconds', { count: parts.seconds });
+  if (parts.seconds === 0) return t('bookings.duration', { count: parts.minutes });
+  return t('bookingDetail.durationMinSec', { count: parts.minutes, sec: parts.seconds });
+}
+
+/** Kartu seksi detail — judul uppercase + aksi opsional + konten. */
+function DetailSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{title}</h2>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </Card>
+  );
+}
+
+/** Baris label/nilai — dipakai di kartu Appointment & detail panggilan. */
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-6 px-4 py-2.5">
+      <dt className="shrink-0 text-sm text-zinc-400 dark:text-zinc-500">{label}</dt>
+      <dd className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{value}</dd>
+    </div>
+  );
+}
 
 export function BookingDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
-  // ── Form edit booking ──────────────────────────────────────
+  // ── Form edit booking (dialog) ─────────────────────────────
   const [isEditing, setIsEditing] = useState(false);
   // Title tidak diedit manual — booking diambil dari layanan katalog.
   const [editCustomerName, setEditCustomerName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editScheduledAt, setEditScheduledAt] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editStatus, setEditStatus] = useState<BookingRecord['status']>('pending');
+  const [editStaffId, setEditStaffId] = useState('');
+  const [editServiceId, setEditServiceId] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
 
-  // ── Hapus booking (konfirmasi inline) ─────────────────────
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // ── Konfirmasi aksi header: cancel / delete ────────────────
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [headerError, setHeaderError] = useState<string | null>(null);
+
+  // ── Panel kustomisasi AI (accordion) ───────────────────────
+  const [aiCustomizeOpen, setAiCustomizeOpen] = useState(false);
 
   const startEdit = (booking: BookingRecord) => {
     setEditCustomerName(booking.customerName ?? '');
     setEditPhone(booking.phone ?? '');
     setEditScheduledAt(toDateTimeLocal(booking.scheduledAt));
     setEditDescription(booking.description ?? '');
-    setEditStatus(booking.status);
+    setEditStaffId(booking.staffId ?? '');
+    setEditServiceId(booking.serviceId ?? '');
     setEditError(null);
     setIsEditing(true);
   };
@@ -111,15 +225,26 @@ export function BookingDetailPage() {
     if (!id) return;
     setEditError(null);
     if (!editScheduledAt) return;
-    editBookingMutation.mutate({
-      // Title tidak dikirim — tetap nama layanan katalog (serviceId tidak
-      // berubah saat edit).
+    // serviceId hanya dikirim saat BERUBAH — mengirimnya selalu akan membuat
+    // server auto-fill durationMinutes dari layanan, menimpa durasi kustom.
+    const fields: {
+      customerName: string | null;
+      phone: string | null;
+      scheduledAt: string;
+      description: string | null;
+      staffId: string | null;
+      serviceId?: string | null;
+    } = {
       customerName: editCustomerName.trim() || null,
       phone: editPhone.trim() || null,
       scheduledAt: new Date(editScheduledAt).toISOString(),
       description: editDescription.trim() || null,
-      status: editStatus,
-    });
+      staffId: editStaffId || null,
+    };
+    if (editServiceId !== (data?.booking.serviceId ?? '')) {
+      fields.serviceId = editServiceId || null;
+    }
+    editBookingMutation.mutate(fields);
   };
 
   const editBookingMutation = useMutation({
@@ -128,7 +253,8 @@ export function BookingDetailPage() {
       phone: string | null;
       scheduledAt: string;
       description: string | null;
-      status: BookingRecord['status'];
+      staffId: string | null;
+      serviceId?: string | null;
     }) =>
       apiFetch(`/bookings/${id}`, {
         method: 'PATCH',
@@ -144,14 +270,19 @@ export function BookingDetailPage() {
     },
   });
 
-  const deleteBookingMutation = useMutation({
-    mutationFn: () => apiFetch(`/bookings/${id}`, { method: 'DELETE' }),
+  const statusMutation = useMutation({
+    mutationFn: (status: BookingRecord['status']) =>
+      apiFetch(`/bookings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['booking', activeWorkspaceId, id] });
       queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
-      navigate('/app/bookings');
+      setCancelOpen(false);
     },
     onError: (err) => {
-      setDeleteError(errorMessage(err, t, 'errors.deleteBooking'));
+      setHeaderError(errorMessage(err, t, 'errors.changeStatus'));
     },
   });
 
@@ -170,7 +301,7 @@ export function BookingDetailPage() {
         }
       : null;
 
-  // Nama staf untuk badge penugasan.
+  // Nama staf + opsi penugasan (staf aktif + staf yang sedang ditugaskan).
   const { data: staffPage } = useQuery({
     queryKey: ['staff', activeWorkspaceId],
     queryFn: () => apiFetch<StaffListResponse>('/staff'),
@@ -178,57 +309,26 @@ export function BookingDetailPage() {
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
   const staffName = staffPage?.staff.find((staff) => staff.id === data?.booking.staffId)?.name;
+  const staffOptions = useMemo(() => {
+    const assignedId = data?.booking.staffId;
+    const list =
+      staffPage?.staff.filter((staff) => staff.isActive || staff.id === assignedId) ?? [];
+    return list.map((staff) => ({ value: staff.id, label: staff.name }));
+  }, [staffPage, data]);
 
-  // Nama layanan katalog untuk badge layanan (sumber kebenaran = katalog).
+  // Layanan katalog — nama untuk kartu Appointment + opsi edit.
   const { data: servicesPage } = useQuery({
     queryKey: ['services', activeWorkspaceId],
     queryFn: () => apiFetch<{ services: ServicesListResponse['services'] }>('/services'),
     enabled: Boolean(activeWorkspaceId),
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
-  const serviceName = servicesPage?.services.find(
-    (service) => service.id === data?.booking.serviceId,
-  )?.name;
-
-  // ── Payments (Global Payments — Paddle) ────────────────────
-  const [paymentsDialogOpen, setPaymentsDialogOpen] = useState(false);
-  const [copiedPaymentId, setCopiedPaymentId] = useState<string | null>(null);
-  const [paymentsError, setPaymentsError] = useState<string | null>(null);
-
-  const { data: paymentsData } = useQuery({
-    queryKey: ['payments', activeWorkspaceId, id],
-    queryFn: async () => {
-      const [paymentsRes, integrationsRes] = await Promise.all([
-        apiFetch<PaymentsListResponse>(`/payments?bookingId=${id}`),
-        apiFetch<IntegrationListResponse>('/integrations'),
-      ]);
-      return {
-        payments: paymentsRes.payments,
-        configured: integrationsRes.integrations.some(
-          (item) => item.integrationType === 'payments' && item.isActive,
-        ),
-      };
-    },
-    enabled: Boolean(id),
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
-  });
-
-  const copyPaymentUrl = async (payment: PaymentLinkRecord) => {
-    if (!payment.checkoutUrl) return;
-    try {
-      await navigator.clipboard.writeText(payment.checkoutUrl);
-      setCopiedPaymentId(payment.id);
-      setTimeout(() => setCopiedPaymentId(null), 1500);
-    } catch {
-      setPaymentsError(t('channels.copyFailed'));
-    }
-  };
-
-  const saveGoalMutation = useMutation({
-    mutationFn: (goal: GoalCustomization | null) =>
-      apiFetch(`/bookings/${id}`, { method: 'PATCH', body: JSON.stringify({ goal }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['booking', activeWorkspaceId, id] }),
-  });
+  const serviceOptions = useMemo(() => {
+    const currentId = data?.booking.serviceId;
+    const list =
+      servicesPage?.services.filter((service) => service.isActive || service.id === currentId) ?? [];
+    return list.map((service) => ({ value: service.id, label: service.name }));
+  }, [servicesPage, data]);
 
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
 
@@ -258,98 +358,335 @@ export function BookingDetailPage() {
   if (!data) return null;
 
   const { booking, bookingContext, business, autoGoal, calls } = data;
-  const effectiveGoal = composeCallGoal({ booking: bookingContext, business, customization });
+  const isActive = booking.status === 'pending' || booking.status === 'confirmed';
+  const serviceLabel = booking.serviceName ?? t('bookingDetail.unknownService');
+  const customerName = booking.customerName ?? t('common.noName');
+
+  // ── Hero AI confirmation — call terbaru, outcome bahasa bisnis ──
+  const latestCall: CallRecord | null = calls[0] ?? null;
+  const outcome = deriveCallOutcome(latestCall, {
+    bookingCompleted: booking.status === 'completed',
+  });
+  const outcomeMeta = OUTCOME_META[outcome];
+  const explicitSummary = latestCall ? callSummaryText(latestCall) : null;
+  const summaryText =
+    explicitSummary ??
+    outcomeSummary(outcome, customerName, formatDateTime(booking.scheduledAt), t);
+  const callDurationRaw =
+    typeof latestCall?.result?.durationSeconds === 'number'
+      ? latestCall.result.durationSeconds
+      : null;
+  const callDuration = latestCall ? callDurationParts(callDurationRaw) : null;
+
+  // Link customer — kontak tertaut, atau one-shot ensure untuk booking lama.
+  const contactHref = booking.contactId
+    ? `/app/contacts/${booking.contactId}`
+    : `/app/contacts/ensure?booking=${booking.id}`;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
-        title={booking.title}
-        icon={IconCalendar}
-        description={t('bookingDetail.fromProject', {
-          name: business.name ?? '—',
-          date: formatDateTime(booking.createdAt),
+        title={customerName}
+        description={t('bookingDetail.headingSubtitle', {
+          service: serviceLabel,
+          datetime: formatDateTime(booking.scheduledAt),
         })}
+        status={<Badge variant={STATUS_BADGE[booking.status]} label={statusLabel(booking.status, t)} />}
       >
         <Link
           to="/app/bookings"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
+          className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-base font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
         >
           <IconChevronLeft className="size-4" />
-          {t('common.back')}
+          {t('bookingDetail.backToBookings')}
         </Link>
-        <Button
-          label={isEditing ? t('common.close') : t('common.edit')}
-          variant="secondary"
-          icon={<IconEdit className="size-4" />}
-          onClick={() => (isEditing ? setIsEditing(false) : startEdit(booking))}
-        />
-        <Badge variant={STATUS_BADGE[booking.status]} label={statusLabel(booking.status, t)} />
+        <DropdownMenu
+          placement="below"
+          hasChevron={false}
+          menuWidth={200}
+          isMenuOpen={moreOpen}
+          onOpenChange={setMoreOpen}
+          button={{
+            label: t('common.moreActions'),
+            variant: 'ghost',
+            size: 'md',
+            isIconOnly: true,
+            icon: <IconDotsHorizontal className="size-4 text-zinc-500 dark:text-zinc-400" />,
+            style: { border: '1px solid var(--color-border-emphasized)' },
+          }}
+        >
+          <DropdownMenuItem
+            icon={<IconEdit className="size-4" />}
+            label={t('common.edit')}
+            onClick={() => {
+              setMoreOpen(false);
+              startEdit(booking);
+            }}
+          />
+          {isActive && (
+            <DropdownMenuItem
+              icon={<IconCalendar className="size-4" />}
+              label={t('bookingDetail.reschedule')}
+              onClick={() => {
+                setMoreOpen(false);
+                startEdit(booking);
+              }}
+            />
+          )}
+          {isActive && (
+            <DropdownMenuItem
+              icon={<IconX className="size-4 text-red-500" />}
+              label={<span className="font-medium text-red-600">{t('bookingDetail.cancelBooking')}</span>}
+              onClick={() => {
+                setMoreOpen(false);
+                setCancelOpen(true);
+              }}
+            />
+          )}
+        </DropdownMenu>
       </PageHeader>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Kolom utama: info booking + goal AI */}
-        <div className="space-y-6 lg:col-span-2">
-          <Card className="p-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.schedule')}</p>
-                <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">{formatDateTime(booking.scheduledAt)}</p>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{t('bookingDetail.timezone', { timezone: booking.timezone })}</p>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  {t('bookingDetail.duration', { count: booking.durationMinutes })}
-                </p>
-                {booking.serviceId && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    <IconServices className="size-3.5 text-zinc-400" aria-hidden="true" />
-                    <span className="truncate">{serviceName ?? t('bookingDetail.unknownService')}</span>
-                  </p>
-                )}
-                {booking.staffId && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    <IconUsers className="size-3.5 text-zinc-400" aria-hidden="true" />
-                    <span className="truncate">{staffName ?? t('bookingDetail.unknownStaff')}</span>
-                  </p>
-                )}
-                {booking.recurrenceSeriesId && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-600">
-                    <IconRepeat className="size-3.5" aria-hidden="true" />
-                    {t('bookingDetail.recurring')}
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('common.customer')}</p>
-                <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">{booking.customerName ?? '—'}</p>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{booking.phone ?? t('bookingDetail.noPhoneYet')}</p>
-                {booking.contactId && (
-                  <Link
-                    to="/app/contacts"
-                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 transition hover:text-emerald-700"
-                  >
-                    <IconUsers className="size-3.5" />
-                    {t('bookingDetail.linkedContact')}
-                  </Link>
-                )}
-              </div>
-            </div>
-            {booking.description && (
-              <p className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                {booking.description}
-              </p>
-            )}
-          </Card>
+      {headerError && (
+        <p
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+        >
+          {headerError}
+        </p>
+      )}
 
-          {/* Form edit booking (toggle) */}
-          {isEditing && (
-            <Card className="border-amber-200 bg-amber-50/30 p-5 dark:border-amber-900/60 dark:bg-amber-950/20">
+      {/* ── APPOINTMENT ─────────────────────────────────────── */}
+      <DetailSection title={t('bookingDetail.appointment')}>
+        <dl className="divide-y divide-zinc-100 rounded-xl border border-zinc-100 dark:divide-zinc-800 dark:border-zinc-800">
+          <InfoRow
+            label={t('bookingDetail.service')}
+            value={booking.serviceId ? serviceLabel : t('bookingDetail.unknownService')}
+          />
+          <InfoRow
+            label={t('bookingDetail.staff')}
+            value={booking.staffId ? (staffName ?? t('bookingDetail.unknownStaff')) : '—'}
+          />
+          <InfoRow label={t('bookingDetail.dateTime')} value={formatDateTime(booking.scheduledAt)} />
+          <InfoRow
+            label={t('bookingDetail.durationLabel')}
+            value={booking.durationMinutes > 0 ? t('bookings.duration', { count: booking.durationMinutes }) : '—'}
+          />
+          {booking.timezone && <InfoRow label={t('bookingDetail.timezone')} value={booking.timezone} />}
+        </dl>
+        {booking.recurrenceSeriesId && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+            <IconRepeat className="size-3.5" aria-hidden="true" />
+            {t('bookingDetail.recurring')}
+          </p>
+        )}
+      </DetailSection>
+
+      {/* ── CUSTOMER ────────────────────────────────────────── */}
+      <DetailSection title={t('bookingDetail.customer')}>
+        {/* Nama & telepon customer = PII — jangan pernah ter-capture analitik. */}
+        <div className="ph-no-capture">
+          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{customerName}</p>
+          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+            {booking.phone ?? t('bookingDetail.noPhoneYet')}
+          </p>
+        </div>
+        <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <Link
+            to={contactHref}
+            className="flex items-center justify-between text-sm font-semibold text-amber-600 transition hover:text-amber-700"
+          >
+            {t('bookingDetail.viewCustomer')}
+            <IconArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
+      </DetailSection>
+
+      {/* ── AI CONFIRMATION (hero) ──────────────────────────── */}
+      <DetailSection
+        title={t('bookingDetail.aiConfirmation')}
+        action={
+          <Button
+            label={t('bookingDetail.customizeAi')}
+            variant="secondary"
+            size="sm"
+            icon={
+              <IconChevronDown
+                className={`size-3.5 transition ${aiCustomizeOpen ? 'rotate-180' : ''}`}
+              />
+            }
+            isDisabled={booking.status === 'cancelled' || booking.status === 'completed'}
+            onClick={() => setAiCustomizeOpen((value) => !value)}
+          />
+        }
+      >
+        {latestCall ? (
+          <div className="flex items-start gap-3">
+            <span
+              className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${outcomeMeta.dotClass}`}
+            >
+              {outcomeMeta.icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                {t(outcomeMeta.labelKey)}
+              </p>
+              <p className="mt-0.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {summaryText}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">
+                {t('bookingDetail.aiCalledBy', { name: customerName })} ·{' '}
+                {formatShortDateTime(latestCall.createdAt)}
+              </p>
+              {(callDuration || explicitSummary) && (
+                <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                  {callDuration && (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                        {t('bookingDetail.durationLabel')}
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {formatCallDuration(callDuration, t)}
+                      </dd>
+                    </div>
+                  )}
+                  {explicitSummary && (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                        {t('bookingDetail.summaryLabel')}
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {explicitSummary}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+              <IconPhone className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                {t('bookingDetail.noCalls')}
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                {t('bookingDetail.noCallsDesc')}
+              </p>
+            </div>
+          </div>
+        )}
+      </DetailSection>
+
+      {/* ── AI behavior — accordion kustomisasi goal (tanpa prompt mentah) ── */}
+      <AiBehaviorCard
+        booking={bookingContext}
+        business={business}
+        autoDecision={autoGoal}
+        value={customization}
+        open={aiCustomizeOpen}
+        onOpenChange={setAiCustomizeOpen}
+      />
+
+      {/* ── CALL HISTORY ────────────────────────────────────── */}
+      <DetailSection title={t('bookingDetail.callHistory', { count: calls.length })}>
+        {calls.length === 0 ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('bookingDetail.noCalls')}</p>
+        ) : (
+          <ul className="space-y-3">
+            {calls.map((call) => {
+              const callOutcome = deriveCallOutcome(call, {
+                bookingCompleted: booking.status === 'completed',
+              });
+              const callSummary =
+                callSummaryText(call) ??
+                outcomeSummary(callOutcome, customerName, formatDateTime(booking.scheduledAt), t);
+              return (
+                <li key={call.id} className="flex items-start gap-3">
+                  <span
+                    className={`mt-1.5 size-2 shrink-0 rounded-full ${OUTCOME_DOT[callOutcome]}`}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {formatShortDateTime(call.createdAt)}
+                      </p>
+                      <Badge
+                        variant={callStatusBadge(call.status)}
+                        label={callStatusLabel(call.status, t)}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      {callSummary}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {booking.callAttempts.total > 0 && (
+          <p className="mt-4 border-t border-zinc-100 pt-3 text-xs text-zinc-400 dark:border-zinc-800">
+            {t('bookingDetail.attempts', { count: booking.callAttempts.total })}
+          </p>
+        )}
+      </DetailSection>
+
+      {/* ── NOTES ───────────────────────────────────────────── */}
+      <DetailSection
+        title={t('common.notes')}
+        action={
+          <Button
+            label={t('common.edit')}
+            variant="ghost"
+            size="sm"
+            icon={<IconEdit className="size-3.5" />}
+            onClick={() => startEdit(booking)}
+          />
+        }
+      >
+        {booking.description ? (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            {booking.description}
+          </p>
+        ) : (
+          <p className="text-sm text-zinc-400 dark:text-zinc-500">{t('bookingDetail.noNotes')}</p>
+        )}
+      </DetailSection>
+
+      {/* ── Dialog edit booking ─────────────────────────────── */}
+      <Dialog
+        isOpen={isEditing}
+        onOpenChange={(open) => {
+          if (!open) setIsEditing(false);
+        }}
+        purpose="info"
+        width={640}
+        maxHeight="min(85vh, 720px)"
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title={t('bookingDetail.editBooking')}
+              subtitle={t('bookingDetail.editBookingDesc')}
+              onOpenChange={() => setIsEditing(false)}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
               <form onSubmit={submitEdit} className="space-y-4">
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('bookingDetail.editHeading')}</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <TextInput
                     label={t('bookingNew.customerName')}
                     value={editCustomerName}
                     onChange={setEditCustomerName}
                     width="100%"
+                    // PII customer — jangan pernah ter-capture analitik/replay.
+                    className="ph-no-capture"
                   />
 
                   <PhoneInput
@@ -358,19 +695,32 @@ export function BookingDetailPage() {
                     onChange={setEditPhone}
                   />
 
+                  <Selector
+                    label={t('bookingDetail.service')}
+                    placeholder={t('bookingNew.servicePlaceholder')}
+                    options={serviceOptions}
+                    value={editServiceId || null}
+                    onChange={(value) => setEditServiceId(value ?? '')}
+                    hasClear
+                    width="100%"
+                  />
+
+                  <Selector
+                    label={t('bookingNew.staff')}
+                    description={t('bookingNew.staffDesc')}
+                    placeholder={t('bookingNew.staffPlaceholder')}
+                    options={staffOptions}
+                    value={editStaffId || null}
+                    onChange={(value) => setEditStaffId(value ?? '')}
+                    hasClear
+                    width="100%"
+                  />
+
                   <DateTimeInput
                     label={t('bookingNew.schedule')}
                     isRequired
                     value={editScheduledAt ? (editScheduledAt as ISODateTimeString) : undefined}
                     onChange={(value) => setEditScheduledAt(value ?? '')}
-                    width="100%"
-                  />
-
-                  <Selector
-                    label={t('common.status')}
-                    options={STATUS_OPTIONS.map((option) => ({ ...option, label: t(option.labelKey) }))}
-                    value={editStatus}
-                    onChange={(value) => setEditStatus(value as BookingRecord['status'])}
                     width="100%"
                   />
 
@@ -386,218 +736,37 @@ export function BookingDetailPage() {
 
                 {editError && <p role="alert" className="text-sm text-red-600">{editError}</p>}
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    {confirmDelete ? (
-                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/60 dark:bg-red-950/40">
-                        <p className="text-xs font-medium text-red-700">
-                          {t('bookingDetail.deleteQuestion')}
-                        </p>
-                        {deleteError && <p role="alert" className="mt-1.5 text-xs text-red-600">{deleteError}</p>}
-                        <div className="mt-2.5 flex gap-2">
-                          <Button
-                            label={t('common.cancel')}
-                            variant="ghost"
-                            size="sm"
-                            isDisabled={deleteBookingMutation.isPending}
-                            onClick={() => {
-                              setConfirmDelete(false);
-                              setDeleteError(null);
-                            }}
-                          />
-                          <Button
-                            label={t('common.delete')}
-                            variant="destructive"
-                            size="sm"
-                            isLoading={deleteBookingMutation.isPending}
-                            isDisabled={deleteBookingMutation.isPending}
-                            onClick={() => deleteBookingMutation.mutate()}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <Button
-                        label={t('bookingDetail.deleteBooking')}
-                        variant="ghost"
-                        size="sm"
-                        icon={<IconTrash className="size-3.5" />}
-                        onClick={() => {
-                          setConfirmDelete(true);
-                          setDeleteError(null);
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      label={t('common.cancel')}
-                      variant="ghost"
-                      onClick={() => setIsEditing(false)}
-                    />
-                    <Button
-                      label={t('common.save')}
-                      variant="primary"
-                      isLoading={editBookingMutation.isPending}
-                      isDisabled={editBookingMutation.isPending || !editScheduledAt}
-                      type="submit"
-                    />
-                  </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    label={t('common.cancel')}
+                    variant="ghost"
+                    isDisabled={editBookingMutation.isPending}
+                    onClick={() => setIsEditing(false)}
+                  />
+                  <Button
+                    label={t('common.save')}
+                    variant="primary"
+                    type="submit"
+                    isLoading={editBookingMutation.isPending}
+                    isDisabled={editBookingMutation.isPending || !editScheduledAt}
+                  />
                 </div>
               </form>
-            </Card>
-          )}
-
-          {/* Progressive disclosure goal CALL-E */}
-          <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              {t('bookingDetail.aiCallHeading')}
-            </h2>
-            <GoalCustomizer
-              booking={bookingContext}
-              business={business}
-              autoDecision={autoGoal}
-              value={customization}
-              onChange={(goal) => saveGoalMutation.mutate(goal)}
-              disabled={booking.status === 'cancelled' || booking.status === 'completed'}
-            />
-
-          </div>
-        </div>
-
-        {/* Kolom samping: ringkasan goal + riwayat panggilan */}
-        <div className="space-y-6">
-          <Card className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('bookingDetail.goalToSend')}</p>
-            <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{effectiveGoal?.title ?? t('common.noCall')}</p>
-            {effectiveGoal && (
-              // `ph-no-capture`: prompt goal bisa memuat data customer —
-              // jangan pernah ter-capture analitik/session replay.
-              <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-300 ph-no-capture">
-                {effectiveGoal.prompt}
-              </pre>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              {t('bookingDetail.callHistory', { count: calls.length })}
-            </p>
-            {calls.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{t('bookingDetail.noCalls')}</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {calls.map((call: CallRecord) => (
-                  <div key={call.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{formatDateTime(call.createdAt)}</p>
-                      <Badge variant={callStatusBadge(call.status)} label={statusLabel(call.status, t)} />
-                    </div>
-                    {call.goalType && <p className="mt-1 text-xs font-medium text-amber-600">{call.goalType}</p>}
-                    <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{resultSnippet(call.result, t)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-              <IconCalendar className="size-4 text-zinc-400" />
-              <span>
-                {t('bookingDetail.attempts', {
-                  count: booking.callAttempts.total,
-                  total: booking.callAttempts.total,
-                  failed: booking.callAttempts.failed,
-                })}
-              </span>
-            </div>
-          </Card>
-
-          {/* Payments — payment link untuk booking ini. */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <IconCreditCard className="size-4 text-emerald-600" />
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  {t('payments.bookingTitle')}
-                </p>
-              </div>
-              <Button
-                label={t('payments.bookingCreate')}
-                variant="primary"
-                size="sm"
-                isDisabled={!paymentsData?.configured}
-                onClick={() => setPaymentsDialogOpen(true)}
-              />
-            </div>
-
-            {paymentsError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
-                {paymentsError}
-              </p>
-            )}
-
-            {paymentsData && !paymentsData.configured && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                {t('payments.bookingNotConfigured')}
-              </p>
-            )}
-
-            {!paymentsData ? (
-              <div className="mt-3 h-12 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
-            ) : paymentsData.payments.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">{t('payments.bookingEmpty')}</p>
-            ) : (
-              <div className="mt-3 space-y-2.5">
-                {paymentsData.payments.map((payment) => (
-                  <div key={payment.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{payment.title}</p>
-                        <p className="mt-0.5 text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                          {formatPaymentAmount(payment.amountMinor, payment.currency)}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={payment.status === 'paid' ? 'success' : payment.status === 'pending' ? 'warning' : 'neutral'}
-                        label={payment.status === 'paid' ? t('payments.statusPaid') : payment.status === 'pending' ? t('payments.statusPending') : t('payments.statusCanceled')}
-                      />
-                    </div>
-                    {payment.status === 'pending' && payment.checkoutUrl && (
-                      <button
-                        type="button"
-                        onClick={() => void copyPaymentUrl(payment)}
-                        className="mt-2 flex items-center gap-1 text-xs font-medium text-amber-600 transition hover:text-amber-500"
-                      >
-                        {copiedPaymentId === payment.id ? (
-                          <IconCheck className="size-3.5" />
-                        ) : (
-                          <IconCopy className="size-3.5" />
-                        )}
-                        {copiedPaymentId === payment.id ? t('channels.copied') : t('payments.openCheckout')}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      </div>
-
-      {/* Dialog payment link — scope ke booking ini. */}
-      <PaymentsDialog
-        isOpen={paymentsDialogOpen}
-        onOpenChange={(open) => {
-          setPaymentsDialogOpen(open);
-          if (!open) {
-            queryClient.invalidateQueries({ queryKey: ['payments', activeWorkspaceId, id] });
+            </LayoutContent>
           }
-        }}
-        bookingId={id}
-        defaultTitle={booking.title}
-        defaultCustomerName={booking.customerName ?? ''}
+        />
+      </Dialog>
+
+      {/* ── Konfirmasi batalkan booking ─────────────────────── */}
+      <ConfirmDialog
+        isOpen={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title={t('bookingDetail.cancelBooking')}
+        description={t('bookingDetail.cancelQuestion')}
+        actionLabel={t('bookingDetail.cancelBooking')}
+        actionVariant="destructive"
+        isActionLoading={statusMutation.isPending}
+        onAction={() => statusMutation.mutate('cancelled')}
       />
     </div>
   );

@@ -60,10 +60,15 @@ describe('computeReminderAt', () => {
 
 describe('emitBookingCreated', () => {
   it('mengirim booking/created dengan reminderAt = scheduledAt − lead', async () => {
+    // Jadwal dibuat RELATIF terhadap sekarang (besok) — guard
+    // `reminderAt <= now` di emitBookingCreated memakai Date.now() sungguhan,
+    // jadi tanggal hardcoded akan kadaluarsa dan membuat test ini red
+    // seiring waktu (time-bomb; sempat gagal sejak 2026-08-16).
+    const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await reminders.emitBookingCreated({
       workspaceId: 'ws-1',
       bookingId: 'bk-1',
-      scheduledAt: new Date('2026-08-15T14:00:00.000Z'),
+      scheduledAt,
       timezone: 'Asia/Jakarta',
       leadMinutes: 120,
     });
@@ -74,8 +79,8 @@ describe('emitBookingCreated', () => {
       data: expect.objectContaining({
         bookingId: 'bk-1',
         workspaceId: 'ws-1',
-        scheduledAt: '2026-08-15T14:00:00.000Z',
-        reminderAt: '2026-08-15T12:00:00.000Z',
+        scheduledAt: scheduledAt.toISOString(),
+        reminderAt: new Date(scheduledAt.getTime() - 120 * 60_000).toISOString(),
         timezone: 'Asia/Jakarta',
       }),
     });

@@ -52,6 +52,21 @@ export interface BookingGoalContext {
 }
 
 /**
+ * Pengetahuan bisnis (workspace.ai_knowledge) — cermin `AiKnowledge` di
+ * packages/database, dijaga sinkron manual (sama seperti mirror di web).
+ * Disisipkan ke prompt panggilan agar asisten bisa menjawab pertanyaan
+ * tentang layanan / harga / jam buka / lokasi / kebijakan.
+ */
+export interface BusinessKnowledge {
+  description?: string;
+  services?: string;
+  hours?: string;
+  location?: string;
+  policy?: string;
+  faq?: { q: string; a: string }[];
+}
+
+/**
  * Konteks bisnis (workspace) — memilih template berdasarkan industry dan
  * mengirim bahasa panggilan yang dikonfigurasi di pengaturan workspace.
  */
@@ -61,6 +76,8 @@ export interface BusinessGoalContext {
   industry?: Industry | null;
   /** Bahasa panggilan CALL-E dari workspace (default 'en'; 'id' = extension point). */
   language?: CallLanguage | null;
+  /** Knowledge base bisnis (opsional) — disisipkan ke prompt bila terisi. */
+  knowledge?: BusinessKnowledge | null;
 }
 
 /** Opsi mesin keputusan — window reminder bisa dikonfigurasi per workspace. */

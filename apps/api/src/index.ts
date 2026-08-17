@@ -143,7 +143,12 @@ if (env.NODE_ENV !== 'test') {
       '⚠️  INNGEST_SIGNING_KEY belum disetel — endpoint /api/inngest tidak memverifikasi signature! Setel di produksi.',
     );
   }
-  if (!env.VAPI_WEBHOOK_SECRET) {
+  // Warning hanya relevan bila Vapi benar-benar dipakai (VAPI_API_KEY ada):
+  // tanpa API key tidak ada asisten/panggilan/webhook, jadi tidak ada yang
+  // ditolak — warning hanya jadi noise saat fitur nonaktif (konsisten dengan
+  // integrasi opsional lain yang diam saat mati). Endpoint webhook tetap
+  // fail-closed sendiri (503 + pesan jelas) bila secret hilang saat dipakai.
+  if (env.VAPI_API_KEY && !env.VAPI_WEBHOOK_SECRET) {
     console.warn(
       '⚠️  VAPI_WEBHOOK_SECRET belum disetel — webhook Vapi menolak semua event (fail-closed). Setel di .env (header Authorization Bearer dikonfigurasi otomatis di asisten Vapi).',
     );

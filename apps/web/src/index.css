@@ -68,11 +68,6 @@
   --input: #d4d4d8;
 }
 
-.bookings-calendar-card {
-  border: 1px solid #e4e4e7 !important;
-  box-shadow: 0 12px 30px rgb(24 24 27 / 0.06);
-}
-
 .bookings-calendar-loading,
 .bookings-calendar-error {
   position: absolute;
@@ -641,11 +636,6 @@ html[data-theme='dark'] .bookings-calendar {
   --input: #3f3f46;
 }
 
-html[data-theme='dark'] .bookings-calendar-card {
-  border-color: #333338 !important;
-  box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
-}
-
 html[data-theme='dark'] .bookings-calendar-loading,
 html[data-theme='dark'] .bookings-calendar-error {
   border-color: #333338;
@@ -677,9 +667,16 @@ html[data-theme='dark'] .bookings-calendar-header {
   background: linear-gradient(180deg, #1c1c1f 0%, #17171a 100%);
 }
 
-html[data-theme='dark'] .bookings-calendar-toolbar {
-  border-color: #333338;
-  background: #1c1c1f;
+html[data-theme='dark'] .bookings-calendar-period {
+  color: #e4e4e4;
+}
+
+html[data-theme='dark'] .bookings-calendar-legend {
+  color: #a3a3a3;
+}
+
+html[data-theme='dark'] .bookings-calendar-legend-dot {
+  box-shadow: 0 0 0 2px rgb(23 23 26 / 0.9);
 }
 
 /* Background event kalender (dipakai via var(--booking-bg-*) di
@@ -707,8 +704,28 @@ html[data-theme='dark'] .bookings-calendar [class~='border-b'] {
   border-color: #333338;
 }
 
+html[data-theme='dark'] .bookings-calendar .border-border,
+html[data-theme='dark'] .bookings-calendar .divide-border > :not([hidden]),
+html[data-theme='dark'] .bookings-calendar :where(.border, .border-x, .border-y) {
+  border-color: #333338;
+}
+
+html[data-theme='dark'] .bookings-calendar .text-muted-foreground {
+  color: #a3a3a3;
+}
+
 html[data-theme='dark'] .bookings-calendar .bg-muted {
   background-color: #1f1f23;
+}
+
+/* Jam saat ini (week/day view) — bg-blue-50/text-blue-600 keras di latar
+   gelap; tukar ke tint biru gelap senada token. */
+html[data-theme='dark'] .bookings-calendar .bg-blue-50 {
+  background-color: rgb(59 130 246 / 0.14);
+}
+
+html[data-theme='dark'] .bookings-calendar .text-blue-600 {
+  color: #93c5fd;
 }
 
 html[data-theme='dark'] .bookings-calendar .bg-accent {

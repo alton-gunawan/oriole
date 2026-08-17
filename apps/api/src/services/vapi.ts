@@ -19,6 +19,17 @@ import { env } from '../lib/env.ts';
  */
 export const vapiConfigured = Boolean(env.VAPI_API_KEY && env.VAPI_PHONE_NUMBER_ID);
 
+/**
+ * URL publik endpoint webhook Vapi — Vapi mewajibkan HTTPS publik.
+ * Dev memakai WEBHOOK_BASE_URL (tunnel Cloudflare quick tunnel); produksi
+ * memakai API_URL (domain publik API). Tanpa ini Vapi menolak asisten
+ * (server.url http) dan tidak bisa mengirim assistant-request / tool-calls.
+ */
+export function vapiWebhookUrl(): string {
+  const base = env.WEBHOOK_BASE_URL ?? env.API_URL;
+  return `${base.replace(/\/+$/, '')}/api/webhooks/vapi`;
+}
+
 export const vapi = vapiConfigured ? new VapiClient({ token: env.VAPI_API_KEY! }) : null;
 
 /** Error bisnis — Vapi belum dikonfigurasi; bukan kegagalan jaringan/provider. */
@@ -68,7 +79,7 @@ export interface PlaceVapiCallInput extends VapiCallContext {
  */
 export function buildVapiAssistant(params: VapiCallContext): Vapi.CreateAssistantDto {
   const server: NonNullable<Vapi.CreateAssistantDto['server']> = {
-    url: `${env.API_URL}/api/webhooks/vapi`,
+    url: vapiWebhookUrl(),
   };
   if (env.VAPI_WEBHOOK_SECRET) {
     server.headers = { Authorization: `Bearer ${env.VAPI_WEBHOOK_SECRET}` };
@@ -213,6 +224,7 @@ export interface RegisteredVapiInboundNumber {
   vapiPhoneNumberId: string;
   /** Nomor E.164 — null selama provisioning (Vapi mengalokasikan asinkron). */
   number: string | null;
+  provider: string;
 }
 
 /**
@@ -230,7 +242,7 @@ export async function registerVapiInboundNumber(input: {
   if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
   const client = new VapiClient({ token: env.VAPI_API_KEY });
   const server: NonNullable<Vapi.Server> = {
-    url: `${env.API_URL}/api/webhooks/vapi`,
+    url: vapiWebhookUrl(),
   };
   if (env.VAPI_WEBHOOK_SECRET) {
     server.headers = { Authorization: `Bearer ${env.VAPI_WEBHOOK_SECRET}` };
@@ -238,12 +250,13 @@ export async function registerVapiInboundNumber(input: {
   const created = await client.phoneNumbers.create({
     provider: 'vapi',
     name: input.name,
-    ...(input.areaCode ? { numberDesiredAreaCode: input.areaCode } : {}),
+    numberDesiredAreaCode: vapiAreaCode(input.areaCode),
     server,
   });
   return {
     vapiPhoneNumberId: created.id,
     number: 'number' in created && typeof created.number === 'string' ? created.number : null,
+    provider: created.provider,
   };
 }
 
@@ -252,6 +265,240 @@ export async function unregisterVapiInboundNumber(vapiPhoneNumberId: string): Pr
   if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
   const client = new VapiClient({ token: env.VAPI_API_KEY });
   await client.phoneNumbers.delete({ id: vapiPhoneNumberId });
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Nomor keluar — provisioning (Vapi number) & release
+ * ──────────────────────────────────────────────────────────── */
+
+/**
+ * Vapi API MENOLAK pembuatan nomor tanpa `numberDesiredAreaCode` (atau
+ * `sipUri`) — SDK menandainya opsional, tapi API mengembalikan 400
+ * "At least one of numberDesiredAreaCode, sipUri must be provided".
+ * Kode area di UI bersifat opsional → default 415 (US; Vapi number hanya
+ * untuk penggunaan nasional AS) bila kosong / format tidak valid (3 digit).
+ */
+const DEFAULT_VAPI_AREA_CODE = '415';
+
+function vapiAreaCode(areaCode?: string): string {
+  return areaCode?.trim().match(/^\d{3}$/)?.[0] ?? DEFAULT_VAPI_AREA_CODE;
+}
+
+export { vapiAreaCode };
+
+/** Hasil provisioning nomor Vapi baru (provider 'vapi'). */
+export interface ProvisionedVapiNumber {
+  vapiPhoneNumberId: string;
+  /** Nomor E.164 — null selama provisioning (Vapi mengalokasikan asinkron). */
+  number: string | null;
+  provider: string;
+}
+
+/**
+ * Provision nomor Vapi baru (dibeli di Vapi). `numberDesiredAreaCode` hanya
+ * berlaku untuk US; Vapi mengalokasikan nomor pada area code tersebut.
+ * Nomor didaftarkan TANPA asisten (asisten transient per panggilan keluar).
+ */
+export async function provisionVapiOutboundNumber(input: {
+  /** Label di dashboard Vapi — prefix memisahkan milik outbound Oriole. */
+  name: string;
+  areaCode?: string;
+}): Promise<ProvisionedVapiNumber> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  const created = await client.phoneNumbers.create({
+    provider: 'vapi',
+    name: input.name,
+    numberDesiredAreaCode: vapiAreaCode(input.areaCode),
+  });
+  return {
+    vapiPhoneNumberId: created.id,
+    number: 'number' in created && typeof created.number === 'string' ? created.number : null,
+    provider: created.provider,
+  };
+}
+
+/** Hapus nomor dari akun Vapi (best-effort — caller tangani kegagalan). */
+export async function releaseVapiPhoneNumber(vapiPhoneNumberId: string): Promise<void> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  await client.phoneNumbers.delete({ id: vapiPhoneNumberId });
+}
+
+/**
+ * Pasang nomor yang SUDAH ada di akun Vapi (mis. nomor gratis) sebagai
+ * nomor inbound: set server URL webhook kita + auth header, TANPA asisten
+ * (assistant-request → asisten transient per-workspace). Tidak membeli nomor
+ * baru — beda dengan `registerVapiInboundNumber`.
+ */
+export async function attachVapiInboundNumber(input: {
+  vapiPhoneNumberId: string;
+  name: string;
+}): Promise<RegisteredVapiInboundNumber> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  const server: NonNullable<Vapi.Server> = {
+    url: vapiWebhookUrl(),
+  };
+  if (env.VAPI_WEBHOOK_SECRET) {
+    server.headers = { Authorization: `Bearer ${env.VAPI_WEBHOOK_SECRET}` };
+  }
+  await client.phoneNumbers.update({
+    id: input.vapiPhoneNumberId,
+    body: { provider: 'vapi', name: input.name, server },
+  });
+  // Update tidak mengembalikan nomor E.164 — ambil lewat lookup.
+  const info = await getVapiPhoneNumber(input.vapiPhoneNumberId);
+  return {
+    vapiPhoneNumberId: input.vapiPhoneNumberId,
+    number: info?.number ?? null,
+    provider: info?.provider ?? 'vapi',
+  };
+}
+
+/**
+ * Cek keberadaan nomor di akun Vapi (dipakai health check).
+ * null = nomor tidak ditemukan / API gagal (dianggap tidak aktif).
+ */
+export async function getVapiPhoneNumber(
+  vapiPhoneNumberId: string,
+): Promise<{ id: string; number: string | null; provider: string } | null> {
+  if (!env.VAPI_API_KEY) return null;
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  try {
+    const number = await client.phoneNumbers.get({ id: vapiPhoneNumberId });
+    return {
+      id: number.id,
+      number: 'number' in number && typeof number.number === 'string' ? number.number : null,
+      provider: number.provider,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Panggilan uji (test call) — verifikasi nomor keluar
+ * ──────────────────────────────────────────────────────────── */
+
+function testCallPrompt(language: 'en' | 'id'): string {
+  if (language === 'id') {
+    return `Kamu adalah asisten uji untuk platform Oriole. Ini adalah PANGGILAN UJI untuk memastikan nomor telepon berfungsi untuk panggilan AI.
+
+TUGAS:
+1. Sapa orang yang menjawab dengan singkat dan ramah.
+2. Jelaskan bahwa ini panggilan uji dari Oriole untuk memeriksa kualitas panggilan.
+3. Minta konfirmasi bahwa mereka mendengar suara dengan jelas.
+4. Setelah ada jawaban, ucapkan terima kasih dan akhiri panggilan dengan sopan.
+
+Jangan menanyakan informasi pribadi apa pun. Jangan membuat janji temu. Jangan menyebutkan nama orang.`;
+  }
+  return `You are a test assistant for the Oriole platform. This is a TEST CALL to verify that this phone number works for AI calling.
+
+YOUR TASK:
+1. Greet whoever answers briefly and warmly.
+2. Explain that this is a test call from Oriole to check call quality.
+3. Ask them to confirm they can hear you clearly.
+4. After they respond, thank them and end the call politely.
+
+Do not ask for any personal information. Do not book appointments. Do not mention anyone's name.`;
+}
+
+/** Asisten transient untuk panggilan uji — singkat, tanpa data pribadi. */
+export function buildTestCallAssistant(params: {
+  language: 'en' | 'id';
+  assistantName?: string | null;
+  businessName?: string | null;
+}): Vapi.CreateAssistantDto {
+  const language = params.language === 'id' ? 'id' : 'en';
+  const business = params.businessName?.trim() || 'your business';
+  const server: NonNullable<Vapi.CreateAssistantDto['server']> = {
+    url: vapiWebhookUrl(),
+  };
+  if (env.VAPI_WEBHOOK_SECRET) {
+    server.headers = { Authorization: `Bearer ${env.VAPI_WEBHOOK_SECRET}` };
+  }
+  return {
+    name: `oriole-test-call-${Date.now()}`,
+    transcriber: {
+      provider: 'deepgram',
+      model: 'nova-2',
+      language,
+    },
+    model: {
+      provider: 'openai',
+      model: env.VAPI_MODEL as Vapi.OpenAiModelModel,
+      messages: [{ role: 'system', content: testCallPrompt(language) }],
+      temperature: 0.5,
+    },
+    voice: {
+      provider: '11labs',
+      voiceId: env.VAPI_VOICE_ID as Vapi.ElevenLabsVoiceId,
+      language,
+    },
+    firstMessage:
+      language === 'id'
+        ? `Halo! Ini panggilan uji dari ${business} untuk memastikan nomor ini berfungsi. Jika Anda mendengar saya, cukup balas "halo".`
+        : `Hi! This is a test call from ${business} to make sure this number is working. If you can hear me, just say hello.`,
+    endCallPhrases: ['goodbye', 'bye'],
+    server,
+    serverMessages: ['end-of-call-report', 'status-update'],
+    // Panggilan uji singkat — pengaman durasi maksimal.
+    maxDurationSeconds: 120,
+  };
+}
+
+/**
+ * Tempatkan panggilan uji keluar: asisten transient + nomor tujuan.
+ * Mengembalikan id & status awal call (mis. `queued` / `ringing`).
+ */
+export async function placeTestVapiCall(input: {
+  phone: string;
+  phoneNumberId: string;
+  language: 'en' | 'id';
+  assistantName?: string | null;
+  businessName?: string | null;
+  voiceId?: string | null;
+}): Promise<{ id: string; status: string | null }> {
+  if (!vapi) throw new VapiNotConfiguredError();
+  const call = await vapi.calls.create({
+    name: `oriole-test-call:${Date.now()}`,
+    assistant: buildTestCallAssistant(input),
+    phoneNumberId: input.phoneNumberId,
+    customer: { number: input.phone },
+  });
+  if (!('status' in call)) {
+    throw new Error('Vapi mengembalikan batch response untuk panggilan tunggal');
+  }
+  return { id: call.id, status: call.status ?? null };
+}
+
+/** Status call Vapi — dipakai polling UI panggilan uji. */
+export interface VapiCallStatusInfo {
+  status: string | null;
+  endedReason: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number | null;
+}
+
+export async function getVapiCallStatus(callId: string): Promise<VapiCallStatusInfo> {
+  if (!vapi) throw new VapiNotConfiguredError();
+  const call = await vapi.calls.get({ id: callId });
+  let durationSeconds: number | null = null;
+  if (call.startedAt && call.endedAt) {
+    const seconds = Math.round(
+      (new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000,
+    );
+    if (Number.isFinite(seconds) && seconds >= 0) durationSeconds = seconds;
+  }
+  return {
+    status: call.status ?? null,
+    endedReason: call.endedReason ?? null,
+    startedAt: call.startedAt ?? null,
+    endedAt: call.endedAt ?? null,
+    durationSeconds,
+  };
 }
 
 export async function findVapiCallByName(
@@ -321,4 +568,48 @@ export function mapEndedReason(reason: string | null | undefined): VapiCallOutco
   if (COMPLETED_ENDED_REASONS.has(reason)) return 'completed';
   if (CANCELED_ENDED_REASONS.has(reason)) return 'canceled';
   return 'failed';
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Asisten permanen (jalur hibrida) — dibuat dari builder kode
+ * (buildInboundAssistant), disimpan di Vapi agar bisa di-test di
+ * dashboard. Konfigurasi tetap berasal dari kode — re-provision
+ * (create/update) menyinkronkan prompt/layanan terbaru.
+ * ──────────────────────────────────────────────────────────── */
+
+/** Buat asisten permanen di Vapi dari konfigurasi builder kode. */
+export async function createVapiAssistant(dto: Vapi.CreateAssistantDto): Promise<{
+  assistantId: string;
+  name: string;
+}> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  const created = await client.assistants.create(dto);
+  return { assistantId: created.id, name: created.name ?? dto.name ?? 'assistant' };
+}
+
+/** Perbarui asisten permanen (re-sync prompt/layanan setelah berubah). */
+export async function updateVapiAssistant(assistantId: string, dto: Vapi.CreateAssistantDto): Promise<void> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  await client.assistants.update({ id: assistantId, ...dto });
+}
+
+/** Hapus asisten permanen dari akun Vapi. */
+export async function deleteVapiAssistant(assistantId: string): Promise<void> {
+  if (!env.VAPI_API_KEY) throw new VapiNotConfiguredError();
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  await client.assistants.delete({ id: assistantId });
+}
+
+/** Info asisten permanen (cek keberadaan di akun Vapi) — null bila tidak ada. */
+export async function getVapiAssistant(assistantId: string): Promise<{ id: string; name: string | null } | null> {
+  if (!env.VAPI_API_KEY) return null;
+  const client = new VapiClient({ token: env.VAPI_API_KEY });
+  try {
+    const assistant = await client.assistants.get({ id: assistantId });
+    return { id: assistant.id, name: assistant.name ?? null };
+  } catch {
+    return null;
+  }
 }

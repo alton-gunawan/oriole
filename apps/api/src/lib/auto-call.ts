@@ -65,6 +65,7 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
       callAssistantName: workspaces.callAssistantName,
       callVoiceId: workspaces.callVoiceId,
       maxCallAttempts: workspaces.maxCallAttempts,
+      aiKnowledge: workspaces.aiKnowledge,
     })
     .from(workspaces)
     .where(and(eq(workspaces.id, input.workspaceId), isNull(workspaces.deletedAt)))
@@ -100,6 +101,9 @@ export async function placeAutoCall(input: PlaceAutoCallInput): Promise<PlaceAut
     name: workspace.name,
     industry: booking.industry ?? workspace.industry,
     language: workspace.callGoalLanguage === 'id' ? 'id' : 'en',
+    // Knowledge base bisnis → prompt panggilan (asisten bisa menjawab
+    // pertanyaan layanan/harga/jam/lokasi dari data ini).
+    knowledge: workspace.aiKnowledge,
   };
 
   // Kustomisasi tersimpan di booking (override goal type / instruksi) tetap

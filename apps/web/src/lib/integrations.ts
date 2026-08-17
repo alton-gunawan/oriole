@@ -60,6 +60,8 @@ export interface WorkspaceIntegration {
     phoneNumber?: string | null;
     /** 'byoc' = nomor dari akun Telnyx workspace sendiri; 'operator' = nomor server. */
     mode?: 'byoc' | 'operator' | null;
+    /** true = nomor baru diprovision tapi wizard setup belum selesai (belum aktif). */
+    provisionPending?: boolean;
   };
 }
 
@@ -144,6 +146,23 @@ export interface VapiPhoneNumberOption {
   provider: string;
 }
 
+/** Satu nomor inbound (panggilan masuk) milik workspace. */
+export interface InboundNumberInfo {
+  id: string;
+  vapiPhoneNumberId: string;
+  number: string | null;
+  name: string | null;
+  provider: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** Respons GET /integrations/vapi/inbound — daftar nomor inbound workspace. */
+export interface VapiInboundListResponse {
+  configured: boolean;
+  numbers: InboundNumberInfo[];
+}
+
 /** Respons GET /integrations/vapi — status Voice AI + daftar nomor. */
 export interface VapiVoiceStatusResponse {
   /** Panggilan keluar aktif (key + nomor default server). */
@@ -178,6 +197,46 @@ export interface TelnyxByocConnectResponse {
   integration: WorkspaceIntegration;
   purchased: boolean;
   registered: boolean;
+}
+
+/** Respons POST /integrations/vapi/provision — nomor Vapi baru (belum aktif). */
+export interface VapiProvisionResponse {
+  integration: WorkspaceIntegration;
+  vapiPhoneNumberId: string;
+  number: string | null;
+  provider: string;
+}
+
+/** Respons POST /integrations/vapi/test-call — panggilan uji dimulai. */
+export interface VapiTestCallStartResponse {
+  callId: string;
+  status: string | null;
+}
+
+/** Respons GET /integrations/vapi/test-call/:callId — polling status. */
+export interface VapiTestCallStatusResponse {
+  status: string | null;
+  endedReason: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  /** 'completed' | 'failed' | 'canceled' | null — dipetakan dari endedReason. */
+  outcome: 'completed' | 'failed' | 'canceled' | null;
+}
+
+/** Respons GET /integrations/vapi/health — card "Phone health". */
+export interface VapiHealthResponse {
+  checkedAt: string;
+  configured: boolean;
+  vapiPhoneNumberId: string | null;
+  numberActive: boolean;
+  number: string | null;
+  provider: string | null;
+  assistantAssigned: boolean;
+  outboundReady: boolean;
+  webhookConfigured: boolean;
+  lastWebhookAt: string | null;
+  lastSuccessfulCallAt: string | null;
 }
 
 /** Satu nomor MASUK (inbound) milik workspace (dari GET /integrations/vapi/inbound). */

@@ -14,7 +14,7 @@ interface PlanetIconProps {
 
 /**
  * Avatar gaya "Planets" DiceBear (https://www.dicebear.com/styles/planets/)
- * sebagai ikon project: satu planet bertekstur, cincin & bulan opsional, dan
+ * sebagai ikon bisnis: satu planet bertekstur, cincin & bulan opsional, dan
  * langit berbintang. Style ini baru tersedia di DiceBear v10 dan belum
  * dirilis sebagai paket npm, jadi dirender via HTTP API resmi. Pola
  * deterministik dari `name` — seed yang sama selalu menghasilkan planet yang

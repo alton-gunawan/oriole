@@ -16,7 +16,7 @@ import { Card, PageHeader, StatCard } from '../shell/ui';
 const QUICK_LINKS = [
   { to: '/app/bookings', labelKey: 'dashboard.quickBookings' },
   { to: '/app/contacts', labelKey: 'dashboard.quickContacts' },
-  { to: '/app/analytics', labelKey: 'dashboard.quickAnalytics' },
+  { to: '/app/calendar', labelKey: 'dashboard.quickCalendar' },
 ] as const;
 
 /** Warna status → variant Badge Astryx (sama dengan halaman Bookings). */
@@ -53,7 +53,7 @@ export function DashboardPage() {
 
   // Semua angka dashboard kini data riil per workspace (X-Workspace-Id header
   // dikirim apiFetch dari store). Query key memuat workspace → saat pindah
-  // project, data refetch otomatis dan semua kartu ikut berubah.
+  // bisnis, data refetch otomatis dan semua kartu ikut berubah.
   const { data: overview } = useQuery({
     queryKey: ['analytics-overview', activeWorkspaceId],
     queryFn: () => apiFetch<AnalyticsOverview>('/analytics/overview'),
@@ -164,7 +164,7 @@ export function DashboardPage() {
               actions={
                 <Link
                   to="/app/bookings/new"
-                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
                 >
                   <IconPlus className="size-4" />
                   {t('dashboard.createBooking')}

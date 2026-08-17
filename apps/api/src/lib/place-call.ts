@@ -29,9 +29,18 @@ export async function resolveOutboundPhoneNumber(
       ),
     )
     .limit(1);
-  const config = row?.providerConfig as { vapiPhoneNumberId?: unknown } | null;
+  const config = row?.providerConfig as {
+    vapiPhoneNumberId?: unknown;
+    provisionPending?: unknown;
+  } | null;
+  // Nomor yang baru diprovision (wizard belum selesai) TIDAK dipakai untuk
+  // panggilan nyata — fallback ke default server sampai user mengonfirmasi.
+  const pending = config?.provisionPending === true;
   const selected =
-    config && typeof config.vapiPhoneNumberId === 'string' && config.vapiPhoneNumberId.length > 0
+    !pending &&
+    config &&
+    typeof config.vapiPhoneNumberId === 'string' &&
+    config.vapiPhoneNumberId.length > 0
       ? config.vapiPhoneNumberId
       : null;
   return selected ?? env.VAPI_PHONE_NUMBER_ID ?? null;

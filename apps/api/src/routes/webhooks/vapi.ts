@@ -10,6 +10,8 @@ import { markWebhookProcessed, recordWebhookEvent } from '../../lib/webhooks.ts'
 import { parseVapiWebhookPayload, type VapiWebhookPayload } from '../../lib/vapi-types.ts';
 import {
   buildInboundAssistantForWorkspace,
+  getInboundAssistantForWorkspace,
+  getWorkspaceIdByAssistantId,
   handleInboundToolCall,
   resolveInboundWorkspaceId,
 } from '../../lib/vapi-inbound.ts';
@@ -80,6 +82,22 @@ export const vapiWebhookRoutes = new Hono().post('/', async (c) => {
     if (!workspaceId) {
       return c.json({ error: 'Nomor inbound tidak terdaftar di aplikasi.' }, 404);
     }
+    // Jalur hibrida: asisten permanen yang sudah di-provision dari kode
+    // (bisa di-test di dashboard Vapi) dipakai lebih dulu. Fallback ke
+    // asisten transient per-workspace bila belum di-provision — prompt
+    // transient selalu fresh dari DB; asisten permanen mengikuti saat
+    // terakhir di-provision (re-sync otomatis oleh Inngest).
+    let stored: { assistantId: string; name: string | null } | null = null;
+    try {
+      stored = await getInboundAssistantForWorkspace(workspaceId);
+    } catch (err) {
+      // Kegagalan baca DB tidak boleh menggagalkan call — fallback transient
+      // (call tetap jalan; tool-calls me-resolve workspace dari nomor).
+      console.warn('[vapi-webhook] gagal baca asisten tersimpan (fallback transient):', err);
+    }
+    if (stored) {
+      return c.json({ assistantId: stored.assistantId });
+    }
     const assistant = await buildInboundAssistantForWorkspace(workspaceId);
     if (!assistant) {
       return c.json({ error: 'Workspace untuk nomor inbound tidak ditemukan.' }, 404);
@@ -93,10 +111,15 @@ export const vapiWebhookRoutes = new Hono().post('/', async (c) => {
       return c.json({ error: 'tool-calls tanpa call.id' }, 400);
     }
     const phoneNumberId = message?.call?.phoneNumberId;
-    if (!phoneNumberId) {
-      return c.json({ error: 'tool-calls tanpa call.phoneNumberId' }, 400);
-    }
-    const workspaceId = await resolveInboundWorkspaceId(phoneNumberId);
+    const rawAssistantId = message?.call?.assistantId;
+    const assistantId = typeof rawAssistantId === 'string' ? rawAssistantId : undefined;
+    // Resolve workspace: prefer nomor inbound (panggilan telepon); fallback ke
+    // assistantId permanen untuk web call / Playground Vapi (tanpa nomor).
+    const workspaceId = phoneNumberId
+      ? await resolveInboundWorkspaceId(phoneNumberId)
+      : assistantId
+        ? await getWorkspaceIdByAssistantId(assistantId)
+        : null;
     if (!workspaceId) {
       return c.json({ error: 'Nomor inbound tidak terdaftar di aplikasi.' }, 404);
     }

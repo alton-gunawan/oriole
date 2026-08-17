@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { Trans, useTranslation } from 'react-i18next';
 import {
+  Badge,
   Button,
   Dialog,
   DialogHeader,
@@ -36,6 +37,7 @@ import {
 } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
+import { tintedBadgeVariant } from '../../lib/badge-variant';
 import { errorMessage } from '../../lib/errors';
 import type { StaffRecord } from '../../lib/staff';
 import {
@@ -107,6 +109,79 @@ const STATUS_TEXT: Record<string, string> = {
   active: 'text-emerald-600',
   inactive: 'text-zinc-500 dark:text-zinc-400',
 };
+
+/**
+ * Teks array legacy (kolom dulu text, di-wrap jadi text[] di migrasi #0021):
+ * JSON ("[\"a\",\"b\"]") atau literal array PG ("{a,b}") → daftar item.
+ * Kembalikan null bila bukan representasi array.
+ */
+function parseArrayText(text: string): string[] | null {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item));
+    } catch {
+      // Bukan JSON valid — perlakukan sebagai kategori tunggal biasa.
+    }
+    return null;
+  }
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    const inner = trimmed.slice(1, -1);
+    if (!inner.trim()) return [];
+    const items: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"') {
+        if (inQuotes && inner[i + 1] === '"') {
+          current += '"';
+          i++;
+          continue;
+        }
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (ch === '\\' && inQuotes && i + 1 < inner.length) {
+        current += inner[i + 1];
+        i++;
+        continue;
+      }
+      if (ch === ',' && !inQuotes) {
+        items.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    items.push(current.trim());
+    return items;
+  }
+  return null;
+}
+
+/**
+ * Daftar kategori tampilan — legacy yang tersimpan sebagai SATU elemen berisi
+ * teks array ("[\"perawatan\",\"rambut\"]") di-flatten jadi item terpisah,
+ * dengan dedupe case-insensitive (selaras dengan normalisasi backend).
+ */
+function expandCategoryList(categories: string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const category of categories ?? []) {
+    const parts = parseArrayText(category) ?? [category];
+    for (const part of parts) {
+      const clean = part.trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(clean);
+    }
+  }
+  return out;
+}
 
 export function ServicesPage() {
   const { t } = useTranslation();
@@ -202,7 +277,7 @@ export function ServicesPage() {
   // tetap stabil meski filter lain sedang aktif.
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const service of servicesList) for (const category of service.category ?? []) set.add(category);
+    for (const service of servicesList) for (const category of expandCategoryList(service.category)) set.add(category);
     return [...set].sort();
   }, [servicesList]);
 
@@ -232,7 +307,7 @@ export function ServicesPage() {
         if (!debouncedCategory.some((category) => serviceCategories.includes(category))) return false;
       }
       if (q) {
-        const haystack = [service.name, service.description, ...(service.category ?? [])]
+        const haystack = [service.name, service.description, ...expandCategoryList(service.category)]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -319,7 +394,7 @@ export function ServicesPage() {
     setEditDuration(service.durationMinutes);
     setEditPrice(service.priceMinor === null ? null : service.priceMinor / 100);
     setEditCurrency(service.currency);
-    setEditCategories(service.category ?? []);
+    setEditCategories(expandCategoryList(service.category));
     setEditStaffIds(service.staffIds);
     setEditIsActive(service.isActive);
     setEditError(null);
@@ -498,34 +573,47 @@ export function ServicesPage() {
       key: 'category',
       header: t('services.colCategory'),
       width: proportional(2),
-      renderCell: (service) =>
-        service.category && service.category.length > 0 ? (
-          <span className="inline-flex max-w-full items-center rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            <span className="truncate">{service.category.join(', ')}</span>
+      renderCell: (service) => {
+        const categories = expandCategoryList(service.category);
+        if (categories.length === 0) {
+          return <span className="text-sm text-zinc-300">—</span>;
+        }
+        // Hanya tampilkan kategori pertama + badge "+N" untuk sisanya (mirip
+        // text-ellipsis) — tidak memenuhi kolom dengan semua kategori.
+        const [first, ...rest] = categories;
+        return (
+          <span className="inline-flex max-w-full items-center gap-1">
+            <Badge
+              variant={tintedBadgeVariant(first)}
+              label={<span className="block max-w-40 truncate">{first}</span>}
+            />
+            {rest.length > 0 && <Badge variant="neutral" label={`+${rest.length}`} />}
           </span>
-        ) : (
-          <span className="text-sm text-zinc-300">—</span>
-        ),
+        );
+      },
     },
     {
       key: 'staff',
       header: t('services.colStaff'),
       width: proportional(2),
-      renderCell: (service) =>
-        service.staffIds.length === 0 ? (
-          <span className="text-sm text-zinc-400">{t('services.noStaffHint')}</span>
-        ) : (
-          <span className="flex flex-wrap gap-1">
-            {service.staffIds.map((staffId) => (
-              <span
-                key={staffId}
-                className="inline-flex max-w-[10rem] items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-sm font-medium text-zinc-600 dark:text-zinc-400"
-              >
-                <span className="truncate">{staffNameById.get(staffId) ?? '?'}</span>
-              </span>
-            ))}
+      renderCell: (service) => {
+        if (service.staffIds.length === 0) {
+          return <span className="text-sm text-zinc-400">{t('services.noStaffHint')}</span>;
+        }
+        // Sama seperti kategori: staf pertama sebagai Badge berwarna (deterministik
+        // dari nama, agar staf yang sama selalu berwarna sama) + badge "+N" sisanya.
+        const [firstId, ...restIds] = service.staffIds;
+        const firstName = staffNameById.get(firstId) ?? '?';
+        return (
+          <span className="inline-flex max-w-full items-center gap-1">
+            <Badge
+              variant={tintedBadgeVariant(firstName)}
+              label={<span className="block max-w-40 truncate">{firstName}</span>}
+            />
+            {restIds.length > 0 && <Badge variant="neutral" label={`+${restIds.length}`} />}
           </span>
-        ),
+        );
+      },
     },
     {
       key: 'actions',
@@ -551,7 +639,7 @@ export function ServicesPage() {
         <button
           type="button"
           onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
         >
           <IconPlus className="size-4" />
           {t('services.add')}

@@ -7,6 +7,7 @@ import { INDUSTRIES } from '@oriole/call-goals';
 import { bookings, conversations, profiles, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
+import { emitVapiAssistantSync } from '../lib/vapi-assistant-sync.ts';
 import { captureWorkspaceEvent } from '../lib/analytics.ts';
 import { isValidTimezone } from '../lib/form-booking.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
@@ -351,6 +352,10 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
           console.error(`[me] GAGAL re-schedule auto-call ${id}:`, error);
         }
       }
+
+      // Data bisnis berubah (nama/KB/bahasa/voice) → sinkronkan asisten Vapi
+      // permanen bila sudah di-provision (best-effort; transient tetap fallback).
+      emitVapiAssistantSync(id).catch(() => {});
 
       return c.json({ workspace });
     },

@@ -4,14 +4,23 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 vi.mock('../inngest/client.ts', () => ({ inngest: { send: sendMock } }));
 
-// ── Mock Vapi service — register/unregister number ──
-const { registerVapiMock, unregisterVapiMock } = vi.hoisted(() => ({
+// ── Mock Vapi service — register/attach/unregister number + assistant CRUD ──
+const { registerVapiMock, attachVapiMock, unregisterVapiMock, createVapiAssistantMock, updateVapiAssistantMock, deleteVapiAssistantMock } = vi.hoisted(() => ({
   registerVapiMock: vi.fn(),
+  attachVapiMock: vi.fn(),
   unregisterVapiMock: vi.fn(),
+  createVapiAssistantMock: vi.fn(),
+  updateVapiAssistantMock: vi.fn(),
+  deleteVapiAssistantMock: vi.fn(),
 }));
 vi.mock('../services/vapi.ts', () => ({
   registerVapiInboundNumber: registerVapiMock,
+  attachVapiInboundNumber: attachVapiMock,
   unregisterVapiInboundNumber: unregisterVapiMock,
+  createVapiAssistant: createVapiAssistantMock,
+  updateVapiAssistant: updateVapiAssistantMock,
+  deleteVapiAssistant: deleteVapiAssistantMock,
+  vapiWebhookUrl: () => 'https://webhook.example.com/api/webhooks/vapi',
 }));
 
 // ── Fake Drizzle db (where-filtering penuh) — mirror services.test.ts ──────
@@ -218,6 +227,24 @@ vi.mock('../db/index.ts', async () => {
               );
               if (dup) return rows;
             }
+            // Simulasi upsert workspace_integrations (unique workspace_id +
+            // integration_type): insert dengan key sama → baris lama diperbarui
+            // (onConflictDoUpdate), bukan duplikat.
+            if (name === 'workspace_integrations' && value.workspaceId && value.integrationType) {
+              const store = dbState.tables.get('workspace_integrations') as Record<string, unknown>[] | undefined;
+              const existing = store?.find(
+                (r) =>
+                  (r as Record<string, unknown>).workspaceId === value.workspaceId &&
+                  (r as Record<string, unknown>).integrationType === value.integrationType,
+              );
+              if (existing) {
+                const merged = { ...existing, ...value, updatedAt: new Date('2026-01-02T00:00:00.000Z') };
+                const idx = store?.indexOf(existing) ?? -1;
+                if (idx >= 0 && store) store[idx] = merged;
+                rows.push(merged);
+                continue;
+              }
+            }
             const row: Record<string, unknown> = {
               ...value,
               id: `${name}-${dbState.seq++}`,
@@ -249,6 +276,12 @@ vi.mock('../db/index.ts', async () => {
         };
         const makeChain = (values: Record<string, unknown> | Record<string, unknown>[]) => ({
           onConflictDoNothing: () => ({
+            returning: async (fields?: Record<string, unknown>) => project(insertRows(values), fields),
+            then(resolve: (rows: unknown[]) => unknown) {
+              return Promise.resolve(resolve(project(insertRows(values))));
+            },
+          }),
+          onConflictDoUpdate: () => ({
             returning: async (fields?: Record<string, unknown>) => project(insertRows(values), fields),
             then(resolve: (rows: unknown[]) => unknown) {
               return Promise.resolve(resolve(project(insertRows(values))));
@@ -402,6 +435,21 @@ beforeEach(() => {
   registerVapiMock.mockResolvedValue({ vapiPhoneNumberId: 'vapi-number-1', number: '+14155550123' });
   unregisterVapiMock.mockReset();
   unregisterVapiMock.mockResolvedValue(undefined);
+  attachVapiMock.mockReset();
+  attachVapiMock.mockResolvedValue({
+    vapiPhoneNumberId: 'vapi-free-1',
+    number: '+14155550123',
+    provider: 'vapi',
+  });
+  createVapiAssistantMock.mockReset();
+  createVapiAssistantMock.mockResolvedValue({
+    assistantId: 'vapi-assistant-1',
+    name: 'oriole-receptionist-salon-cantik',
+  });
+  updateVapiAssistantMock.mockReset();
+  updateVapiAssistantMock.mockResolvedValue(undefined);
+  deleteVapiAssistantMock.mockReset();
+  deleteVapiAssistantMock.mockResolvedValue(undefined);
 });
 
 describe('buildInboundAssistant — asisten transient inbound', () => {
@@ -440,6 +488,145 @@ describe('buildInboundAssistant — asisten transient inbound', () => {
     const assistant = await lib.buildInboundAssistantForWorkspace(WORKSPACE_ID);
     expect(assistant?.firstMessage).toContain('Terima kasih sudah menghubungi Salon Cantik');
   });
+
+  it('daftar layanan kompak: durasi pendek + harga tanpa simbol, mata uang di header', () => {
+    const assistant = lib.buildInboundAssistant({
+      workspaceName: 'Salon Cantik',
+      language: 'id',
+      services: [{ ...baseService(), staffIds: [] } as never],
+      servicesText: null,
+    });
+    const system = (assistant.model as { messages?: { role: string; content: string }[] }).messages?.[0].content ?? '';
+    expect(system).toContain('LAYANAN YANG TERSEDIA (harga dalam IDR):');
+    expect(system).toContain('- Haircut & Styling (60m, 500)');
+  });
+
+  it('mata uang bercampur → simbol mata uang tetap per baris', () => {
+    const assistant = lib.buildInboundAssistant({
+      workspaceName: 'Salon Cantik',
+      language: 'id',
+      services: [
+        { ...baseService(), staffIds: [] } as never,
+        { ...baseService(), id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Consult', currency: 'USD', staffIds: [] } as never,
+      ],
+      servicesText: null,
+    });
+    const system = (assistant.model as { messages?: { role: string; content: string }[] }).messages?.[0].content ?? '';
+    expect(system).not.toContain('(harga dalam');
+    // Intl currency memakai non-breaking space — cocokkan dengan \\s*.
+    expect(system).toMatch(/- Haircut & Styling \(60m, IDR\s*500\)/);
+  });
+
+  it('KB super-panjang dibatasi agar tidak membebani token tiap turn', () => {
+    const longKb = Array.from({ length: 300 }, (_, i) => `Baris ${i}: ${'x'.repeat(30)}`).join('\n');
+    const assistant = lib.buildInboundAssistant({
+      workspaceName: 'Salon Cantik',
+      language: 'id',
+      services: [{ ...baseService(), staffIds: [] } as never],
+      knowledgeText: longKb,
+    });
+    const system = (assistant.model as { messages?: { role: string; content: string }[] }).messages?.[0].content ?? '';
+    expect(system).toContain('…');
+    expect(system.length).toBeLessThan(longKb.length + 2000);
+  });
+});
+
+describe('provisionInboundAssistantForWorkspace — jalur hibrida', () => {
+  it('inboundAssistantName: slug bersih dengan prefix oriole-receptionist', () => {
+    expect(lib.inboundAssistantName('Salon Cantik')).toBe('oriole-receptionist-salon-cantik');
+    expect(lib.inboundAssistantName('  Klinik Gigi — Pusat  ')).toBe('oriole-receptionist-klinik-gigi-pusat');
+  });
+
+  it('provision pertama: create di Vapi + simpan assistantId di workspace_integrations', async () => {
+    seedTable('workspaces', [baseWorkspace()]);
+    seedTable('services', [baseService()]);
+    seedTable('workspace_integrations', []);
+    createVapiAssistantMock.mockResolvedValue({
+      assistantId: 'vapi-assistant-1',
+      name: 'oriole-receptionist-salon-cantik',
+    });
+
+    const result = await lib.provisionInboundAssistantForWorkspace(WORKSPACE_ID);
+    expect(result).toEqual({
+      assistantId: 'vapi-assistant-1',
+      name: 'oriole-receptionist-salon-cantik',
+      updated: false,
+    });
+    expect(createVapiAssistantMock).toHaveBeenCalledTimes(1);
+    expect(updateVapiAssistantMock).not.toHaveBeenCalled();
+    const rows = dbState.tables.get('workspace_integrations') ?? [];
+    expect(rows).toHaveLength(1);
+    const row = rows[0] as { integrationType: string; providerConfig: { assistantId: string } };
+    expect(row.integrationType).toBe('vapi-assistant');
+    expect(row.providerConfig.assistantId).toBe('vapi-assistant-1');
+  });
+
+  it('provision ulang: update asisten yang sama (bukan duplikat)', async () => {
+    seedTable('workspaces', [baseWorkspace()]);
+    seedTable('services', [baseService()]);
+    seedTable('workspace_integrations', [
+      {
+        id: 'wsint-1',
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'vapi-assistant',
+        identifier: 'vapi-assistant-1',
+        providerConfig: { assistantId: 'vapi-assistant-1', name: 'oriole-receptionist-salon-cantik', provisionedAt: '2026-01-01T00:00:00.000Z' },
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    const result = await lib.provisionInboundAssistantForWorkspace(WORKSPACE_ID);
+    expect(result.updated).toBe(true);
+    expect(updateVapiAssistantMock).toHaveBeenCalledWith(
+      'vapi-assistant-1',
+      expect.objectContaining({ name: 'oriole-receptionist-salon-cantik' }),
+    );
+    expect(createVapiAssistantMock).not.toHaveBeenCalled();
+    // Upsert — tetap satu baris, providerConfig diperbarui.
+    const rows = dbState.tables.get('workspace_integrations') ?? [];
+    expect(rows).toHaveLength(1);
+  });
+
+  it('getInboundAssistantForWorkspace: null bila belum di-provision, id bila ada', async () => {
+    seedTable('workspace_integrations', []);
+    await expect(lib.getInboundAssistantForWorkspace(WORKSPACE_ID)).resolves.toBeNull();
+
+    seedTable('workspace_integrations', [
+      {
+        id: 'wsint-1',
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'vapi-assistant',
+        identifier: 'vapi-assistant-1',
+        providerConfig: { assistantId: 'vapi-assistant-1', name: 'oriole-receptionist-salon-cantik' },
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await expect(lib.getInboundAssistantForWorkspace(WORKSPACE_ID)).resolves.toEqual({
+      assistantId: 'vapi-assistant-1',
+      name: 'oriole-receptionist-salon-cantik',
+    });
+  });
+
+  it('getWorkspaceIdByAssistantId: resolve workspace dari assistantId permanen (Playground)', async () => {
+    seedTable('workspace_integrations', [
+      {
+        id: 'wsint-1',
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'vapi-assistant',
+        identifier: 'vapi-assistant-1',
+        providerConfig: { assistantId: 'vapi-assistant-1', name: 'oriole-receptionist-salon-cantik' },
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await expect(lib.getWorkspaceIdByAssistantId('vapi-assistant-1')).resolves.toBe(WORKSPACE_ID);
+    await expect(lib.getWorkspaceIdByAssistantId('vapi-assistant-999')).resolves.toBeNull();
+  });
 });
 
 describe('resolveInboundWorkspaceId — mapping nomor → workspace', () => {
@@ -472,6 +659,13 @@ describe('registerInboundNumberForWorkspace / unregister', () => {
     expect(number.name).toBe('Cabang Senopati');
     const rows = dbState.tables.get('vapi_inbound_numbers') ?? [];
     expect(rows).toHaveLength(1);
+    // Opt-in Voice AI → event sync asisten terkirim (create=true).
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'vapi/assistant.sync',
+        data: expect.objectContaining({ workspaceId: WORKSPACE_ID, create: true }),
+      }),
+    );
   });
 
   it('unregister: hapus dari Vapi + hapus baris lokal', async () => {
@@ -479,6 +673,47 @@ describe('registerInboundNumberForWorkspace / unregister', () => {
     await lib.unregisterInboundNumberForWorkspace({ workspaceId: WORKSPACE_ID, inboundNumberId: 'inb-1' });
     expect(unregisterVapiMock).toHaveBeenCalledWith('vapi-number-1');
     expect(dbState.tables.get('vapi_inbound_numbers') ?? []).toHaveLength(0);
+  });
+
+  it('unregister nomor TERAKHIR dengan asisten tersimpan → asisten dihapus (tanpa orphan)', async () => {
+    seedTable('vapi_inbound_numbers', [baseInboundNumber()]);
+    seedTable('workspace_integrations', [
+      {
+        id: 'wsint-1',
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'vapi-assistant',
+        identifier: 'vapi-assistant-1',
+        providerConfig: { assistantId: 'vapi-assistant-1', name: 'oriole-receptionist-salon-cantik' },
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await lib.unregisterInboundNumberForWorkspace({ workspaceId: WORKSPACE_ID, inboundNumberId: 'inb-1' });
+    expect(deleteVapiAssistantMock).toHaveBeenCalledWith('vapi-assistant-1');
+    expect(dbState.tables.get('workspace_integrations') ?? []).toHaveLength(0);
+  });
+
+  it('unregister saat masih ada nomor lain → asisten DIPERTAHANKAN', async () => {
+    seedTable('vapi_inbound_numbers', [
+      baseInboundNumber(),
+      baseInboundNumber({ id: 'inb-2', vapiPhoneNumberId: 'vapi-number-2' }),
+    ]);
+    seedTable('workspace_integrations', [
+      {
+        id: 'wsint-1',
+        workspaceId: WORKSPACE_ID,
+        integrationType: 'vapi-assistant',
+        identifier: 'vapi-assistant-1',
+        providerConfig: { assistantId: 'vapi-assistant-1', name: 'x' },
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await lib.unregisterInboundNumberForWorkspace({ workspaceId: WORKSPACE_ID, inboundNumberId: 'inb-1' });
+    expect(deleteVapiAssistantMock).not.toHaveBeenCalled();
+    expect(dbState.tables.get('workspace_integrations') ?? []).toHaveLength(1);
   });
 
   it('unregister nomor asing → InboundNumberNotFoundError', async () => {
@@ -677,5 +912,69 @@ describe('handleInboundToolCall — create_booking', () => {
       arguments: '{}',
     });
     expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/tidak dikenal/i) as never });
+  });
+});
+
+describe('attachInboundNumberForWorkspace — pasang nomor yang sudah ada', () => {
+  it('idempoten: sudah terpasang di workspace ini → kembalikan baris lama', async () => {
+    seedTable('vapi_inbound_numbers', [
+      {
+        id: 'inb-1',
+        userId: 'user-1',
+        workspaceId: WORKSPACE_ID,
+        vapiPhoneNumberId: 'vapi-free-1',
+        number: '+14155550123',
+        name: null,
+        provider: 'vapi',
+        isActive: true,
+        createdAt: now,
+      },
+    ]);
+    const result = await lib.attachInboundNumberForWorkspace({
+      userId: 'user-1',
+      workspaceId: WORKSPACE_ID,
+      vapiPhoneNumberId: 'vapi-free-1',
+    });
+    expect(result.id).toBe('inb-1');
+    expect(attachVapiMock).not.toHaveBeenCalled();
+  });
+
+  it('nomor dipakai workspace lain → InboundNumberInUseError', async () => {
+    seedTable('vapi_inbound_numbers', [
+      {
+        id: 'inb-2',
+        userId: 'user-2',
+        workspaceId: 'ws-2',
+        vapiPhoneNumberId: 'vapi-free-1',
+        number: '+14155550123',
+        name: null,
+        provider: 'vapi',
+        isActive: true,
+        createdAt: now,
+      },
+    ]);
+    await expect(
+      lib.attachInboundNumberForWorkspace({
+        userId: 'user-1',
+        workspaceId: WORKSPACE_ID,
+        vapiPhoneNumberId: 'vapi-free-1',
+      }),
+    ).rejects.toThrow(/workspace lain/);
+  });
+
+  it('baru → set server URL di Vapi + simpan mapping', async () => {
+    const result = await lib.attachInboundNumberForWorkspace({
+      userId: 'user-1',
+      workspaceId: WORKSPACE_ID,
+      vapiPhoneNumberId: 'vapi-free-1',
+      name: 'Line utama',
+    });
+    expect(attachVapiMock).toHaveBeenCalledWith({
+      vapiPhoneNumberId: 'vapi-free-1',
+      name: 'Line utama',
+    });
+    expect(result.vapiPhoneNumberId).toBe('vapi-free-1');
+    expect(result.number).toBe('+14155550123');
+    expect(result.isActive).toBe(true);
   });
 });

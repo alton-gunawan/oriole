@@ -1,10 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { VapiClient } from '@vapi-ai/server-sdk';
-import { workspaceIntegrations, workspaces } from '@oriole/database';
+import { calleCalls, webhookEvents, workspaceIntegrations, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { env } from '../lib/env.ts';
@@ -12,6 +12,8 @@ import { captureIntegrationEvent } from '../lib/analytics.ts';
 import { decryptSecret, encryptSecret } from '../lib/crypto.ts';
 import { connectTelnyxByoc, searchTelnyxByoc, TelnyxByocNumberUnavailableError } from '../lib/telnyx-byoc.ts';
 import {
+  attachInboundNumberForWorkspace,
+  InboundNumberInUseError,
   InboundNumberNotFoundError,
   listInboundNumbers,
   registerInboundNumberForWorkspace,
@@ -19,7 +21,18 @@ import {
 } from '../lib/vapi-inbound.ts';
 import { createTelnyxClient, TelnyxApiError } from '../services/telnyx.ts';
 import { VapiCredentialApiError } from '../services/vapi-credential.ts';
-import { listOperatorVapiPhoneNumbers, type VapiPhoneNumberInfo } from '../services/vapi.ts';
+import {
+  getVapiCallStatus,
+  getVapiPhoneNumber,
+  listOperatorVapiPhoneNumbers,
+  mapEndedReason,
+  placeTestVapiCall,
+  provisionVapiOutboundNumber,
+  releaseVapiPhoneNumber,
+  VapiNotConfiguredError,
+  type VapiPhoneNumberInfo,
+} from '../services/vapi.ts';
+import { resolveOutboundPhoneNumber } from '../lib/place-call.ts';
 import { requireAuth } from '../middleware/auth.ts';
 import { requireWorkspace, type WorkspaceVariables } from '../middleware/workspace.ts';
 import {
@@ -173,6 +186,22 @@ const vapiConnectSchema = z.object({
   vapiPhoneNumberId: z.string().trim().min(1, 'Nomor wajib dipilih'),
 });
 
+/** Provision nomor Vapi baru — area code opsional (US). */
+const vapiProvisionSchema = z.object({
+  countryCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, 'Kode negara harus 2 huruf (ISO 3166-1 alpha-2)')
+    .default('US'),
+  areaCode: z.string().trim().regex(/^[0-9]{1,10}$/, 'Kode area tidak valid').optional().nullable(),
+});
+
+/** Panggilan uji — nomor tujuan E.164-ish (normalisasi sisi server tidak wajib). */
+const vapiTestCallSchema = z.object({
+  phone: z.string().trim().min(6, 'Nomor telepon tidak valid').max(20),
+});
+
 /** BYOC — cari nomor di akun Telnyx milik workspace (key divalidasi, tidak disimpan). */
 const vapiByocSearchSchema = z.object({
   apiKey: z.string().trim().min(10, 'API key Telnyx terlalu pendek').max(300),
@@ -197,14 +226,33 @@ const vapiInboundRegisterSchema = z.object({
   areaCode: z.string().trim().regex(/^[0-9]{1,10}$/, 'Kode area tidak valid').optional().nullable(),
 });
 
+/** Pasang nomor yang sudah ada di akun Vapi (label opsional). */
+const vapiInboundAttachSchema = z.object({
+  vapiPhoneNumberId: z.string().trim().min(1).max(100),
+  name: z.string().trim().max(100).optional().nullable(),
+});
+
 /** Konfigurasi internal integrasi 'vapi' — hanya referensi non-secret. */
 interface VapiIntegrationConfig {
   vapiPhoneNumberId?: string;
   phoneNumber?: string | null;
+  /** Provider Vapi dari nomor (vapi / telnyx / twilio / vonage / byo-phone-number). */
+  provider?: string;
   /** 'byoc' = nomor dari akun Telnyx workspace sendiri; lain/kosong = operator. */
   mode?: 'byoc' | 'operator';
   /** Referensi internal kredensial Telnyx di sisi Vapi (BYOC) — TIDAK di-expose. */
   vapiCredentialId?: string;
+  /**
+   * true = nomor baru diprovision tapi wizard setup belum selesai (belum
+   * dipakai untuk panggilan nyata; resolveOutboundPhoneNumber melewatinya).
+   */
+  provisionPending?: boolean;
+  /**
+   * Snapshot nomor SEBELUM replace (Change number) — disimpan agar cancel
+   * provision bisa mengembalikan konfigurasi lama, dan confirm bisa melepas
+   * nomor lama yang diganti. Hanya selama provisionPending.
+   */
+  previous?: { identifier: string | null; providerConfig: Partial<VapiIntegrationConfig> } | null;
 }
 
 /** Kirim tautan form (Google Forms / Typeform) ke satu customer via channel. */
@@ -389,7 +437,11 @@ function toPublicIntegration(row: IntegrationRow) {
         config: {
           vapiPhoneNumberId: vapiConfig.vapiPhoneNumberId ?? null,
           phoneNumber: vapiConfig.phoneNumber ?? null,
+          provider: vapiConfig.provider ?? null,
           mode: vapiConfig.mode === 'byoc' ? 'byoc' : 'operator',
+          // Nomor baru diprovision tapi wizard belum selesai — UI menampilkan
+          // "resume setup" alih-alih nomor aktif.
+          provisionPending: vapiConfig.provisionPending === true,
         },
       };
     }
@@ -820,6 +872,9 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
             webhookUrl,
             webhookId: webhook.id || null,
             phonePrefill: form.phonePrefill,
+            // Form baru dengan prefill aktif selalu memuat hidden field
+            // orioleChatId → konfirmasi ke chat asal bisa jalan.
+            chatToken: form.phonePrefill,
             serviceDropdown: form.serviceDropdown,
           },
         });
@@ -906,6 +961,10 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
             webhookUrl,
             webhookId: webhook.id || null,
             phonePrefill,
+            // connect tanpa updateContent = form lama yang tidak di-PATCH →
+            // asumsi TIDAK punya token chat (ensureTallyFormEnhanced yang
+            // memperbaikinya saat tautan dikirim).
+            chatToken: phonePrefill,
             serviceDropdown,
           },
         });
@@ -1028,6 +1087,9 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           providerConfig: {
             ...config,
             phonePrefill: updated.phonePrefill,
+            // Form hasil PATCH dengan prefill aktif memuat token chat →
+            // konfirmasi ke chat asal bisa jalan.
+            chatToken: updated.phonePrefill,
             serviceDropdown: updated.serviceDropdown,
             // Stamp keberhasilan — auto-sync UI berhenti mengejar form ini.
             contentSyncAttemptedAt: new Date().toISOString(),
@@ -1687,7 +1749,11 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         workspaceId,
         integrationType: 'vapi',
         identifier: selected.number ?? selected.name ?? 'Vapi',
-        providerConfig: { vapiPhoneNumberId, phoneNumber: selected.number ?? null },
+        providerConfig: {
+          vapiPhoneNumberId,
+          phoneNumber: selected.number ?? null,
+          provider: selected.provider,
+        },
       });
       return c.json({ integration }, 201);
     },
@@ -1701,6 +1767,334 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       if (err instanceof IntegrationNotFoundError) return c.json({ error: err.message }, 404);
       throw err;
     }
+  })
+
+  /* ══════════════════════════════════════════════════════════
+   * Voice AI — wizard phone number (Vapi number)
+   * Provision nomor Vapi baru → konfirmasi (aktif) / batalkan (release).
+   * Nomor yang diprovision TIDAK dipakai untuk panggilan nyata sampai
+   * dikonfirmasi (resolveOutboundPhoneNumber melewati provisionPending).
+   * ══════════════════════════════════════════════════════════ */
+
+  /* ── Provision: beli nomor Vapi baru (mode operator) ── */
+  .post(
+    '/vapi/provision',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', vapiProvisionSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      if (!env.VAPI_API_KEY) {
+        return c.json(
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
+          503,
+        );
+      }
+      const { areaCode } = c.req.valid('json');
+
+      // Snapshot nomor lama (Change number) sebelum ditimpa upsert — dipakai
+      // cancel (pulihkan) & confirm (lepas nomor lama).
+      const [existing] = await db
+        .select()
+        .from(workspaceIntegrations)
+        .where(
+          and(
+            eq(workspaceIntegrations.workspaceId, workspaceId),
+            eq(workspaceIntegrations.integrationType, 'vapi'),
+          ),
+        )
+        .limit(1);
+      const previous =
+        existing && existing.providerConfig
+          ? {
+              identifier: existing.identifier,
+              providerConfig: existing.providerConfig as Partial<VapiIntegrationConfig>,
+            }
+          : null;
+
+      // Provision baru saat ada pending lama (refresh wizard / batal lalu
+      // mulai lagi) — nomor pending lama dilepas agar tidak menganggur.
+      const stalePending =
+        previous?.providerConfig.provisionPending === true
+          ? previous.providerConfig.vapiPhoneNumberId
+          : null;
+
+      try {
+        const provisioned = await provisionVapiOutboundNumber({
+          name: `oriole-outbound-${workspaceId}`,
+          areaCode: areaCode ?? undefined,
+        });
+        if (stalePending) {
+          try {
+            await releaseVapiPhoneNumber(stalePending);
+          } catch (err) {
+            console.warn('[integrations] lepas nomor pending lama gagal (dilanjutkan):', err);
+          }
+        }
+        const integration = await upsertIntegration({
+          workspaceId,
+          integrationType: 'vapi',
+          identifier: provisioned.number ?? 'Vapi',
+          providerConfig: {
+            mode: 'operator',
+            provider: provisioned.provider,
+            vapiPhoneNumberId: provisioned.vapiPhoneNumberId,
+            phoneNumber: provisioned.number ?? null,
+            provisionPending: true,
+            ...(previous ? { previous } : {}),
+          },
+        });
+        return c.json(
+          {
+            integration,
+            vapiPhoneNumberId: provisioned.vapiPhoneNumberId,
+            number: provisioned.number,
+            provider: provisioned.provider,
+          },
+          201,
+        );
+      } catch (err) {
+        console.error('[integrations] provision vapi gagal:', err);
+        // `detail` memuat alasan asli dari Vapi (mis. kredit habis) —
+        // frontend (extractErrorMessage) menampilkannya, bukan pesan generik.
+        const detail = err instanceof Error ? err.message : undefined;
+        return c.json(
+          {
+            error: 'Gagal menyiapkan nomor di Vapi. Coba lagi.',
+            ...(detail ? { detail } : {}),
+          },
+          502,
+        );
+      }
+    },
+  )
+  /* ── Konfirmasi: nomor provision menjadi aktif (clear pending + lepas
+        nomor lama bila replace). ── */
+  .post('/vapi/confirm', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const [row] = await db
+      .select()
+      .from(workspaceIntegrations)
+      .where(
+        and(
+          eq(workspaceIntegrations.workspaceId, workspaceId),
+          eq(workspaceIntegrations.integrationType, 'vapi'),
+        ),
+      )
+      .limit(1);
+    if (!row) return c.json({ error: 'Tidak ada nomor yang sedang disiapkan.' }, 409);
+    const config = row.providerConfig as Partial<VapiIntegrationConfig>;
+    if (config.provisionPending !== true) {
+      return c.json({ integration: toPublicIntegration(row) });
+    }
+
+    const previous = config.previous;
+    const oldNumberId =
+      previous?.providerConfig.vapiPhoneNumberId &&
+      previous.providerConfig.vapiPhoneNumberId !== env.VAPI_PHONE_NUMBER_ID
+        ? previous.providerConfig.vapiPhoneNumberId
+        : null;
+    if (oldNumberId) {
+      try {
+        await releaseVapiPhoneNumber(oldNumberId);
+      } catch (err) {
+        console.warn('[integrations] lepas nomor lama gagal (dilanjutkan):', err);
+      }
+    }
+
+    const { previous: _dropped, ...rest } = config;
+    const [updated] = await db
+      .update(workspaceIntegrations)
+      .set({
+        providerConfig: { ...rest, provisionPending: false },
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceIntegrations.id, row.id))
+      .returning();
+    return c.json({ integration: toPublicIntegration(updated) });
+  })
+  /* ── Batalkan: lepas nomor provision baru + pulihkan nomor lama (bila ada) ── */
+  .post('/vapi/cancel-provision', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const [row] = await db
+      .select()
+      .from(workspaceIntegrations)
+      .where(
+        and(
+          eq(workspaceIntegrations.workspaceId, workspaceId),
+          eq(workspaceIntegrations.integrationType, 'vapi'),
+        ),
+      )
+      .limit(1);
+    if (!row) return c.json({ ok: true });
+    const config = row.providerConfig as Partial<VapiIntegrationConfig>;
+    if (config.provisionPending !== true) return c.json({ ok: true });
+
+    const newNumberId = config.vapiPhoneNumberId;
+    if (newNumberId) {
+      try {
+        await releaseVapiPhoneNumber(newNumberId);
+      } catch (err) {
+        console.warn('[integrations] lepas nomor provision gagal (dilanjutkan):', err);
+      }
+    }
+    const previous = config.previous;
+    if (previous) {
+      await db
+        .update(workspaceIntegrations)
+        .set({
+          identifier: previous.identifier,
+          providerConfig: previous.providerConfig,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspaceIntegrations.id, row.id))
+        .returning({ id: workspaceIntegrations.id });
+    } else {
+      await db.delete(workspaceIntegrations).where(eq(workspaceIntegrations.id, row.id));
+    }
+    return c.json({ ok: true });
+  })
+
+  /* ── Panggilan uji (test call) — verifikasi nomor keluar nyata ── */
+  .post(
+    '/vapi/test-call',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', vapiTestCallSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      const { phone } = c.req.valid('json');
+      if (!env.VAPI_API_KEY) {
+        return c.json(
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
+          503,
+        );
+      }
+      const phoneNumberId = await resolveOutboundPhoneNumber(db, workspaceId);
+      if (!phoneNumberId) {
+        return c.json(
+          { error: 'Tidak ada nomor keluar yang dikonfigurasi untuk workspace ini.' },
+          400,
+        );
+      }
+      const [workspace] = await db
+        .select({
+          name: workspaces.name,
+          callAssistantName: workspaces.callAssistantName,
+          callGoalLanguage: workspaces.callGoalLanguage,
+          callVoiceId: workspaces.callVoiceId,
+        })
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+        .limit(1);
+      if (!workspace) return c.json({ error: 'Workspace tidak ditemukan.' }, 404);
+      try {
+        const call = await placeTestVapiCall({
+          phone,
+          phoneNumberId,
+          language: workspace.callGoalLanguage === 'id' ? 'id' : 'en',
+          assistantName: workspace.callAssistantName,
+          businessName: workspace.name,
+          voiceId: workspace.callVoiceId,
+        });
+        return c.json({ callId: call.id, status: call.status }, 201);
+      } catch (err) {
+        if (err instanceof VapiNotConfiguredError) {
+          return c.json(
+            { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
+            503,
+          );
+        }
+        console.error('[integrations] test call gagal:', err);
+        return c.json(
+          { error: 'Gagal memulai panggilan uji. Periksa konfigurasi provider Anda dan coba lagi.' },
+          502,
+        );
+      }
+    },
+  )
+  /* ── Status panggilan uji — polling UI (langsung dari Vapi) ── */
+  .get('/vapi/test-call/:callId', requireAuth, requireWorkspace, async (c) => {
+    try {
+      const info = await getVapiCallStatus(c.req.param('callId'));
+      return c.json({
+        ...info,
+        outcome: mapEndedReason(info.endedReason) ?? null,
+      });
+    } catch (err) {
+      if (err instanceof VapiNotConfiguredError) {
+        return c.json(
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
+          503,
+        );
+      }
+      console.error('[integrations] status test call gagal:', err);
+      return c.json({ error: 'Gagal memuat status panggilan uji. Coba lagi.' }, 502);
+    }
+  })
+
+  /* ── Health check nomor — dipakai card "Phone health" ── */
+  .get('/vapi/health', requireAuth, requireWorkspace, async (c) => {
+    const workspaceId = c.get('workspaceId');
+    const [row] = await db
+      .select()
+      .from(workspaceIntegrations)
+      .where(
+        and(
+          eq(workspaceIntegrations.workspaceId, workspaceId),
+          eq(workspaceIntegrations.integrationType, 'vapi'),
+        ),
+      )
+      .limit(1);
+    const config = row?.providerConfig as Partial<VapiIntegrationConfig> | null;
+    const vapiPhoneNumberId = config?.vapiPhoneNumberId ?? env.VAPI_PHONE_NUMBER_ID ?? null;
+
+    let numberActive = false;
+    let numberInfo: { number: string | null; provider: string } | null = null;
+    if (env.VAPI_API_KEY && vapiPhoneNumberId && config?.provisionPending !== true) {
+      const info = await getVapiPhoneNumber(vapiPhoneNumberId);
+      numberActive = info !== null;
+      numberInfo = info ? { number: info.number, provider: info.provider } : null;
+    }
+
+    const [workspace] = await db
+      .select({ callAssistantName: workspaces.callAssistantName })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    const assistantAssigned = Boolean(workspace?.callAssistantName?.trim());
+
+    const [lastWebhook] = await db
+      .select({ createdAt: webhookEvents.createdAt })
+      .from(webhookEvents)
+      .where(eq(webhookEvents.provider, 'vapi'))
+      .orderBy(desc(webhookEvents.createdAt))
+      .limit(1);
+    const [lastCall] = await db
+      .select({ createdAt: calleCalls.createdAt, status: calleCalls.status })
+      .from(calleCalls)
+      .where(
+        and(
+          eq(calleCalls.workspaceId, workspaceId),
+          eq(calleCalls.status, 'completed'),
+        ),
+      )
+      .orderBy(desc(calleCalls.updatedAt))
+      .limit(1);
+
+    return c.json({
+      checkedAt: new Date().toISOString(),
+      configured: Boolean(env.VAPI_API_KEY && vapiPhoneNumberId),
+      vapiPhoneNumberId,
+      numberActive,
+      number: numberInfo?.number ?? null,
+      provider: numberInfo?.provider ?? null,
+      assistantAssigned,
+      outboundReady: Boolean(env.VAPI_API_KEY && vapiPhoneNumberId) && numberActive,
+      webhookConfigured: Boolean(env.VAPI_WEBHOOK_SECRET),
+      lastWebhookAt: lastWebhook?.createdAt.toISOString() ?? null,
+      lastSuccessfulCallAt: lastCall?.createdAt.toISOString() ?? null,
+    });
   })
 
   /* ══════════════════════════════════════════════════════════
@@ -1778,6 +2172,15 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
         .limit(1);
       const existingConfig = row?.providerConfig as Partial<VapiIntegrationConfig> | null;
       const existingCredentialId = existingConfig?.vapiCredentialId ?? null;
+      // Nomor lama yang akan diganti (Change number via BYOC) — dilepas setelah
+      // connect sukses bila itu nomor operator (bukan BYOC & bukan default).
+      const replacedOperatorNumber =
+        existingConfig?.mode !== 'byoc' &&
+        existingConfig?.provisionPending !== true &&
+        existingConfig?.vapiPhoneNumberId &&
+        existingConfig.vapiPhoneNumberId !== env.VAPI_PHONE_NUMBER_ID
+          ? existingConfig.vapiPhoneNumberId
+          : null;
 
       try {
         const result = await connectTelnyxByoc({
@@ -1794,11 +2197,19 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           identifier: result.telnyxNumber,
           providerConfig: {
             mode: 'byoc',
+            provider: 'telnyx',
             vapiPhoneNumberId: result.vapiPhoneNumberId,
             vapiCredentialId: result.vapiCredentialId,
             phoneNumber: result.telnyxNumber,
           },
         });
+        if (replacedOperatorNumber && replacedOperatorNumber !== result.vapiPhoneNumberId) {
+          try {
+            await releaseVapiPhoneNumber(replacedOperatorNumber);
+          } catch (err) {
+            console.warn('[integrations] lepas nomor lama (BYOC replace) gagal (dilanjutkan):', err);
+          }
+        }
         return c.json(
           { integration, purchased: result.purchased, registered: result.registered },
           201,
@@ -1866,6 +2277,58 @@ export const integrationsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       } catch (err) {
         console.error('[integrations] register inbound gagal:', err);
         return c.json({ error: 'Gagal mendaftarkan nomor inbound di Vapi. Coba lagi.' }, 502);
+      }
+    },
+  )
+  /* ── Pasang nomor yang SUDAH ada di akun Vapi (mis. nomor gratis) ──
+        sebagai nomor inbound — tanpa membeli nomor baru. Hanya nomor
+        OPERATOR akun (bukan BYOC workspace lain) yang boleh dipasang. */
+  .post(
+    '/vapi/inbound/attach',
+    requireAuth,
+    requireWorkspace,
+    zValidator('json', vapiInboundAttachSchema),
+    async (c) => {
+      const workspaceId = c.get('workspaceId');
+      if (!env.VAPI_API_KEY) {
+        return c.json(
+          { error: 'VAPI_API_KEY belum dikonfigurasi di server — Voice AI dinonaktifkan. Hubungi administrator.' },
+          503,
+        );
+      }
+      const { vapiPhoneNumberId, name } = c.req.valid('json');
+      let numbers: VapiPhoneNumberInfo[];
+      try {
+        numbers = await listOperatorVapiPhoneNumbers();
+      } catch (err) {
+        console.error('[integrations] list vapi numbers gagal:', err);
+        return c.json({ error: 'Gagal memuat daftar nomor dari Vapi. Coba lagi.' }, 502);
+      }
+      const selected = numbers.find((n) => n.id === vapiPhoneNumberId);
+      if (!selected) {
+        return c.json({ error: 'Nomor tidak ditemukan di akun Vapi server.' }, 400);
+      }
+      try {
+        const number = await attachInboundNumberForWorkspace({
+          userId: c.get('userId') ?? null,
+          workspaceId,
+          vapiPhoneNumberId,
+          name,
+        });
+        return c.json({ number }, 201);
+      } catch (err) {
+        if (err instanceof InboundNumberInUseError) {
+          return c.json({ error: err.message }, 409);
+        }
+        console.error('[integrations] attach inbound gagal:', err);
+        const detail = err instanceof Error ? err.message : undefined;
+        return c.json(
+          {
+            error: 'Gagal memasang nomor inbound di Vapi. Coba lagi.',
+            ...(detail ? { detail } : {}),
+          },
+          502,
+        );
       }
     },
   )

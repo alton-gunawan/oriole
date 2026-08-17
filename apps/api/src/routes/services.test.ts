@@ -453,6 +453,36 @@ describe('POST /api/services', () => {
     expect(body2.service.category).toEqual(['Paket', 'Perawatan']);
   });
 
+  it('kategori legacy JSON string ("[\"a\",\"b\"]") → dipecah jadi beberapa kategori', async () => {
+    const res = await req('/api/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Perawatan Rambut',
+        category: '["perawatan","rambut"]',
+        staffIds: [],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.service.category).toEqual(['perawatan', 'rambut']);
+  });
+
+  it('kategori legacy literal array PG ("{a,b}") → dipecah jadi beberapa kategori', async () => {
+    const res = await req('/api/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Perawatan Rambut 2',
+        category: '{perawatan,rambut}',
+        staffIds: [],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.service.category).toEqual(['perawatan', 'rambut']);
+  });
+
   it('kategori semua kosong/duplikat → null (tidak disimpan)', async () => {
     const res = await req('/api/services', {
       method: 'POST',

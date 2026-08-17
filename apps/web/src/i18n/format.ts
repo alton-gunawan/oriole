@@ -19,6 +19,19 @@ export function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
+/** Tanggal + jam tanpa tahun — dipakai detail panggilan (mis. "Aug 18 · 10:03 AM"). */
+export function formatShortDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(activeLocale(), {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /** Tanggal panjang — dipakai untuk detail (mis. periode berlangganan). */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';

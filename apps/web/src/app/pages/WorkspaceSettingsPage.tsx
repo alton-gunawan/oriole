@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { INDUSTRIES } from '@oriole/call-goals';
 import {
   Badge,
@@ -38,7 +38,7 @@ import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { IconCheck, IconChevronDown, IconEdit, IconPlus, IconSettings, IconTrash, IconX } from '../shell/icons';
 import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
 
-/** Pilihan kategori — dipakai form buat & edit project. Industri CALL-E mengikuti kategori otomatis. */
+/** Pilihan kategori — dipakai form buat & edit bisnis. Industri CALL-E mengikuti kategori otomatis. */
 function CategoryPicker({
   value,
   onChange,
@@ -83,7 +83,7 @@ function CategoryPicker({
 }
 
 /**
- * Dropdown industri bisnis — dipakai dialog edit project. Opsi dari
+ * Dropdown industri bisnis — dipakai dialog edit bisnis. Opsi dari
  * INDUSTRIES (@oriole/call-goals), label terjemahan via industryKey.
  */
 function IndustryDropdown({
@@ -139,11 +139,24 @@ function IndustryDropdown({
 export function WorkspaceSettingsPage() {
   const { t } = useTranslation();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   const removeWorkspace = useWorkspaceStore((state) => state.removeWorkspace);
 
-  // ── Form buat project ─────────────────────────────────────
+  // Bisnis yang sedang aktif (current) selalu tampil sebagai kartu PERTAMA
+  // dan ditandai badge "Current" — legend status di bagian Bisnis.
+  const orderedWorkspaces = useMemo(
+    () =>
+      [...workspaces].sort((a, b) => {
+        if (a.id === activeWorkspaceId) return -1;
+        if (b.id === activeWorkspaceId) return 1;
+        return 0;
+      }),
+    [workspaces, activeWorkspaceId],
+  );
+
+  // ── Form buat bisnis ─────────────────────────────────────
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
@@ -152,7 +165,7 @@ export function WorkspaceSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  // ── Form edit project (Dialog) ────────────────────────────
+  // ── Form edit bisnis (Dialog) ────────────────────────────
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
@@ -162,7 +175,7 @@ export function WorkspaceSettingsPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ── Hapus project (konfirmasi AlertDialog) ────────────────
+  // ── Hapus bisnis (konfirmasi AlertDialog) ────────────────
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -188,7 +201,7 @@ export function WorkspaceSettingsPage() {
       setCreateInfo(EMPTY_BUSINESS_INFO);
       setIsAdding(false);
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.createProject'));
+      setError(errorMessage(err, t, 'errors.createBusiness'));
     } finally {
       setIsCreating(false);
     }
@@ -229,10 +242,9 @@ export function WorkspaceSettingsPage() {
         method: 'PATCH',
         body: JSON.stringify({
           name: editName,
+          // Kategori (template) tidak diubah di dialog edit — hanya dipilih
+          // saat create. Industri dikirim eksplisit dari dropdown.
           templateCategory: editCategory,
-          // Industri dikirim eksplisit — user bisa override dari dropdown,
-          // dan saat kategori diganti, dropdown otomatis di-reset ke default
-          // kategori (lihat CategoryPicker onChange).
           industry: editIndustry,
           ...(avatarChanged ? { avatarUrl: editAvatar } : {}),
           // Info bisnis detail — form edit adalah sumber kebenaran field ini
@@ -243,7 +255,7 @@ export function WorkspaceSettingsPage() {
       updateWorkspace(response.workspace);
       setEditingId(null);
     } catch (err) {
-      setEditError(errorMessage(err, t, 'errors.saveProject'));
+      setEditError(errorMessage(err, t, 'errors.saveBusiness'));
     } finally {
       setIsSaving(false);
     }
@@ -258,7 +270,7 @@ export function WorkspaceSettingsPage() {
       setConfirmDeleteId(null);
     } catch (err) {
       setConfirmDeleteId(null);
-      setDeleteError(errorMessage(err, t, 'errors.deleteProject'));
+      setDeleteError(errorMessage(err, t, 'errors.deleteBusiness'));
     } finally {
       setIsDeleting(false);
     }
@@ -297,10 +309,10 @@ export function WorkspaceSettingsPage() {
         <button
           type="button"
           onClick={openAddForm}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
         >
           <IconPlus className="size-4" />
-          {t('ws.addProject')}
+          {t('ws.addBusiness')}
         </button>
       </PageHeader>
 
@@ -325,10 +337,10 @@ export function WorkspaceSettingsPage() {
             <LayoutContent>
               <form id="create-workspace-form" onSubmit={createWorkspace} className="space-y-5">
                 <TextInput
-                  label={t('ws.projectName')}
+                  label={t('ws.businessName')}
                   value={name}
                   onChange={setName}
-                  placeholder={t('ws.projectPlaceholder')}
+                  placeholder={t('ws.businessPlaceholder')}
                   width="100%"
                 />
                 <AvatarPicker key="create-workspace-avatar" value={avatar} onChange={setAvatar} name={name || '?'} />
@@ -343,7 +355,7 @@ export function WorkspaceSettingsPage() {
               <div className="flex justify-end gap-2">
                 <Button label={t('common.cancel')} variant="ghost" onClick={closeAddForm} isDisabled={isCreating} />
                 <Button
-                  label={t('ws.createProject')}
+                  label={t('ws.createBusiness')}
                   variant="primary"
                   isLoading={isCreating}
                   isDisabled={isCreating || name.trim().length < 2}
@@ -367,8 +379,8 @@ export function WorkspaceSettingsPage() {
             <LayoutHeader hasDivider>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('ws.editProject')}</h2>
-                  <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{t('ws.editProjectDesc')}</p>
+                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('ws.editBusiness')}</h2>
+                  <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{t('ws.editBusinessDesc')}</p>
                 </div>
                 <IconButton
                   label={t('common.close')}
@@ -383,27 +395,18 @@ export function WorkspaceSettingsPage() {
             <LayoutContent>
               <form id="edit-workspace-form" onSubmit={saveWorkspace} className="space-y-5">
                 <TextInput
-                  label={t('ws.projectName')}
+                  label={t('ws.businessName')}
                   value={editName}
                   onChange={setEditName}
                   width="100%"
                 />
-                {/* key=editingId → remount per project agar state picker ikut project. */}
+                {/* key=editingId → remount per bisnis agar state picker ikut bisnis. */}
                 <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
                 <div>
                   <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('ws.industry')}</p>
                   <p className="mt-1 mb-2 text-xs text-zinc-500 dark:text-zinc-400">{t('ws.industryDesc')}</p>
                   <IndustryDropdown value={editIndustry} onChange={setEditIndustry} />
                 </div>
-                <CategoryPicker
-                  value={editCategory}
-                  onChange={(categoryId) => {
-                    setEditCategory(categoryId);
-                    // Industri mengikuti kategori baru (konsisten dengan API).
-                    setEditIndustry(defaultIndustryForCategory(categoryId));
-                  }}
-                  name="edit-workspace-category"
-                />
                 <BusinessInfoForm value={editInfo} onChange={setEditInfo} />
               </form>
             </LayoutContent>
@@ -430,8 +433,17 @@ export function WorkspaceSettingsPage() {
       </Dialog>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {workspaces.map((workspace) => (
-          <Card key={workspace.id} className="p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+        {orderedWorkspaces.map((workspace) => (
+          <Card
+            key={workspace.id}
+            className={`p-5 transition hover:-translate-y-0.5 hover:shadow-md ${
+              // Legend: kartu bisnis yang sedang aktif diberi border amber di
+              // pinggir agar langsung terlihat mana yang sedang dipakai.
+              workspace.id === activeWorkspaceId
+                ? 'border-amber-400 ring-2 ring-amber-500/30'
+                : ''
+            }`}
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <WorkspaceAvatar workspace={workspace} size={44} radiusClass="rounded-xl" />
@@ -441,7 +453,12 @@ export function WorkspaceSettingsPage() {
                   <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {t(industryKey(workspace.industry))}</p>
                 </div>
               </div>
-              <Badge variant="success" label={t('ws.ready')} />
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                {workspace.id === activeWorkspaceId && (
+                  <Badge variant="warning" label={t('ws.current')} />
+                )}
+                <Badge variant="success" label={t('ws.ready')} />
+              </div>
             </div>
 
             <p className="mt-5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -470,7 +487,7 @@ export function WorkspaceSettingsPage() {
         ))}
       </div>
 
-      {/* Konfirmasi hapus project — menutup saat klik di luar dialog. */}
+      {/* Konfirmasi hapus bisnis — menutup saat klik di luar dialog. */}
       <ConfirmDialog
         isOpen={confirmDeleteId !== null}
         onOpenChange={(open) => {

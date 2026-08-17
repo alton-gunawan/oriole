@@ -1,5 +1,5 @@
 /**
- * Komponen kustom untuk header & event bar @ilamy/calendar di BookingsPage.
+ * Komponen kustom untuk header & event bar @ilamy/calendar di CalendarPage.
  *
  * Header menggunakan `useIlamyCalendarContext()` untuk mendapatkan state
  * (prev/next/today, view, setView) dan merender tombol bergaya Astryx.

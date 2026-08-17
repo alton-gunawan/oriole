@@ -2,7 +2,7 @@
  * BookingRecord → IlamyCalendar CalendarEvent mapping.
  *
  * Pure function (tanpa React/hook) supaya bisa diuji unit di node env.
- * Dipakai di BookingsPage untuk menampilkan booking di view kalender.
+ * Dipakai di CalendarPage untuk menampilkan booking di kalender.
  */
 import type { CalendarEvent } from '@ilamy/calendar';
 import { dayjs } from './dayjs-setup';

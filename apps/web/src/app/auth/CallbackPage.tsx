@@ -66,10 +66,10 @@ export function CallbackPage() {
         store.setUser(user?.id ? { id: user.id, email: user.email, name: user.name } : null);
         // Retry singkat: /me yang gagal sesaat (cold-start, jaringan) tidak
         // boleh membuat workspace terlihat kosong → user malah disuruh bikin
-        // project lagi. Bila SEMUA percobaan gagal, store sengaja dibiarkan
+        // bisnis lagi. Bila SEMUA percobaan gagal, store sengaja dibiarkan
         // BELUM terinisialisasi: RequireAuth tidak akan me-redirect ke
-        // onboarding (mencegah pembuatan project duplikat), shell menampilkan
-        // state kosong, dan reload berikutnya memulihkan daftar project.
+        // onboarding (mencegah pembuatan bisnis duplikat), shell menampilkan
+        // state kosong, dan reload berikutnya memulihkan daftar bisnis.
         let me: { workspaces: Workspace[]; name?: string | null; language?: string | null; timezone?: string | null } | null = null;
         for (let attempt = 0; attempt < 3 && !me; attempt += 1) {
           if (attempt > 0) {

@@ -58,6 +58,14 @@ export interface TallyConfig {
    */
   phonePrefill?: boolean;
   /**
+   * Form memuat hidden field `orioleChatId` (token chat asal) → konfirmasi
+   * otomatis bisa dikirim ke chat Telegram asal form. Form BARU dengan prefill
+   * aktif selalu memuatnya; form LAMA (dibuat sebelum fitur ini) punya
+   * `phonePrefill: true` TANPA flag ini → di-PATCH ulang oleh
+   * ensureTallyFormEnhanced agar URL `?orioleChatId=` berfungsi.
+   */
+  chatToken?: boolean;
+  /**
    * Pertanyaan layanan memakai DROPDOWN berisi layanan dari katalog
    * workspace (bukan teks bebas). Snapshot saat generate/update — sinkronkan
    * ulang via POST /integrations/tally/update-content saat layanan berubah.
@@ -793,10 +801,13 @@ export async function ensureTallyFormEnhanced(workspaceId: string): Promise<bool
     .limit(1);
   if (!integration) return false;
   const config = integration.providerConfig as unknown as TallyConfig;
-  // Kondisi kritis: prefill aktif = hidden field `phone`/`name`/`orioleChatId`
-  // + default answer sudah di form → konfirmasi otomatis bisa jalan. Dropdown
-  // layanan menyusul via tombol sync (tanpa layanan di katalog memang false).
-  if (config.phonePrefill === true) return true;
+  // Kondisi kritis: prefill aktif DAN form memuat token chat `orioleChatId` →
+  // konfirmasi otomatis ke chat asal bisa jalan. Form lama (dibuat sebelum
+  // fitur token chat) punya phonePrefill=true tapi TANPA orioleChatId — flag
+  // `chatToken` membedakannya; tanpa token, form di-PATCH ulang di bawah
+  // (throttle 1 jam). Dropdown layanan menyusul via tombol sync (tanpa
+  // layanan di katalog memang false).
+  if (config.phonePrefill === true && config.chatToken === true) return true;
   // Throttle 1 jam: saat Tally menolak payload, jangan menekan API tiap kali
   // tautan form dikirim ke customer.
   const lastAttempt = config.contentSyncAttemptedAt ? Date.parse(config.contentSyncAttemptedAt) : 0;
@@ -835,6 +846,9 @@ export async function ensureTallyFormEnhanced(workspaceId: string): Promise<bool
     });
     await stamp({
       phonePrefill: updated.phonePrefill,
+      // Form hasil PATCH dengan prefill aktif selalu memuat hidden field
+      // orioleChatId → konfirmasi ke chat asal bisa jalan.
+      chatToken: updated.phonePrefill,
       serviceDropdown: updated.serviceDropdown,
       contentSyncAttemptedAt: new Date().toISOString(),
       lastContentSyncError: null,

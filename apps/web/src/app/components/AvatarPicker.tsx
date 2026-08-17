@@ -71,15 +71,15 @@ function fileToSquareDataUrl(file: File): Promise<string> {
 }
 
 interface AvatarPickerProps {
-  /** Nilai avatar saat ini; null = planet otomatis dari nama project. */
+  /** Nilai avatar saat ini; null = planet otomatis dari nama bisnis. */
   value: string | null;
   onChange: (value: string | null) => void;
-  /** Nama project — seed fallback untuk preview planet otomatis. */
+  /** Nama bisnis — seed fallback untuk preview planet otomatis. */
   name: string;
 }
 
 /**
- * Pilih avatar project: (1) planet DiceBear — grid 8 opsi + shuffle, atau
+ * Pilih avatar bisnis: (1) planet DiceBear — grid 8 opsi + shuffle, atau
  * (2) upload gambar sendiri — di-crop 1:1 dan di-compress client-side.
  * Output `value` berupa URL DiceBear, data URL gambar, atau null (default).
  */

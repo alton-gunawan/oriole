@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { composeCallGoal } from './compose.ts';
+import { composeCallGoal, formatKnowledge } from './compose.ts';
 import { determineCallGoal } from './determine-call-goal.ts';
 import type { BookingGoalContext } from './types.ts';
 
@@ -57,6 +57,33 @@ describe('composeCallGoal', () => {
     });
     expect(config!.prompt).toContain('Extra instruction from the business:');
     expect(config!.prompt).toContain('20% first-visit discount');
+  });
+
+  it('knowledge base disisipkan ke prompt (dan tidak muncul bila kosong)', () => {
+    const withKb = composeCallGoal({
+      booking: BASE,
+      business: {
+        ...BUSINESS,
+        knowledge: {
+          services: 'Teeth whitening 500k, Cleaning 250k',
+          hours: 'Mon–Sat 09.00–18.00',
+          faq: [{ q: 'Do you accept insurance?', a: 'Yes.' }],
+        },
+      },
+    })!;
+    expect(withKb.prompt).toContain('Business information you can use');
+    expect(withKb.prompt).toContain('Teeth whitening 500k');
+    expect(withKb.prompt).toContain('Mon–Sat 09.00–18.00');
+    expect(withKb.prompt).toContain('Do you accept insurance?');
+
+    const withoutKb = composeCallGoal({ booking: BASE, business: BUSINESS })!;
+    expect(withoutKb.prompt).not.toContain('Business information you can use');
+  });
+
+  it('formatKnowledge: mengabaikan field kosong dan FAQ kosong', () => {
+    expect(formatKnowledge({ services: '  ', description: 'X' })).toContain('About the business: X');
+    expect(formatKnowledge({ services: '  ' })).not.toContain('Services');
+    expect(formatKnowledge(null)).toBe('');
   });
 
   it('null saat tidak perlu panggilan (dibatalkan)', () => {

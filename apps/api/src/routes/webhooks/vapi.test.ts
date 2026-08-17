@@ -27,16 +27,22 @@ const {
   resolveInboundWorkspaceIdMock,
   buildInboundAssistantMock,
   handleInboundToolCallMock,
+  getInboundAssistantForWorkspaceMock,
+  getWorkspaceIdByAssistantIdMock,
 } = vi.hoisted(() => ({
   resolveInboundWorkspaceIdMock: vi.fn(),
   buildInboundAssistantMock: vi.fn(),
   handleInboundToolCallMock: vi.fn(),
+  getInboundAssistantForWorkspaceMock: vi.fn(),
+  getWorkspaceIdByAssistantIdMock: vi.fn(),
 }));
 
 vi.mock('../../lib/vapi-inbound.ts', () => ({
   resolveInboundWorkspaceId: resolveInboundWorkspaceIdMock,
   buildInboundAssistantForWorkspace: buildInboundAssistantMock,
   handleInboundToolCall: handleInboundToolCallMock,
+  getInboundAssistantForWorkspace: getInboundAssistantForWorkspaceMock,
+  getWorkspaceIdByAssistantId: getWorkspaceIdByAssistantIdMock,
 }));
 
 const WEBHOOK_SECRET = 'test-vapi-webhook-secret';
@@ -77,7 +83,11 @@ beforeEach(() => {
   resolveInboundWorkspaceIdMock.mockReset();
   buildInboundAssistantMock.mockReset();
   handleInboundToolCallMock.mockReset();
+  getInboundAssistantForWorkspaceMock.mockReset();
+  getWorkspaceIdByAssistantIdMock.mockReset();
   resolveInboundWorkspaceIdMock.mockResolvedValue('ws-1');
+  getInboundAssistantForWorkspaceMock.mockResolvedValue(null);
+  getWorkspaceIdByAssistantIdMock.mockResolvedValue(null);
   buildInboundAssistantMock.mockResolvedValue({
     name: 'oriole-inbound-test',
     model: { provider: 'openai', tools: [] },
@@ -224,6 +234,43 @@ describe('POST /api/webhooks/vapi — assistant-request (inbound)', () => {
     expect(buildInboundAssistantMock).not.toHaveBeenCalled();
   });
 
+  it('asisten permanen tersimpan → mengembalikan assistantId (jalur hibrida)', async () => {
+    process.env.VAPI_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    app = await buildApp();
+    getInboundAssistantForWorkspaceMock.mockResolvedValue({
+      assistantId: 'vapi-assistant-1',
+      name: 'oriole-receptionist-salon-cantik',
+    });
+
+    const res = await app.request('/api/webhooks/vapi', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: assistantRequestBody(),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.assistantId).toBe('vapi-assistant-1');
+    expect(body.assistant).toBeUndefined();
+    // Tanpa membangun asisten transient — Vapi memakai asisten tersimpan.
+    expect(buildInboundAssistantMock).not.toHaveBeenCalled();
+  });
+
+  it('gagal baca asisten tersimpan → fallback transient (call tetap jalan)', async () => {
+    process.env.VAPI_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    app = await buildApp();
+    getInboundAssistantForWorkspaceMock.mockRejectedValue(new Error('db down'));
+
+    const res = await app.request('/api/webhooks/vapi', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: assistantRequestBody(),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.assistant).toBeDefined();
+    expect(buildInboundAssistantMock).toHaveBeenCalledWith('ws-1');
+  });
+
   it('tanpa phoneNumber.id → 400', async () => {
     process.env.VAPI_WEBHOOK_SECRET = WEBHOOK_SECRET;
     app = await buildApp();
@@ -294,6 +341,38 @@ describe('POST /api/webhooks/vapi — tool-calls (inbound)', () => {
     });
     expect(res.status).toBe(404);
     expect(handleInboundToolCallMock).not.toHaveBeenCalled();
+  });
+
+  it('tool-calls tanpa phoneNumberId tapi ada assistantId (Playground) → resolve via assistantId', async () => {
+    process.env.VAPI_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    app = await buildApp();
+    getWorkspaceIdByAssistantIdMock.mockResolvedValue('ws-1');
+    handleInboundToolCallMock.mockResolvedValue({ ok: true, result: { bookingId: 'b-1' } });
+
+    const res = await app.request('/api/webhooks/vapi', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-inbound-1', assistantId: 'vapi-assistant-1' },
+          toolCalls: [
+            {
+              id: 'tool-call-1',
+              type: 'function',
+              function: { name: 'create_booking', arguments: '{}' },
+            },
+          ],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(getWorkspaceIdByAssistantIdMock).toHaveBeenCalledWith('vapi-assistant-1');
+    expect(handleInboundToolCallMock).toHaveBeenCalledWith(
+      'ws-1',
+      { callId: 'call-inbound-1', toolCallId: 'tool-call-1' },
+      { name: 'create_booking', arguments: '{}' },
+    );
   });
 });
 

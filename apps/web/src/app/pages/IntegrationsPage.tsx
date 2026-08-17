@@ -13,8 +13,6 @@ import {
   LayoutFooter,
   Selector,
   Switch,
-  Tab,
-  TabList,
   TextArea,
   TextInput,
 } from '@astryxdesign/core';
@@ -34,12 +32,7 @@ import {
   type NotionDatabaseOption,
   type NotionDatabasesResponse,
   type NotionSyncResult,
-  type TelnyxByocConnectResponse,
-  type TelnyxByocSearchResponse,
   type TelegramAlertsConnectResponse,
-  type VapiInboundNumber,
-  type VapiInboundStatusResponse,
-  type VapiVoiceStatusResponse,
   type WebhookTestResult,
   type WhatsAppBusinessConnection,
   type WhatsAppBusinessConnectResponse,
@@ -57,7 +50,6 @@ import {
   IconDotsVertical,
   IconExternalLink,
   IconMail,
-  IconPhone,
   IconSignal,
   IconPlug,
   IconRefresh,
@@ -250,9 +242,9 @@ export function IntegrationsPage() {
   const [formsSyncResult, setFormsSyncResult] = useState<GoogleFormsSyncResult | null>(null);
   const [formsError, setFormsError] = useState<string | null>(null);
 
-  // ── Kirim tautan form ke customer (Google Forms & Tally) ──
+  // ── Kirim tautan form ke customer (Google Forms) ──
   const [sendFormOpen, setSendFormOpen] = useState(false);
-  const [sendFormType, setSendFormType] = useState<'google-forms' | 'tally' | null>(null);
+  const [sendFormType, setSendFormType] = useState<'google-forms' | null>(null);
   const [sendFormQuery, setSendFormQuery] = useState('');
   const [sendFormResults, setSendFormResults] = useState<ContactRecord[] | null>(null);
   const [sendFormContactId, setSendFormContactId] = useState('');
@@ -339,37 +331,6 @@ export function IntegrationsPage() {
   const [videoBusy, setVideoBusy] = useState<'disconnect' | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
 
-  // ── Voice AI (Vapi) — nomor keluar panggilan per workspace ──
-  // Kredensial Vapi/Telnyx server-side (env) — card hanya memilih NOMOR.
-  const [voice, setVoice] = useState<WorkspaceIntegration | null>(null);
-  const [voiceStatus, setVoiceStatus] = useState<VapiVoiceStatusResponse | null>(null);
-  const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
-  const [voiceTab, setVoiceTab] = useState<'operator' | 'byoc'>('operator');
-  const [voiceNumberId, setVoiceNumberId] = useState('');
-  const [voiceConnecting, setVoiceConnecting] = useState(false);
-  const [voiceBusy, setVoiceBusy] = useState<'disconnect' | null>(null);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-
-  // ── Voice AI — panggilan MASUK (inbound): customer menelepon nomor ini dan
-  // dilayani resepsionis AI yang bisa membuat booking langsung. ──
-  const [inboundStatus, setInboundStatus] = useState<VapiInboundStatusResponse | null>(null);
-  const [inboundError, setInboundError] = useState<string | null>(null);
-  const [inboundBusy, setInboundBusy] = useState<'register' | string | null>(null);
-  const [inboundDialogOpen, setInboundDialogOpen] = useState(false);
-  const [inboundName, setInboundName] = useState('');
-  const [inboundArea, setInboundArea] = useState('');
-  const [inboundRegistering, setInboundRegistering] = useState(false);
-
-  // ── Voice AI BYOC (fase-2) — workspace menempel API key Telnyx SENDIRI ──
-  // Key dipakai sekali (search/connect) — TIDAK pernah disimpan server.
-  const [voiceByoKey, setVoiceByoKey] = useState('');
-  const [voiceByoCountry, setVoiceByoCountry] = useState('ID');
-  const [voiceByoArea, setVoiceByoArea] = useState('');
-  const [voiceByoResult, setVoiceByoResult] = useState<TelnyxByocSearchResponse | null>(null);
-  const [voiceByoSearching, setVoiceByoSearching] = useState(false);
-  const [voiceByoNumber, setVoiceByoNumber] = useState('');
-  const [voiceByoConnecting, setVoiceByoConnecting] = useState(false);
-
   // ── Obsidian (lokal per perangkat — sync dari browser) ────
   const [obsidian, setObsidian] = useState<ObsidianConfig | null>(() => loadObsidianConfig());
   const [obsidianDialogOpen, setObsidianDialogOpen] = useState(false);
@@ -394,11 +355,9 @@ export function IntegrationsPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [channelRes, integrationRes, voiceRes, inboundRes] = await Promise.all([
+      const [channelRes, integrationRes] = await Promise.all([
         apiFetch<ChannelListResponse>('/channels'),
         apiFetch<IntegrationListResponse>('/integrations'),
-        apiFetch<VapiVoiceStatusResponse>('/integrations/vapi'),
-        apiFetch<VapiInboundStatusResponse>('/integrations/vapi/inbound'),
       ]);
       setChannels(channelRes.channels);
       setNotion(integrationRes.integrations.find((item) => item.integrationType === 'notion') ?? null);
@@ -410,10 +369,6 @@ export function IntegrationsPage() {
       setTelegramAlerts(integrationRes.integrations.find((item) => item.integrationType === 'telegram-alerts') ?? null);
       setPayments(integrationRes.integrations.find((item) => item.integrationType === 'payments') ?? null);
       setVideo(integrationRes.integrations.find((item) => item.integrationType === 'video') ?? null);
-      setVoice(integrationRes.integrations.find((item) => item.integrationType === 'vapi') ?? null);
-      setVoiceStatus(voiceRes);
-      setInboundStatus(inboundRes);
-
       // WhatsApp Business dimuat terpisah — endpoint baru tidak boleh
       // menggagalkan seluruh halaman bila platform Meta belum disetel.
       try {
@@ -1126,7 +1081,7 @@ export function IntegrationsPage() {
 
   /* ── Kirim form ke customer: buka dialog / cari kontak / kirim ── */
 
-  const openSendForm = (type: 'google-forms' | 'tally') => {
+  const openSendForm = (type: 'google-forms') => {
     setSendFormType(type);
     setSendFormQuery('');
     setSendFormResults(null);
@@ -1676,188 +1631,6 @@ export function IntegrationsPage() {
     }
   };
 
-  /* ── Voice AI (Vapi): pilih nomor keluar / BYOC / kembali ke default ── */
-
-  const openVoiceDialog = () => {
-    setVoiceError(null);
-    // Tab default mengikuti mode aktif: BYOC (akun Telnyx sendiri) atau operator.
-    setVoiceTab(voice?.config.mode === 'byoc' ? 'byoc' : 'operator');
-    // Pra-pilih nomor yang sedang aktif (integrasi atau default server).
-    const current =
-      voice?.config.vapiPhoneNumberId ?? voiceStatus?.defaultPhoneNumberId ?? '';
-    setVoiceNumberId(current);
-    // Reset state BYOC — key tidak diwarisi antar sesi; nomor pilihan diisi
-    // dari nomor yang sedang dipakai bila mode BYOC aktif.
-    setVoiceByoKey('');
-    setVoiceByoResult(null);
-    setVoiceByoNumber(voice?.config.mode === 'byoc' ? (voice.identifier ?? '') : '');
-    setVoiceDialogOpen(true);
-  };
-
-  const closeVoiceDialog = () => {
-    setVoiceDialogOpen(false);
-    setVoiceError(null);
-  };
-
-  const switchVoiceTab = (tab: 'operator' | 'byoc') => {
-    if (tab === voiceTab) return;
-    setVoiceTab(tab);
-    setVoiceError(null);
-  };
-
-  const connectVoice = async () => {
-    setVoiceError(null);
-    if (!voiceNumberId) {
-      setVoiceError(t('vapi.numberRequired'));
-      return;
-    }
-    setVoiceConnecting(true);
-    try {
-      const response = await apiFetch<{ integration: WorkspaceIntegration }>(
-        '/integrations/vapi/connect',
-        { method: 'POST', body: JSON.stringify({ vapiPhoneNumberId: voiceNumberId }) },
-      );
-      setVoice(response.integration);
-      setVoiceStatus((prev) => (prev ? { ...prev, selected: response.integration } : prev));
-      setVoiceDialogOpen(false);
-      showConnectedNotice(t('vapi.name'));
-    } catch (err) {
-      setVoiceError(errorMessage(err, t, 'vapi.saveFailed'));
-    } finally {
-      setVoiceConnecting(false);
-    }
-  };
-
-  const disconnectVoice = async () => {
-    setVoiceError(null);
-    setVoiceBusy('disconnect');
-    try {
-      await apiFetch('/integrations/vapi', { method: 'DELETE' });
-      setVoice(null);
-      setVoiceStatus((prev) => (prev ? { ...prev, selected: null } : prev));
-    } catch (err) {
-      setVoiceError(errorMessage(err, t, 'vapi.saveFailed'));
-    } finally {
-      setVoiceBusy(null);
-    }
-  };
-
-  /** BYOC — cari nomor di akun Telnyx milik workspace (read-only, tanpa beli). */
-  const searchVoiceByo = async () => {
-    setVoiceError(null);
-    if (!voiceByoKey.trim()) {
-      setVoiceError(t('vapi.byoKeyRequired'));
-      return;
-    }
-    setVoiceByoSearching(true);
-    try {
-      const response = await apiFetch<TelnyxByocSearchResponse>(
-        '/integrations/vapi/byoc/search',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            apiKey: voiceByoKey.trim(),
-            countryCode: voiceByoCountry.trim() || 'ID',
-            areaCode: voiceByoArea.trim() || null,
-          }),
-        },
-      );
-      setVoiceByoResult(response);
-      setVoiceByoNumber('');
-    } catch (err) {
-      setVoiceError(errorMessage(err, t, 'vapi.byoSearchFailed'));
-    } finally {
-      setVoiceByoSearching(false);
-    }
-  };
-
-  /** BYOC — sambungkan nomor pilihan (buat credential Vapi + beli bila perlu). */
-  const connectVoiceByo = async () => {
-    setVoiceError(null);
-    if (!voiceByoKey.trim()) {
-      setVoiceError(t('vapi.byoKeyRequired'));
-      return;
-    }
-    if (!voiceByoNumber.trim()) {
-      setVoiceError(t('vapi.byoNumberRequired'));
-      return;
-    }
-    setVoiceByoConnecting(true);
-    try {
-      const response = await apiFetch<TelnyxByocConnectResponse>(
-        '/integrations/vapi/byoc/connect',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            apiKey: voiceByoKey.trim(),
-            phoneNumber: voiceByoNumber.trim(),
-          }),
-        },
-      );
-      setVoice(response.integration);
-      setVoiceStatus((prev) => (prev ? { ...prev, selected: response.integration } : prev));
-      setVoiceDialogOpen(false);
-    } catch (err) {
-      setVoiceError(errorMessage(err, t, 'vapi.byoConnectFailed'));
-    } finally {
-      setVoiceByoConnecting(false);
-    }
-  };
-
-  /* ── Voice AI — panggilan MASUK (inbound): register / unregister ── */
-
-  const openInboundDialog = () => {
-    setInboundError(null);
-    setInboundName('');
-    setInboundArea('');
-    setInboundDialogOpen(true);
-  };
-
-  const registerInbound = async () => {
-    setInboundError(null);
-    if (!inboundStatus?.configured) {
-      setInboundError(t('vapi.serverNotConfigured'));
-      return;
-    }
-    setInboundRegistering(true);
-    try {
-      const response = await apiFetch<{ number: VapiInboundNumber }>(
-        '/integrations/vapi/inbound/register',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            name: inboundName.trim() || null,
-            areaCode: inboundArea.trim() || null,
-          }),
-        },
-      );
-      setInboundStatus((prev) => ({
-        configured: prev?.configured ?? false,
-        numbers: [...(prev?.numbers ?? []), response.number],
-      }));
-      setInboundDialogOpen(false);
-    } catch (err) {
-      setInboundError(errorMessage(err, t, 'vapiInbound.registerFailed'));
-    } finally {
-      setInboundRegistering(false);
-    }
-  };
-
-  const unregisterInbound = async (id: string) => {
-    setInboundError(null);
-    setInboundBusy(id);
-    try {
-      await apiFetch(`/integrations/vapi/inbound/${id}`, { method: 'DELETE' });
-      setInboundStatus((prev) =>
-        prev ? { ...prev, numbers: prev.numbers.filter((item) => item.id !== id) } : prev,
-      );
-    } catch (err) {
-      setInboundError(errorMessage(err, t, 'vapiInbound.unregisterFailed'));
-    } finally {
-      setInboundBusy(null);
-    }
-  };
-
   /* ── Payments: connect / toggle / disconnect ─────────────── */
 
   const connectPayments = async () => {
@@ -2366,18 +2139,7 @@ export function IntegrationsPage() {
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('tally.desc')}</p>
               </div>
-            </div>                {tallyError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
-                {tallyError}
-              </p>
-            )}
-
-            {/* Migrasi Typeform → Tally: minta hubungkan ulang dengan API key. */}
-            {tally?.config.migratedFrom === 'typeform' && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                {t('tally.migratedNotice')}
-              </p>
-            )}
+            </div>
 
             {!tally ? (
               <Button
@@ -2388,104 +2150,14 @@ export function IntegrationsPage() {
                 onClick={openTallyDialog}
               />
             ) : (
-              <div className="mt-4 space-y-3">
-                {tally.config.formUrl && (
-                  <Button
-                    label={t('tally.sendForm')}
-                    variant="secondary"
-                    size="sm"
-                    width="100%"
-                    icon={<IconSend className="size-3.5" />}
-                    isDisabled={!tally.isActive || tallyBusy !== null}
-                    onClick={() => openSendForm('tally')}
-                  />
-                )}
-
-                {/* Terhubung tapi form belum dipilih → dorong ke dialog. */}
-                {!tally.config.formId && (
-                  <Button
-                    label={t('tally.pickForm')}
-                    variant="secondary"
-                    size="sm"
-                    width="100%"
-                    icon={<IconSettings className="size-3.5" />}
-                    isDisabled={tallyBusy !== null}
-                    onClick={openTallyDialog}
-                  />
-                )}
-
-                {/* Prefill phone aktif — URL ?phone= mengisi nomor otomatis. */}
-                {tally.config.prefillPhone && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-                    {t('tally.prefillPhoneOn')}
-                  </p>
-                )}
-
-                {/* Layanan = dropdown dari katalog (snapshot saat generate). */}
-                {tally.config.serviceDropdown && (
-                  <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-                    {t('tally.serviceDropdownOn')}
-                  </p>
-                )}
-
-                {/* Diagnostik: sinkronisasi form / konfirmasi customer gagal —
-                    jangan "diam tanpa kabar". */}
-                {tally.config.lastConfirmationError || tally.config.lastContentSyncError ? (
-                  <p
-                    role="alert"
-                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                  >
-                    {tally.config.lastConfirmationError
-                      ? t('tally.confirmationError', {
-                          error: tally.config.lastConfirmationError,
-                        })
-                      : t('tally.contentSyncError', {
-                          error: tally.config.lastContentSyncError ?? '',
-                        })}
-                  </p>
-                ) : null}
-
-                <Switch
-                  label={t('tally.activeSwitch')}
-                  description={tally.isActive ? t('tally.activeDesc') : t('tally.inactiveDesc')}
-                  value={tally.isActive}
-                  onChange={() => void toggleTallyActive()}
-                  labelPosition="start"
-                  labelSpacing="spread"
-                />
-
-                <div className="flex items-center gap-2">
-                  {tally.config.formId && (
-                    <Button
-                      label={t('tally.syncServices')}
-                      variant="secondary"
-                      size="sm"
-                      icon={<IconRefresh className="size-3.5" />}
-                      isLoading={tallyBusy === 'update-content'}
-                      isDisabled={tallyBusy !== null || !tally.isActive}
-                      onClick={() => void updateTallyContent()}
-                    />
-                  )}
-                  <Button
-                    label={t('tally.rewebhook')}
-                    variant="ghost"
-                    size="sm"
-                    icon={<IconRefresh className="size-3.5" />}
-                    isLoading={tallyBusy === 'rewebhook'}
-                    isDisabled={tallyBusy !== null || !tally.isActive}
-                    onClick={() => void rewebhookTally()}
-                  />
-                  <Button
-                    label={t('tally.disconnect')}
-                    variant="ghost"
-                    size="sm"
-                    icon={<IconTrash className="size-3.5" />}
-                    isLoading={tallyBusy === 'disconnect'}
-                    isDisabled={tallyBusy !== null}
-                    onClick={() => void disconnectTally()}
-                  />
-                </div>
-              </div>
+              <Button
+                label={t('tally.configure')}
+                variant="primary"
+                width="100%"
+                className="mt-4"
+                icon={<IconSettings className="size-3.5" />}
+                onClick={openTallyDialog}
+              />
             )}
           </Card>
 
@@ -2871,156 +2543,6 @@ export function IntegrationsPage() {
                 />
               </div>
             )}
-          </Card>
-
-          {/* Voice AI (Vapi) — nomor keluar panggilan per workspace.
-              Kredensial Vapi/Telnyx server-side (env VAPI_* / TELNYX_*) —
-              user cukup memilih nomor mana yang dipakai panggilan keluar. */}
-          <Card className="flex flex-col p-5">
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600">
-                <IconPhone className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('vapi.name')}</h3>
-                  {voice ? (
-                    <Badge variant={voice.isActive ? 'success' : 'neutral'} label={t('vapi.connected')} />
-                  ) : (
-                    <Badge
-                      variant="neutral"
-                      label={voiceStatus?.configured ? t('channels.notSet') : t('channels.inactive')}
-                    />
-                  )}
-                </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('vapi.desc')}</p>
-              </div>
-            </div>
-
-            {voiceError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
-                {voiceError}
-              </p>
-            )}
-
-            {!voice ? (
-              <div className="mt-4 space-y-3">
-                {!voiceStatus?.apiKeyConfigured && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                    {t('vapi.serverNotConfigured')}
-                  </p>
-                )}
-                {voiceStatus?.apiKeyConfigured && voiceStatus.numbers.length === 0 && (
-                  <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                    {t('vapi.noNumbers')}
-                  </p>
-                )}
-                <Button
-                  label={t('vapi.connect')}
-                  variant="primary"
-                  width="100%"
-                  isDisabled={!voiceStatus?.apiKeyConfigured}
-                  onClick={() => void openVoiceDialog()}
-                />
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Button
-                    label={t('vapi.change')}
-                    variant="primary"
-                    size="sm"
-                    icon={<IconSettings className="size-3.5" />}
-                    onClick={() => void openVoiceDialog()}
-                  />
-                  <Button
-                    label={t('vapi.disconnect')}
-                    variant="ghost"
-                    size="sm"
-                    icon={<IconTrash className="size-3.5" />}
-                    isLoading={voiceBusy === 'disconnect'}
-                    isDisabled={voiceBusy !== null}
-                    onClick={() => void disconnectVoice()}
-                  />
-                </div>
-              </div>
-            )}
-          </Card>
-
-          {/* Voice AI — panggilan MASUK (inbound): customer menelepon nomor ini
-              dan dilayani resepsionis AI yang bisa membuat booking langsung.
-              Nomor dibuat di Vapi (server-side env); tanpa API key → 503. */}
-          <Card className="flex flex-col p-5">
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
-                <IconPhone className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('vapiInbound.name')}</h3>
-                  {(inboundStatus?.numbers.length ?? 0) > 0 ? (
-                    <Badge
-                      variant="success"
-                      label={t('vapiInbound.active', { count: inboundStatus?.numbers.length ?? 0 })}
-                    />
-                  ) : (
-                    <Badge variant="neutral" label={t('vapiInbound.inactive')} />
-                  )}
-                </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('vapiInbound.desc')}</p>
-              </div>
-            </div>
-
-            {inboundError && (
-              <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
-                {inboundError}
-              </p>
-            )}
-
-            {!inboundStatus?.configured && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                {t('vapi.serverNotConfigured')}
-              </p>
-            )}
-
-            {(inboundStatus?.numbers.length ?? 0) > 0 && (
-              <div className="mt-4 space-y-2">
-                {inboundStatus!.numbers.map((number) => (
-                  <div
-                    key={number.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                        {number.number ?? t('vapiInbound.provisioning')}
-                      </p>
-                      {number.name && (
-                        <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{number.name}</p>
-                      )}
-                    </div>
-                    <Button
-                      label={t('vapiInbound.unregister')}
-                      variant="ghost"
-                      size="sm"
-                      icon={<IconTrash className="size-3.5" />}
-                      isLoading={inboundBusy === number.id}
-                      isDisabled={inboundBusy !== null}
-                      onClick={() => void unregisterInbound(number.id)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <Button
-              label={t('vapiInbound.register')}
-              variant="primary"
-              width="100%"
-              className="mt-4"
-              icon={<IconPhone className="size-3.5" />}
-              isDisabled={!inboundStatus?.configured}
-              onClick={() => void openInboundDialog()}
-            />
           </Card>
 
           {/* Payments — Global Payments (Paddle, Merchant of Record).
@@ -3901,8 +3423,8 @@ export function IntegrationsPage() {
         <Layout
           header={
             <DialogHeader
-              title={t('tally.dialogTitle')}
-              subtitle={t('tally.dialogSubtitle')}
+              title={tally ? t('tally.manageTitle') : t('tally.dialogTitle')}
+              subtitle={tally ? t('tally.manageSubtitle') : t('tally.dialogSubtitle')}
               onOpenChange={(open) => {
                 if (!open) closeTallyDialog();
               }}
@@ -3921,52 +3443,118 @@ export function IntegrationsPage() {
                     {t('tally.migratedNotice')}
                   </p>
                 )}
-                <form
-                  id="tally-key-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void connectTally();
-                  }}
-                  className="space-y-3"
-                >
-                  <div>
-                    {/* Label "API Key" + pintasan "Get your API key" (ikon
-                        arrow-square-out) di ujung kanan label. */}
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                        {t('tally.tokenLabel')}
-                      </span>
-                      <a
-                        href="https://tally.so/settings/api-keys"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={t('tally.getKey')}
-                        title={t('tally.getKey')}
-                        className="rounded-md p-1 text-zinc-400 transition hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/40"
-                      >
-                        <IconExternalLink className="size-4" />
-                      </a>
-                    </div>
-                    <TextInput
-                      label={t('tally.tokenLabel')}
-                      isLabelHidden
-                      value={tallyApiKey}
-                      onChange={setTallyApiKey}
-                      placeholder={t('tally.tokenPlaceholder')}
-                      width="100%"
+
+                {tally ? (
+                  <div className="space-y-5">
+                    <Switch
+                      label={t('tally.activeSwitch')}
+                      description={tally.isActive ? t('tally.activeDesc') : t('tally.inactiveDesc')}
+                      value={tally.isActive}
+                      onChange={() => void toggleTallyActive()}
+                      labelPosition="start"
+                      labelSpacing="spread"
                     />
+
+                    {/* Diagnostik: sinkronisasi form / konfirmasi customer gagal —
+                        jangan "diam tanpa kabar". */}
+                    {tally.config.lastConfirmationError || tally.config.lastContentSyncError ? (
+                      <p
+                        role="alert"
+                        className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                      >
+                        {tally.config.lastConfirmationError
+                          ? t('tally.confirmationError', {
+                              error: tally.config.lastConfirmationError,
+                            })
+                          : t('tally.contentSyncError', {
+                              error: tally.config.lastContentSyncError ?? '',
+                            })}
+                      </p>
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {tally.config.formId && (
+                        <Button
+                          label={t('tally.syncServices')}
+                          variant="secondary"
+                          size="sm"
+                          icon={<IconRefresh className="size-3.5" />}
+                          isLoading={tallyBusy === 'update-content'}
+                          isDisabled={tallyBusy !== null || !tally.isActive}
+                          onClick={() => void updateTallyContent()}
+                        />
+                      )}
+                      <Button
+                        label={t('tally.rewebhook')}
+                        variant="secondary"
+                        size="sm"
+                        icon={<IconRefresh className="size-3.5" />}
+                        isLoading={tallyBusy === 'rewebhook'}
+                        isDisabled={tallyBusy !== null || !tally.isActive}
+                        onClick={() => void rewebhookTally()}
+                      />
+                      <Button
+                        label={t('tally.disconnect')}
+                        variant="destructive"
+                        size="sm"
+                        icon={<IconTrash className="size-3.5" />}
+                        isLoading={tallyBusy === 'disconnect'}
+                        isDisabled={tallyBusy !== null}
+                        onClick={() => void disconnectTally()}
+                      />
+                    </div>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    id="tally-key-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void connectTally();
+                    }}
+                    className="space-y-3"
+                  >
+                    <div>
+                      {/* Label "API Key" + pintasan "Get your API key" (ikon
+                          arrow-square-out) di ujung kanan label. */}
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                          {t('tally.tokenLabel')}
+                        </span>
+                        <a
+                          href="https://tally.so/settings/api-keys"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={t('tally.getKey')}
+                          title={t('tally.getKey')}
+                          className="rounded-md p-1 text-zinc-400 transition hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/40"
+                        >
+                          <IconExternalLink className="size-4" />
+                        </a>
+                      </div>
+                      <TextInput
+                        label={t('tally.tokenLabel')}
+                        isLabelHidden
+                        value={tallyApiKey}
+                        onChange={setTallyApiKey}
+                        placeholder={t('tally.tokenPlaceholder')}
+                        width="100%"
+                      />
+                    </div>
+                  </form>
+                )}
+
                 {tallyError && (
                   <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 dark:bg-red-500/10">
                     <p className="min-w-0 flex-1 text-xs text-red-600 dark:text-red-400">{tallyError}</p>
-                    <Button
-                      label={t('common.retry')}
-                      variant="ghost"
-                      size="sm"
-                      isDisabled={tallyConnecting}
-                      onClick={() => void connectTally()}
-                    />
+                    {!tally && (
+                      <Button
+                        label={t('common.retry')}
+                        variant="ghost"
+                        size="sm"
+                        isDisabled={tallyConnecting}
+                        onClick={() => void connectTally()}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -3976,14 +3564,16 @@ export function IntegrationsPage() {
             <LayoutFooter hasDivider>
               <div className="flex justify-end gap-2">
                 <Button label={t('common.cancel')} variant="ghost" onClick={closeTallyDialog} />
-                <Button
-                  label={t('tally.connect')}
-                  variant="primary"
-                  type="submit"
-                  form="tally-key-form"
-                  isLoading={tallyConnecting}
-                  isDisabled={tallyApiKey.trim().length < 10 || tallyConnecting}
-                />
+                {!tally && (
+                  <Button
+                    label={t('tally.connect')}
+                    variant="primary"
+                    type="submit"
+                    form="tally-key-form"
+                    isLoading={tallyConnecting}
+                    isDisabled={tallyApiKey.trim().length < 10 || tallyConnecting}
+                  />
+                )}
               </div>
             </LayoutFooter>
           }
@@ -4379,321 +3969,6 @@ export function IntegrationsPage() {
         />
       </Dialog>
 
-      {/* Dialog Voice AI — pilih nomor keluar: nomor server (operator) atau
-          Bring your own carrier (workspace menempel API key Telnyx sendiri). */}
-      <Dialog
-        isOpen={voiceDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) closeVoiceDialog();
-        }}
-        purpose="info"
-        width={480}
-      >
-        <Layout
-          header={
-            <DialogHeader
-              title={t('vapi.connect')}
-              subtitle={t('vapi.desc')}
-              onOpenChange={(open) => {
-                if (!open) closeVoiceDialog();
-              }}
-              hasDivider
-            />
-          }
-          content={
-            <LayoutContent>
-              <TabList
-                className="mb-3"
-                value={voiceTab}
-                onChange={(value) => switchVoiceTab(value as 'operator' | 'byoc')}
-                layout="fill"
-              >
-                <Tab value="operator" label={t('vapi.operatorTabLabel')} />
-                <Tab value="byoc" label={t('vapi.byoTabLabel')} />
-              </TabList>
-
-              {voiceTab === 'operator' ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-                    {t('vapi.pickerLabel')}
-                  </p>
-                  <div className="space-y-2">
-                    {(voiceStatus?.numbers ?? []).map((n) => (
-                      <button
-                        key={n.id}
-                        type="button"
-                        onClick={() => {
-                          setVoiceNumberId(n.id);
-                          setVoiceError(null);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
-                          voiceNumberId === n.id
-                            ? 'border-sky-500 bg-sky-50 text-sky-700'
-                            : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
-                        }`}
-                      >
-                        <span className="truncate font-medium">{n.number ?? n.name ?? n.id}</span>
-                        <IconCheck
-                          className={`size-4 shrink-0 ${voiceNumberId === n.id ? 'opacity-100' : 'opacity-0'}`}
-                        />
-                      </button>
-                    ))}
-                    {voiceStatus && voiceStatus.numbers.length === 0 && (
-                      <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {t('vapi.noNumbers')}
-                      </p>
-                    )}
-                  </div>
-
-                  {voiceError && (
-                    <p role="alert" className="text-xs text-red-600">{voiceError}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <form
-                    id="vapi-byo-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void searchVoiceByo();
-                    }}
-                    className="space-y-3"
-                  >
-                    <TextInput
-                      label={t('vapi.byoKeyLabel')}
-                      value={voiceByoKey}
-                      onChange={(value) => {
-                        setVoiceByoKey(value);
-                        setVoiceByoResult(null);
-                      }}
-                      placeholder="KEY01…"
-                      type="password"
-                      width="100%"
-                    />
-                    <div className="grid grid-cols-[110px_1fr] gap-2">
-                      <TextInput
-                        label={t('vapi.byoCountryLabel')}
-                        value={voiceByoCountry}
-                        onChange={(value) => {
-                          setVoiceByoCountry(value.toUpperCase().slice(0, 2));
-                          setVoiceByoResult(null);
-                        }}
-                        placeholder="ID"
-                        width="100%"
-                      />
-                      <TextInput
-                        label={t('vapi.byoAreaLabel')}
-                        value={voiceByoArea}
-                        onChange={(value) => {
-                          setVoiceByoArea(value.replace(/[^0-9]/g, '').slice(0, 10));
-                          setVoiceByoResult(null);
-                        }}
-                        placeholder={t('vapi.byoAreaPlaceholder')}
-                        width="100%"
-                      />
-                    </div>
-                    <p className="text-xs leading-relaxed text-zinc-400">
-                      {t('vapi.byoHint')}
-                    </p>
-                    <Button
-                      label={t('vapi.byoSearchCta')}
-                      variant="primary"
-                      width="100%"
-                      isLoading={voiceByoSearching}
-                      isDisabled={voiceByoSearching || !voiceByoKey.trim()}
-                      onClick={() => void searchVoiceByo()}
-                    />
-                  </form>
-
-                  {voiceByoResult && (
-                    <div className="space-y-3">
-                      {voiceByoResult.owned.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-                            {t('vapi.byoOwnedLabel')}
-                          </p>
-                          <div className="mt-1.5 space-y-1.5">
-                            {voiceByoResult.owned.map((n) => (
-                              <button
-                                key={n.phoneNumber}
-                                type="button"
-                                onClick={() => {
-                                  setVoiceByoNumber(n.phoneNumber);
-                                  setVoiceError(null);
-                                }}
-                                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
-                                  voiceByoNumber === n.phoneNumber
-                                    ? 'border-sky-500 bg-sky-50 text-sky-700'
-                                    : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
-                                }`}
-                              >
-                                <span className="truncate font-medium">
-                                  {n.phoneNumber}
-                                  {n.locality ? (
-                                    <span className="ml-1.5 text-xs font-normal text-zinc-400">
-                                      · {n.locality}
-                                    </span>
-                                  ) : null}
-                                </span>
-                                <IconCheck
-                                  className={`size-4 shrink-0 ${voiceByoNumber === n.phoneNumber ? 'opacity-100' : 'opacity-0'}`}
-                                />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {voiceByoResult.available.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-                            {t('vapi.byoAvailableLabel')}
-                          </p>
-                          <div className="mt-1.5 space-y-1.5">
-                            {voiceByoResult.available.map((n) => (
-                              <button
-                                key={n.phoneNumber}
-                                type="button"
-                                onClick={() => {
-                                  setVoiceByoNumber(n.phoneNumber);
-                                  setVoiceError(null);
-                                }}
-                                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${
-                                  voiceByoNumber === n.phoneNumber
-                                    ? 'border-sky-500 bg-sky-50 text-sky-700'
-                                    : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
-                                }`}
-                              >
-                                <span className="truncate font-medium">
-                                  {n.phoneNumber}
-                                  {n.locality ? (
-                                    <span className="ml-1.5 text-xs font-normal text-zinc-400">
-                                      · {n.locality}
-                                    </span>
-                                  ) : null}
-                                </span>
-                                <IconCheck
-                                  className={`size-4 shrink-0 ${voiceByoNumber === n.phoneNumber ? 'opacity-100' : 'opacity-0'}`}
-                                />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {voiceByoResult.owned.length === 0 && voiceByoResult.available.length === 0 && (
-                        <p className="rounded-lg bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                          {t('vapi.byoEmpty')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {voiceError && (
-                    <p role="alert" className="text-xs text-red-600">{voiceError}</p>
-                  )}
-                </div>
-              )}
-            </LayoutContent>
-          }
-          footer={
-            <LayoutFooter hasDivider>
-              <div className="flex justify-end gap-2">
-                <Button label={t('common.cancel')} variant="ghost" onClick={closeVoiceDialog} />
-                {voiceTab === 'operator' ? (
-                  <Button
-                    label={t('vapi.connectCta')}
-                    variant="primary"
-                    isLoading={voiceConnecting}
-                    isDisabled={voiceConnecting || (voiceStatus?.numbers.length ?? 0) === 0}
-                    onClick={() => void connectVoice()}
-                  />
-                ) : (
-                  <Button
-                    label={t('vapi.byoConnectCta')}
-                    variant="primary"
-                    isLoading={voiceByoConnecting}
-                    isDisabled={voiceByoConnecting || !voiceByoNumber.trim()}
-                    onClick={() => void connectVoiceByo()}
-                  />
-                )}
-              </div>
-            </LayoutFooter>
-          }
-        />
-      </Dialog>
-
-      {/* Dialog Voice AI inbound — daftarkan nomor masuk baru (Vapi menyediakan
-          nomor; label + kode area opsional). */}
-      <Dialog
-        isOpen={inboundDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) setInboundDialogOpen(false);
-        }}
-        purpose="info"
-        width={480}
-      >
-        <Layout
-          header={
-            <DialogHeader
-              title={t('vapiInbound.register')}
-              subtitle={t('vapiInbound.registerDesc')}
-              onOpenChange={(open) => {
-                if (!open) setInboundDialogOpen(false);
-              }}
-              hasDivider
-            />
-          }
-          content={
-            <LayoutContent>
-              <form
-                id="vapi-inbound-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void registerInbound();
-                }}
-                className="space-y-3"
-              >
-                <TextInput
-                  label={t('vapiInbound.nameLabel')}
-                  value={inboundName}
-                  onChange={setInboundName}
-                  placeholder={t('vapiInbound.namePlaceholder')}
-                  width="100%"
-                />
-                <TextInput
-                  label={t('vapiInbound.areaLabel')}
-                  value={inboundArea}
-                  onChange={setInboundArea}
-                  placeholder={t('vapiInbound.areaPlaceholder')}
-                  width="100%"
-                />
-                {inboundError && (
-                  <p role="alert" className="text-xs text-red-600">{inboundError}</p>
-                )}
-              </form>
-            </LayoutContent>
-          }
-          footer={
-            <LayoutFooter>
-              <div className="flex justify-end gap-2">
-                <Button
-                  label={t('common.cancel')}
-                  variant="ghost"
-                  onClick={() => setInboundDialogOpen(false)}
-                />
-                <Button
-                  label={t('vapiInbound.register')}
-                  variant="primary"
-                  type="submit"
-                  form="vapi-inbound-form"
-                  isLoading={inboundRegistering}
-                  onClick={() => void registerInbound()}
-                />
-              </div>
-            </LayoutFooter>
-          }
-        />
-      </Dialog>
-
       {/* Dialog Slack — Incoming Webhook URL + label channel opsional. */}
       <Dialog
         isOpen={slackDialogOpen}
@@ -4841,10 +4116,7 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('formSend.dialogTitle')}
               subtitle={t('formSend.dialogSubtitle', {
-                form:
-                  sendFormType === 'tally'
-                    ? (tally?.identifier ?? t('tally.name'))
-                    : (googleForms?.identifier ?? t('googleForms.name')),
+                form: googleForms?.identifier ?? t('googleForms.name'),
               })}
               onOpenChange={(open) => {
                 if (!open) closeSendForm();
@@ -4862,16 +4134,12 @@ export function IntegrationsPage() {
                   </p>
                   <div className="mt-1 flex items-center gap-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-900 p-2">
                     <p className="min-w-0 flex-1 break-all font-mono text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      {sendFormType === 'tally'
-                        ? (tally?.config.formUrl ?? '—')
-                        : (googleForms?.config.formUrl ?? '—')}
+                      {googleForms?.config.formUrl ?? '—'}
                     </p>
                     <button
                       type="button"
                       onClick={() =>
-                        void copyFormUrl(
-                          (sendFormType === 'tally' ? tally?.config.formUrl : googleForms?.config.formUrl) ?? '',
-                        )
+                        void copyFormUrl(googleForms?.config.formUrl ?? '')
                       }
                       aria-label={t('channels.copy')}
                       className="flex shrink-0 items-center gap-1 text-xs font-medium text-amber-600 transition hover:text-amber-500"

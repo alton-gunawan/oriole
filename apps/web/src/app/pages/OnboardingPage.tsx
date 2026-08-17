@@ -56,7 +56,7 @@ export function OnboardingPage() {
       void trackEvent('onboarding.completed', { template_category: category });
       navigate('/app/dashboard', { replace: true });
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.createProject'));
+      setError(errorMessage(err, t, 'errors.createBusiness'));
     } finally {
       setIsSubmitting(false);
     }
@@ -79,7 +79,7 @@ export function OnboardingPage() {
         <Card className="p-5 shadow-md sm:p-8">
           <form onSubmit={onSubmit} className="space-y-7">
             <TextInput
-              label={t('ws.projectName')}
+              label={t('ws.businessName')}
               description={t('onboarding.nameDesc')}
               value={name}
               onChange={setName}

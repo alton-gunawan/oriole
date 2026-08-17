@@ -32,7 +32,7 @@ import { PhoneInput } from '../components/PhoneInput';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
 import { Card, PageHeader } from '../shell/ui';
 
-/** Kontak = customer (nama + telepon) yang pernah dipakai di booking project ini. */
+/** Kontak = customer (nama + telepon) yang pernah dipakai di booking bisnis ini. */
 interface ContactSuggestion {
   name: string | null;
   phone: string;
@@ -411,7 +411,7 @@ export function BookingNewPage() {
         </div>
       </form>
 
-      {/* Dialog pilih kontak — sumber: customer pada booking project ini */}
+      {/* Dialog pilih kontak — sumber: customer pada booking bisnis ini */}
       <Dialog isOpen={isPickerOpen} onOpenChange={closePicker} purpose="info" width={520}>
         <Layout
           header={

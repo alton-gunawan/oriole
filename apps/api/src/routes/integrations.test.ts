@@ -24,18 +24,53 @@ vi.mock('../lib/env.ts', () => ({
     NEON_AUTH_URL: 'https://ep-test.neon.tech/neondb/auth',
     VAPI_API_KEY: 'vapi_test_key',
     VAPI_PHONE_NUMBER_ID: 'vapi-default-1',
+    VAPI_WEBHOOK_SECRET: 'vapi_webhook_secret',
   },
 }));
 
-// Mock layanan Vapi — daftar nomor phone number (dipakai blok Voice AI).
-const { listVapiPhoneNumbersMock, listOperatorVapiPhoneNumbersMock } = vi.hoisted(() => ({
+// Mock layanan Vapi — daftar nomor phone number (dipakai blok Voice AI) +
+// fungsi wizard phone number (provision/release/health/test-call).
+const {
+  listVapiPhoneNumbersMock,
+  listOperatorVapiPhoneNumbersMock,
+  provisionVapiOutboundNumberMock,
+  releaseVapiPhoneNumberMock,
+  getVapiPhoneNumberMock,
+  placeTestVapiCallMock,
+  getVapiCallStatusMock,
+  VapiNotConfiguredErrorMock,
+  mapEndedReasonMock,
+} = vi.hoisted(() => ({
   listVapiPhoneNumbersMock: vi.fn(),
   listOperatorVapiPhoneNumbersMock: vi.fn(),
+  provisionVapiOutboundNumberMock: vi.fn(),
+  releaseVapiPhoneNumberMock: vi.fn(),
+  getVapiPhoneNumberMock: vi.fn(),
+  placeTestVapiCallMock: vi.fn(),
+  getVapiCallStatusMock: vi.fn(),
+  VapiNotConfiguredErrorMock: class extends Error {
+    constructor() {
+      super('Vapi belum dikonfigurasi');
+      this.name = 'VapiNotConfiguredError';
+    }
+  },
+  mapEndedReasonMock: vi.fn((reason: string | null | undefined) => {
+    if (!reason) return null;
+    if (reason.includes('ended-call') || reason === 'customer-ended-call') return 'completed';
+    return 'failed';
+  }),
 }));
 
 vi.mock('../services/vapi.ts', () => ({
   listVapiPhoneNumbers: listVapiPhoneNumbersMock,
   listOperatorVapiPhoneNumbers: listOperatorVapiPhoneNumbersMock,
+  provisionVapiOutboundNumber: provisionVapiOutboundNumberMock,
+  releaseVapiPhoneNumber: releaseVapiPhoneNumberMock,
+  getVapiPhoneNumber: getVapiPhoneNumberMock,
+  placeTestVapiCall: placeTestVapiCallMock,
+  getVapiCallStatus: getVapiCallStatusMock,
+  VapiNotConfiguredError: VapiNotConfiguredErrorMock,
+  mapEndedReason: mapEndedReasonMock,
 }));
 
 // Mock lib inbound — route panggilan MASUK di-stub (unit: routing + status).
@@ -43,15 +78,24 @@ const {
   listInboundNumbersMock,
   registerInboundNumberForWorkspaceMock,
   unregisterInboundNumberForWorkspaceMock,
+  attachInboundNumberForWorkspaceMock,
   InboundNumberNotFoundErrorMock,
+  InboundNumberInUseErrorMock,
 } = vi.hoisted(() => ({
   listInboundNumbersMock: vi.fn(),
   registerInboundNumberForWorkspaceMock: vi.fn(),
   unregisterInboundNumberForWorkspaceMock: vi.fn(),
+  attachInboundNumberForWorkspaceMock: vi.fn(),
   InboundNumberNotFoundErrorMock: class extends Error {
     constructor(message: string) {
       super(message);
       this.name = 'InboundNumberNotFoundError';
+    }
+  },
+  InboundNumberInUseErrorMock: class extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'InboundNumberInUseError';
     }
   },
 }));
@@ -60,7 +104,9 @@ vi.mock('../lib/vapi-inbound.ts', () => ({
   listInboundNumbers: listInboundNumbersMock,
   registerInboundNumberForWorkspace: registerInboundNumberForWorkspaceMock,
   unregisterInboundNumberForWorkspace: unregisterInboundNumberForWorkspaceMock,
+  attachInboundNumberForWorkspace: attachInboundNumberForWorkspaceMock,
   InboundNumberNotFoundError: InboundNumberNotFoundErrorMock,
+  InboundNumberInUseError: InboundNumberInUseErrorMock,
 }));
 
 // Mock BYOC orchestrator — semua panggilan Telnyx / kredensial Vapi di-stub.
@@ -231,11 +277,14 @@ const { dbState } = vi.hoisted(() => ({
 }));
 
 vi.mock('../db/index.ts', async () => {
-  const { services, workspaces, workspaceIntegrations } = await import('@oriole/database');
+  const { calleCalls, services, webhookEvents, workspaces, workspaceIntegrations } =
+    await import('@oriole/database');
   const tableNames = new WeakMap<object, string>();
   tableNames.set(workspaces, 'workspaces');
   tableNames.set(workspaceIntegrations, 'workspaceIntegrations');
   tableNames.set(services, 'services');
+  tableNames.set(calleCalls, 'calleCalls');
+  tableNames.set(webhookEvents, 'webhookEvents');
 
   const NOW = new Date('2026-01-01T00:00:00.000Z');
 
@@ -384,6 +433,7 @@ beforeEach(() => {
   listInboundNumbersMock.mockResolvedValue([]);
   registerInboundNumberForWorkspaceMock.mockReset();
   unregisterInboundNumberForWorkspaceMock.mockReset();
+  attachInboundNumberForWorkspaceMock.mockReset();
   listOperatorVapiPhoneNumbersMock.mockReset();
   listOperatorVapiPhoneNumbersMock.mockResolvedValue([
     { id: 'vapi-telnyx-1', number: '+628211111111', name: null, provider: 'telnyx' },
@@ -391,6 +441,22 @@ beforeEach(() => {
   ]);
   searchTelnyxByocMock.mockReset();
   connectTelnyxByocMock.mockReset();
+  provisionVapiOutboundNumberMock.mockReset();
+  provisionVapiOutboundNumberMock.mockResolvedValue({
+    vapiPhoneNumberId: 'pn-new-1',
+    number: '+14155550198',
+    provider: 'vapi',
+  });
+  releaseVapiPhoneNumberMock.mockReset();
+  releaseVapiPhoneNumberMock.mockResolvedValue(undefined);
+  getVapiPhoneNumberMock.mockReset();
+  getVapiPhoneNumberMock.mockResolvedValue({
+    id: 'vapi-default-1',
+    number: '+15550000000',
+    provider: 'vapi',
+  });
+  placeTestVapiCallMock.mockReset();
+  getVapiCallStatusMock.mockReset();
 });
 
 describe('GET /api/integrations', () => {
@@ -1424,6 +1490,8 @@ describe('ensureTallyFormEnhanced — self-heal form saat tautan dikirim', () =>
           apiKey: 'tly_test_1',
           formId: 'xyz123',
           phonePrefill: true,
+          // Form baru memuat token chat (hidden field orioleChatId) → no-op.
+          chatToken: true,
           serviceDropdown: true,
         },
         isActive: true,
@@ -1472,6 +1540,7 @@ describe('ensureTallyFormEnhanced — self-heal form saat tautan dikirim', () =>
     const [updatedRow] = dbState.tables.get('workspaceIntegrations') ?? [];
     const updatedConfig = (updatedRow as { providerConfig: Record<string, unknown> }).providerConfig;
     expect(updatedConfig.phonePrefill).toBe(true);
+    expect(updatedConfig.chatToken).toBe(true);
     expect(updatedConfig.lastContentSyncError).toBeNull();
   });
 
@@ -1662,6 +1731,7 @@ describe('Voice AI (Vapi) — POST /api/integrations/vapi/connect', () => {
     expect((rows[0] as { providerConfig: Record<string, unknown> }).providerConfig).toEqual({
       vapiPhoneNumberId: 'vapi-telnyx-1',
       phoneNumber: '+628211111111',
+      provider: 'telnyx',
     });
     expect(JSON.stringify(body)).not.toContain('vapi_test_key');
   });
@@ -1832,6 +1902,7 @@ describe('Voice AI BYOC — POST /api/integrations/vapi/byoc/connect', () => {
     const stored = (rows[0] as { providerConfig: Record<string, unknown> }).providerConfig;
     expect(stored).toEqual({
       mode: 'byoc',
+      provider: 'telnyx',
       vapiPhoneNumberId: 'pn-byoc-1',
       vapiCredentialId: 'cred-byoc-1',
       phoneNumber: '+6282199999999',
@@ -1921,6 +1992,503 @@ describe('Voice AI BYOC — POST /api/integrations/vapi/byoc/connect', () => {
     expect(res.status).toBe(400);
     expect(connectTelnyxByocMock).not.toHaveBeenCalled();
   });
+
+  it('replace nomor operator lama → nomor lama dilepas setelah connect', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+15550000000',
+        providerConfig: { mode: 'operator', vapiPhoneNumberId: 'vapi-old-1', phoneNumber: '+15550000000' },
+      }),
+    ]);
+    connectTelnyxByocMock.mockResolvedValue(CONNECT_RESULT);
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(releaseVapiPhoneNumberMock).toHaveBeenCalledWith('vapi-old-1');
+  });
+
+  it('replace nomor BYOC lama → nomor lama TIDAK dilepas (milik workspace)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+628211111111',
+        providerConfig: {
+          mode: 'byoc',
+          vapiPhoneNumberId: 'pn-byoc-0',
+          vapiCredentialId: 'cred-old-1',
+          phoneNumber: '+628211111111',
+        },
+      }),
+    ]);
+    connectTelnyxByocMock.mockResolvedValue(CONNECT_RESULT);
+    const res = await app.request('/api/integrations/vapi/byoc/connect', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(BYOC_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI — POST /api/integrations/vapi/provision (wizard Vapi number)', () => {
+  it('sukses → 201, row provisionPending true, secret tidak bocor', async () => {
+    const res = await app.request('/api/integrations/vapi/provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areaCode: '415' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      vapiPhoneNumberId: string;
+      number: string;
+      provider: string;
+      integration: { config: Record<string, unknown> };
+    };
+    expect(body).toMatchObject({
+      vapiPhoneNumberId: 'pn-new-1',
+      number: '+14155550198',
+      provider: 'vapi',
+    });
+    expect(body.integration.config).toMatchObject({
+      mode: 'operator',
+      vapiPhoneNumberId: 'pn-new-1',
+      phoneNumber: '+14155550198',
+      provisionPending: true,
+    });
+    expect(JSON.stringify(body)).not.toContain('vapi_test_key');
+    expect(provisionVapiOutboundNumberMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'oriole-outbound-ws-1', areaCode: '415' }),
+    );
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+
+  it('tanpa area code → provision tanpa numberDesiredAreaCode', async () => {
+    await app.request('/api/integrations/vapi/provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(provisionVapiOutboundNumberMock).toHaveBeenCalledWith(
+      expect.objectContaining({ areaCode: undefined }),
+    );
+  });
+
+  it('replace: snapshot nomor lama disimpan di previous', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+15550000000',
+        providerConfig: { mode: 'operator', vapiPhoneNumberId: 'vapi-old-1', phoneNumber: '+15550000000' },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areaCode: '415' }),
+    });
+    expect(res.status).toBe(201);
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    const stored = (rows[0] as { providerConfig: Record<string, unknown> }).providerConfig;
+    expect(stored.previous).toMatchObject({
+      identifier: '+15550000000',
+      providerConfig: { vapiPhoneNumberId: 'vapi-old-1' },
+    });
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+
+  it('provision baru saat ada pending lama → pending lama dilepas', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550123',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-stale-1',
+          phoneNumber: '+14155550123',
+          provisionPending: true,
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areaCode: '415' }),
+    });
+    expect(res.status).toBe(201);
+    expect(releaseVapiPhoneNumberMock).toHaveBeenCalledWith('pn-stale-1');
+  });
+
+  it('VAPI_API_KEY belum dikonfigurasi → 503 tanpa provision', async () => {
+    const envModule = (await import('../lib/env.ts')) as { env: Record<string, unknown> };
+    const original = envModule.env.VAPI_API_KEY;
+    envModule.env.VAPI_API_KEY = undefined;
+    try {
+      const res = await app.request('/api/integrations/vapi/provision', {
+        method: 'POST',
+        headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ areaCode: '415' }),
+      });
+      expect(res.status).toBe(503);
+      expect(provisionVapiOutboundNumberMock).not.toHaveBeenCalled();
+    } finally {
+      envModule.env.VAPI_API_KEY = original;
+    }
+  });
+});
+
+describe('Voice AI — POST /api/integrations/vapi/confirm', () => {
+  it('belum ada pending → 409', async () => {
+    const res = await app.request('/api/integrations/vapi/confirm', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('pending tanpa replace → clear provisionPending, tidak melepas apa pun', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/confirm', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { integration: { config: Record<string, unknown> } };
+    expect(body.integration.config.provisionPending).toBe(false);
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+
+  it('pending replace → nomor lama dilepas, previous dihapus dari config', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+          previous: {
+            identifier: '+15550000000',
+            providerConfig: { mode: 'operator', vapiPhoneNumberId: 'vapi-old-1', phoneNumber: '+15550000000' },
+          },
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/confirm', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(releaseVapiPhoneNumberMock).toHaveBeenCalledWith('vapi-old-1');
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    const stored = (rows[0] as { providerConfig: Record<string, unknown> }).providerConfig;
+    expect(stored.provisionPending).toBe(false);
+    expect(stored.previous).toBeUndefined();
+  });
+
+  it('previous adalah nomor default server → tidak dilepas', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+          previous: {
+            identifier: '+15550000000',
+            providerConfig: { mode: 'operator', vapiPhoneNumberId: 'vapi-default-1', phoneNumber: '+15550000000' },
+          },
+        },
+      }),
+    ]);
+    await app.request('/api/integrations/vapi/confirm', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI — POST /api/integrations/vapi/cancel-provision', () => {
+  it('pending tanpa replace → nomor baru dilepas + row dihapus', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/cancel-provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(releaseVapiPhoneNumberMock).toHaveBeenCalledWith('pn-new-1');
+    expect(dbState.tables.get('workspaceIntegrations')).toHaveLength(0);
+  });
+
+  it('pending replace → nomor baru dilepas + konfigurasi lama dipulihkan', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+          previous: {
+            identifier: '+15550000000',
+            providerConfig: { mode: 'operator', vapiPhoneNumberId: 'vapi-old-1', phoneNumber: '+15550000000' },
+          },
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/cancel-provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(releaseVapiPhoneNumberMock).toHaveBeenCalledWith('pn-new-1');
+    const rows = dbState.tables.get('workspaceIntegrations') ?? [];
+    expect(rows).toHaveLength(1);
+    const stored = (rows[0] as { identifier: string; providerConfig: Record<string, unknown> }).providerConfig;
+    expect(stored).toEqual({ mode: 'operator', vapiPhoneNumberId: 'vapi-old-1', phoneNumber: '+15550000000' });
+  });
+
+  it('tanpa pending → ok tanpa panggilan', async () => {
+    const res = await app.request('/api/integrations/vapi/cancel-provision', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    expect(releaseVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI — POST /api/integrations/vapi/test-call', () => {
+  it('sukses → 201 + callId, memakai nomor keluar workspace', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: { mode: 'operator', vapiPhoneNumberId: 'pn-new-1', phoneNumber: '+14155550198' },
+      }),
+    ]);
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Klinik Sehat', callAssistantName: 'Sarah', callGoalLanguage: 'id', callVoiceId: 'voice-1' },
+    ]);
+    placeTestVapiCallMock.mockResolvedValue({ id: 'call-test-1', status: 'queued' });
+    const res = await app.request('/api/integrations/vapi/test-call', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '+6281234567890' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { callId: string; status: string };
+    expect(body).toMatchObject({ callId: 'call-test-1', status: 'queued' });
+    expect(placeTestVapiCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: '+6281234567890',
+        phoneNumberId: 'pn-new-1',
+        language: 'id',
+        assistantName: 'Sarah',
+        businessName: 'Klinik Sehat',
+        voiceId: 'voice-1',
+      }),
+    );
+  });
+
+  it('tanpa nomor keluar (tidak ada pilihan & default kosong) → 400', async () => {
+    const envModule = (await import('../lib/env.ts')) as { env: Record<string, unknown> };
+    const original = envModule.env.VAPI_PHONE_NUMBER_ID;
+    envModule.env.VAPI_PHONE_NUMBER_ID = undefined;
+    try {
+      const res = await app.request('/api/integrations/vapi/test-call', {
+        method: 'POST',
+        headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '+6281234567890' }),
+      });
+      expect(res.status).toBe(400);
+      expect(placeTestVapiCallMock).not.toHaveBeenCalled();
+    } finally {
+      envModule.env.VAPI_PHONE_NUMBER_ID = original;
+    }
+  });
+
+  it('nomor telpon pendek → 400 sebelum panggilan', async () => {
+    const res = await app.request('/api/integrations/vapi/test-call', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '123' }),
+    });
+    expect(res.status).toBe(400);
+    expect(placeTestVapiCallMock).not.toHaveBeenCalled();
+  });
+
+  it('VAPI_API_KEY belum dikonfigurasi → 503', async () => {
+    const envModule = (await import('../lib/env.ts')) as { env: Record<string, unknown> };
+    const original = envModule.env.VAPI_API_KEY;
+    envModule.env.VAPI_API_KEY = undefined;
+    try {
+      const res = await app.request('/api/integrations/vapi/test-call', {
+        method: 'POST',
+        headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '+6281234567890' }),
+      });
+      expect(res.status).toBe(503);
+    } finally {
+      envModule.env.VAPI_API_KEY = original;
+    }
+  });
+});
+
+describe('Voice AI — GET /api/integrations/vapi/test-call/:callId', () => {
+  it('mengembalikan status + outcome', async () => {
+    getVapiCallStatusMock.mockResolvedValue({
+      status: 'ended',
+      endedReason: 'customer-ended-call',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      endedAt: '2026-01-01T00:01:24.000Z',
+      durationSeconds: 84,
+    });
+    const res = await app.request('/api/integrations/vapi/test-call/call-test-1', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; outcome: string; durationSeconds: number };
+    expect(body).toMatchObject({ status: 'ended', outcome: 'completed', durationSeconds: 84 });
+    expect(getVapiCallStatusMock).toHaveBeenCalledWith('call-test-1');
+  });
+
+  it('Vapi tidak dikonfigurasi → 503', async () => {
+    getVapiCallStatusMock.mockRejectedValue(new VapiNotConfiguredErrorMock());
+    const res = await app.request('/api/integrations/vapi/test-call/call-test-1', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(503);
+  });
+});
+
+describe('Voice AI — GET /api/integrations/vapi/health', () => {
+  it('tanpa integrasi → health berdasarkan default server', async () => {
+    getVapiPhoneNumberMock.mockResolvedValue({
+      id: 'vapi-default-1',
+      number: '+15550000000',
+      provider: 'vapi',
+    });
+    const res = await app.request('/api/integrations/vapi/health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      configured: true,
+      vapiPhoneNumberId: 'vapi-default-1',
+      numberActive: true,
+      assistantAssigned: false,
+      outboundReady: true,
+      webhookConfigured: true,
+    });
+    expect(typeof body.checkedAt).toBe('string');
+  });
+
+  it('dengan integrasi + call sukses → lastSuccessfulCallAt terisi', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: { mode: 'operator', vapiPhoneNumberId: 'pn-new-1', phoneNumber: '+14155550198' },
+      }),
+    ]);
+    dbState.tables.set('calleCalls', [
+      {
+        id: 'call-1',
+        workspaceId: 'ws-1',
+        calleCallId: 'vapi-call-1',
+        phone: '+6281234567890',
+        status: 'completed',
+        createdAt: new Date('2026-01-05T10:42:00.000Z'),
+        updatedAt: new Date('2026-01-05T10:44:00.000Z'),
+      },
+    ]);
+    getVapiPhoneNumberMock.mockResolvedValue({
+      id: 'pn-new-1',
+      number: '+14155550198',
+      provider: 'vapi',
+    });
+    const res = await app.request('/api/integrations/vapi/health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      vapiPhoneNumberId: 'pn-new-1',
+      numberActive: true,
+      outboundReady: true,
+      lastSuccessfulCallAt: '2026-01-05T10:42:00.000Z',
+    });
+  });
+
+  it('nomor tidak ditemukan di Vapi → numberActive false', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: { mode: 'operator', vapiPhoneNumberId: 'pn-gone-1', phoneNumber: '+14155550198' },
+      }),
+    ]);
+    getVapiPhoneNumberMock.mockResolvedValue(null);
+    const res = await app.request('/api/integrations/vapi/health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ numberActive: false, outboundReady: false });
+  });
+
+  it('provisionPending → numberActive false (nomor belum dikonfirmasi)', async () => {
+    dbState.tables.set('workspaceIntegrations', [
+      baseIntegration({
+        integrationType: 'vapi',
+        identifier: '+14155550198',
+        providerConfig: {
+          mode: 'operator',
+          vapiPhoneNumberId: 'pn-new-1',
+          phoneNumber: '+14155550198',
+          provisionPending: true,
+        },
+      }),
+    ]);
+    const res = await app.request('/api/integrations/vapi/health', {
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER },
+    });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.numberActive).toBe(false);
+    expect(getVapiPhoneNumberMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('Voice AI inbound — GET /api/integrations/vapi/inbound', () => {
@@ -1982,6 +2550,63 @@ describe('Voice AI inbound — POST /api/integrations/vapi/inbound/register', ()
     });
     expect(res.status).toBe(400);
     expect(registerInboundNumberForWorkspaceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Voice AI inbound — POST /api/integrations/vapi/inbound/attach', () => {
+  it('pasang nomor yang sudah ada → 201 + panggil attach', async () => {
+    listOperatorVapiPhoneNumbersMock.mockResolvedValue([
+      { id: 'vapi-free-1', number: '+14155550123', name: null, provider: 'vapi' },
+    ]);
+    attachInboundNumberForWorkspaceMock.mockResolvedValue({
+      id: 'inb-3',
+      vapiPhoneNumberId: 'vapi-free-1',
+      number: '+14155550123',
+      name: null,
+      provider: 'vapi',
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const res = await app.request('/api/integrations/vapi/inbound/attach', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vapiPhoneNumberId: 'vapi-free-1' }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.number.vapiPhoneNumberId).toBe('vapi-free-1');
+    expect(attachInboundNumberForWorkspaceMock).toHaveBeenCalledWith({
+      userId: 'test-user-1',
+      workspaceId: 'ws-1',
+      vapiPhoneNumberId: 'vapi-free-1',
+      name: undefined,
+    });
+  });
+
+  it('nomor bukan milik akun operator → 400 tanpa attach', async () => {
+    listOperatorVapiPhoneNumbersMock.mockResolvedValue([
+      { id: 'vapi-other', number: null, name: 'oriole-byoc-x', provider: 'telnyx' },
+    ]);
+    const res = await app.request('/api/integrations/vapi/inbound/attach', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vapiPhoneNumberId: 'vapi-free-1' }),
+    });
+    expect(res.status).toBe(400);
+    expect(attachInboundNumberForWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it('nomor dipakai workspace lain → 409', async () => {
+    listOperatorVapiPhoneNumbersMock.mockResolvedValue([
+      { id: 'vapi-free-1', number: '+14155550123', name: null, provider: 'vapi' },
+    ]);
+    attachInboundNumberForWorkspaceMock.mockRejectedValue(new InboundNumberInUseErrorMock('dipakai'));
+    const res = await app.request('/api/integrations/vapi/inbound/attach', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, ...WORKSPACE_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vapiPhoneNumberId: 'vapi-free-1' }),
+    });
+    expect(res.status).toBe(409);
   });
 });
 

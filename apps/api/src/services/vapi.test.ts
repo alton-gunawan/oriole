@@ -12,7 +12,21 @@ vi.mock('../lib/env.ts', () => ({
   },
 }));
 
-import { filterOperatorVapiNumbers, VAPI_BYOC_NAME_PREFIX } from './vapi.ts';
+import { filterOperatorVapiNumbers, vapiAreaCode, VAPI_BYOC_NAME_PREFIX } from './vapi.ts';
+
+describe('vapiAreaCode', () => {
+  it('default 415 saat kosong / format tidak valid — Vapi menolak tanpa area code', () => {
+    expect(vapiAreaCode()).toBe('415');
+    expect(vapiAreaCode('')).toBe('415');
+    expect(vapiAreaCode('12')).toBe('415');
+    expect(vapiAreaCode('12345')).toBe('415');
+  });
+
+  it('memakai kode area valid 3 digit', () => {
+    expect(vapiAreaCode('212')).toBe('212');
+    expect(vapiAreaCode('  415 ')).toBe('415');
+  });
+});
 
 describe('filterOperatorVapiNumbers', () => {
   it('menyaring nomor BYOC (prefix oriole-byoc-) dari picker operator', () => {

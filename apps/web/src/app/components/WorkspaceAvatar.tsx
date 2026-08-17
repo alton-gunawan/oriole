@@ -11,7 +11,7 @@ interface WorkspaceAvatarProps {
 }
 
 /**
- * Avatar project: menampilkan `workspace.avatarUrl` (planet DiceBear pilihan
+ * Avatar bisnis: menampilkan `workspace.avatarUrl` (planet DiceBear pilihan
  * atau gambar upload 1:1) bila ada; fallback ke `PlanetIcon` berbasis nama
  * (planet deterministik + badge huruf awal bila API DiceBear gagal).
  *

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,6 @@ import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { AppLogo } from '../components/AppLogo';
 import {
   IconCalendar,
-  IconChart,
   IconCheck,
   IconChat,
   IconChevronDown,
@@ -54,11 +53,11 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/app/dashboard', labelKey: 'nav.dashboard', icon: IconDashboard },
-  { to: '/app/analytics', labelKey: 'nav.analytics', icon: IconChart },
   { to: '/app/bookings', labelKey: 'nav.bookings', icon: IconCalendar },
+  { to: '/app/calendar', labelKey: 'nav.calendar', icon: IconCalendar },
   { to: '/app/contacts', labelKey: 'nav.contacts', icon: IconUsers },
-  { to: '/app/staff', labelKey: 'nav.staff', icon: IconStaff },
   { to: '/app/services', labelKey: 'nav.services', icon: IconServices },
+  { to: '/app/staff', labelKey: 'nav.staff', icon: IconStaff },
   { to: '/app/inbox', labelKey: 'nav.inbox', icon: IconChat },
   { to: '/app/calls', labelKey: 'nav.calls', icon: IconPhone },
   { to: '/app/integrations', labelKey: 'nav.integrations', icon: IconPlug },
@@ -67,7 +66,7 @@ const NAV: NavItem[] = [
 ];
 
 function Logo({ collapsed = false }: { collapsed?: boolean }) {
-  // Hanya ikon — tanpa nama brand. pb-4 memberi jarak dari switcher project
+  // Hanya ikon — tanpa nama brand. pb-4 memberi jarak dari switcher bisnis
   // di bawahnya; px-4 menyelaraskan dengan avatar di dalam trigger.
   return (
     <div className={`flex items-center pb-4 pt-4 ${collapsed ? 'justify-center px-0' : 'px-4'}`}>
@@ -91,8 +90,8 @@ const userMenuTriggerStyle = {
   '--color-overlay-hover': 'rgba(0,0,0,0.08)',
 };
 
-// Trigger switcher project di sidebar terang — sama seperti trigger akun.
-const projectTriggerStyle = {
+// Trigger switcher bisnis di sidebar terang — sama seperti trigger akun.
+const businessTriggerStyle = {
   height: 'auto',
   minHeight: 30,
   padding: 5,
@@ -102,7 +101,7 @@ const projectTriggerStyle = {
 };
 
 /**
- * Badge unread amber (pill) — dipakai di project switcher & item nav Inbox.
+ * Badge unread amber (pill) — dipakai di business switcher & item nav Inbox.
  * Sembunyi saat count <= 0; tampilkan "99+" saat overflow.
  */
 function UnreadBadge({ count, label, className }: { count: number; label: string; className?: string }) {
@@ -150,7 +149,7 @@ function formatLastOpened(iso: string, language: string): string {
 export function AppShell() {
   const { t, i18n } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [businessMenuOpen, setBusinessMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBillingOpen, setIsBillingOpen] = useState(false);
@@ -165,6 +164,11 @@ export function AppShell() {
     }
   });
   const navigate = useNavigate();
+  // Halaman Calendar memakai layout full-bleed (tanpa max-width/padding) agar
+  // kalender bisa melebar penuh & mengisi sisa tinggi viewport. Halaman lain
+  // tetap memakai kontainer standar max-w-6xl.
+  const location = useLocation();
+  const isCalendarFullBleed = location.pathname === '/app/calendar';
   // Tema SELURUH app: 'system' mengikuti OS, 'light'/'dark' memaksa.
   // Disimpan per-perangkat di localStorage — logika di lib/theme.ts.
   const [sidebarTheme, setSidebarTheme] = useState<AppTheme>(readStoredTheme);
@@ -200,8 +204,8 @@ export function AppShell() {
 
   // Layar ≥ lg (1024px, breakpoint Tailwind `lg:`) → sidebar desktop. Di layar
   // kecil sidebar desktop TIDAK ikut di-render: kalau dua sidebar (desktop
-  // `hidden` + drawer) mount bersamaan, project switcher di keduanya berbagi
-  // state `projectMenuOpen` yang sama — kedua popover native `popover="auto"`
+  // `hidden` + drawer) mount bersamaan, business switcher di keduanya berbagi
+  // state `businessMenuOpen` yang sama — kedua popover native `popover="auto"`
   // saling menutup (spec: show() satu auto-popover menutup yang lain) sehingga
   // menu drawer langsung tertutup setelah dibuka.
   const [isDesktop, setIsDesktop] = useState(
@@ -215,7 +219,7 @@ export function AppShell() {
       // terbuka dan muncul lagi diam-diam saat resize balik ke mobile.
       if (event.matches) {
         setMenuOpen(false);
-        setProjectMenuOpen(false);
+        setBusinessMenuOpen(false);
         setUserMenuOpen(false);
       }
     };
@@ -233,7 +237,7 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   const user = useSessionStore((s) => s.user);
-  // Total unread per project — badge di project switcher + badge item nav
+  // Total unread per bisnis — badge di business switcher + badge item nav
   // Inbox. Di-poll tiap menit + direfetch tiap dropdown dibuka agar tidak
   // basi saat pesan masuk.
   const { data: unreadSummary, refetch: refetchUnread } = useQuery({
@@ -279,25 +283,25 @@ export function AppShell() {
           placement="below"
           hasChevron={false}
           menuWidth={300}
-          isMenuOpen={projectMenuOpen}
+          isMenuOpen={businessMenuOpen}
           onOpenChange={(open) => {
-            setProjectMenuOpen(open);
-            // Segarkan badge unread setiap dropdown project dibuka.
+            setBusinessMenuOpen(open);
+            // Segarkan badge unread setiap dropdown bisnis dibuka.
             if (open) void refetchUnread();
           }}
           button={{
-              label: activeWorkspace?.name ?? t('nav.selectProject'),
+              label: activeWorkspace?.name ?? t('nav.selectBusiness'),
               variant: 'ghost',
               width: '100%',
               style: collapsed
-                ? { ...projectTriggerStyle, justifyContent: 'center' }
-                : projectTriggerStyle,
+                ? { ...businessTriggerStyle, justifyContent: 'center' }
+                : businessTriggerStyle,
               children: (
                 <span className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
                   <WorkspaceAvatar workspace={activeWorkspace ?? { name: '?' }} size={24} />
                   {!collapsed && (
                     <span className="min-w-0 flex-1 truncate text-left text-base font-semibold text-zinc-800 dark:text-zinc-200">
-                      {activeWorkspace?.name ?? t('nav.selectProject')}
+                      {activeWorkspace?.name ?? t('nav.selectBusiness')}
                     </span>
                   )}
                 </span>
@@ -305,14 +309,14 @@ export function AppShell() {
               endContent: collapsed ? undefined : (
                 <IconChevronDown
                   className={`size-3.5 shrink-0 text-zinc-400 transition-transform duration-200 ${
-                    projectMenuOpen ? 'rotate-180' : ''
+                    businessMenuOpen ? 'rotate-180' : ''
                   }`}
                 />
               ),
             }}
           >
-            {/* Hanya daftar project yang scroll (max ~4 item, 192px); footer
-                "Kelola project" di bawah TETAP terlihat. Keyboard nav aman:
+            {/* Hanya daftar bisnis yang scroll (max ~4 item, 192px); footer
+                "Kelola bisnis" di bawah TETAP terlihat. Keyboard nav aman:
                 astryx mencari item via [role="menuitem"] descendant dari
                 [role="menu"], jadi wrapper div tidak memutusnya. pr-1 memberi
                 ruang scrollbar agar tidak menimpa teks item. */}
@@ -358,19 +362,19 @@ export function AppShell() {
                   // Item menu menutup popover sendiri via ctx.closeMenu(); link
                   // footer bukan menu item — tutup manual agar tidak tetap
                   // terbuka di atas halaman Workspaces.
-                  setProjectMenuOpen(false);
+                  setBusinessMenuOpen(false);
                   onNavigate?.();
                 }}
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-amber-600 transition hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
               >
-                <IconPlus className="size-3.5" /> {t('nav.manageProjects')}
+                <IconPlus className="size-3.5" /> {t('nav.manageBusinesses')}
               </NavLink>
             </div>
           </DropdownMenu>
       </div>
 
       {/* Padding horizontal rail ciut = px-2.5 (10px), SAMA dengan margin
-          project switcher di atasnya — tombol ikon jadi 44×44 (1:1), tidak
+          business switcher di atasnya — tombol ikon jadi 44×44 (1:1), tidak
           selebar rail penuh. */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-1">
         {!collapsed && (
@@ -594,7 +598,7 @@ export function AppShell() {
         </div>
       )}
 
-      {/* Loader saat pindah project — menutupi layar sampai data workspace
+      {/* Loader saat pindah bisnis — menutupi layar sampai data workspace
           baru selesai dimuat (isSwitching di-reset oleh store). */}
       {isSwitching && (
         <div
@@ -604,7 +608,7 @@ export function AppShell() {
         >
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8 py-6 shadow-lg">
             <Spinner size="xl" />
-            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('nav.switchingProject')}</p>
+            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('nav.switchingBusiness')}</p>
           </div>
         </div>
       )}
@@ -624,7 +628,13 @@ export function AppShell() {
           className="fixed left-4 top-4 z-30 lg:hidden"
         />
 
-        <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <main
+          className={`mx-auto w-full ${
+            isCalendarFullBleed
+              ? 'flex h-dvh max-w-none flex-col overflow-hidden px-0 py-0'
+              : 'max-w-6xl px-4 py-8 sm:px-6 lg:px-8'
+          }`}
+        >
           <Outlet />
         </main>
       </div>

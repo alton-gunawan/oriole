@@ -107,11 +107,32 @@ type RefreshResult =
 
 let inFlightRefresh: Promise<RefreshResult> | null = null;
 
+/** Batas menunggu JWT dari Neon Auth. Remote auth yang tidak terjangkau
+ *  (host black-hole / down) TIDAK boleh menggantung request — dan splash
+ *  boot restoreSession — selamanya. Sama dengan default timeout doFetch. */
+const REFRESH_TIMEOUT_MS = 10_000;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 function tryRefreshToken(): Promise<RefreshResult> {
   inFlightRefresh ??= (async (): Promise<RefreshResult> => {
     try {
       const { getNeonJwtOrThrow } = await import('./auth');
-      const token = await getNeonJwtOrThrow();
+      const token = await withTimeout(getNeonJwtOrThrow(), REFRESH_TIMEOUT_MS);
       return token ? { kind: 'refreshed', token } : { kind: 'no-session' };
     } catch {
       // Error jaringan / SDK gagal dimuat — transien, bukan bukti sesi mati.

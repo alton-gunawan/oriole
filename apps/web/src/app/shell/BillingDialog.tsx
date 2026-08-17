@@ -126,7 +126,7 @@ function UsageBar({
 /* ── Dialog billing ──────────────────────────────────────────
  * Dulu halaman /app/billing — kini dialog yang dibuka dari dropdown
  * akun di footer sidebar (menu → item "Billing"). Struktur mengikuti
- * dialog "Create project" (WorkspaceSettingsPage): Layout dengan
+ * dialog "Create business" (WorkspaceSettingsPage): Layout dengan
  * header tetap, konten scroll di tengah, dan footer aksi selalu
  * terlihat — tombol upgrade/portal tidak lagi terkubur di dalam kartu.
  * Data di-refetch otomatis tiap dialog dibuka (activeWorkspaceId di

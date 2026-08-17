@@ -73,12 +73,15 @@ export function PageHeader({
   title,
   description,
   icon: Icon,
+  status,
   children,
 }: {
   title: string;
   description?: string;
   /** Ikon ditampilkan di kiri judul — wadah badge amber konsisten antar halaman. */
   icon?: ComponentType<IconProps>;
+  /** Elemen kecil di kanan judul (mis. StatusDot kesegaran data real-time). */
+  status?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -87,6 +90,7 @@ export function PageHeader({
         <div className="flex items-center gap-3">
           {Icon && <Icon className="size-6 shrink-0 text-amber-600" />}
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h1>
+          {status && <div className="flex items-center">{status}</div>}
         </div>
         {description && <p className="mt-1.5 max-w-xl text-base leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>}
       </div>
@@ -210,7 +214,7 @@ export function ConfirmDialog({
   onAction: () => unknown;
   width?: number | string;
   /**
-   * Bila diisi, user harus mengetik teks persis ini (mis. nama project) di
+   * Bila diisi, user harus mengetik teks persis ini (mis. nama bisnis) di
    * input konfirmasi sebelum tombol aksi aktif — mencegah hapus tidak sengaja.
    */
   confirmText?: string;
@@ -220,7 +224,7 @@ export function ConfirmDialog({
   const descriptionId = useId();
   const [typed, setTyped] = useState('');
 
-  // Reset input setiap dialog dibuka/ditutup agar tidak basi antar project.
+  // Reset input setiap dialog dibuka/ditutup agar tidak basi antar bisnis.
   useEffect(() => {
     if (!isOpen) setTyped('');
   }, [isOpen]);

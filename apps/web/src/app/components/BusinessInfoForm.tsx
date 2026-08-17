@@ -165,48 +165,51 @@ export function BusinessInfoForm({
           {draft.map((entry, day) => {
             const open = entry !== null;
             return (
-              <div key={day} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                <div className="w-32 shrink-0">
-                  <Switch
-                    label={t(WEEKDAY_LABEL_KEYS[day])}
-                    value={open}
-                    onChange={(enabled) =>
-                      setDay(
-                        day,
-                        enabled
-                          ? { dayOfWeek: day, startMinutes: 9 * 60, endMinutes: 17 * 60 }
-                          : null,
-                      )
-                    }
-                    labelPosition="start"
-                  />
-                </div>
+              <div
+                key={day}
+                className="grid grid-cols-[11rem_1fr] items-center gap-3 rounded-lg px-2 py-1.5"
+              >
+                <Switch
+                  label={t(WEEKDAY_LABEL_KEYS[day])}
+                  value={open}
+                  onChange={(enabled) =>
+                    setDay(
+                      day,
+                      enabled
+                        ? { dayOfWeek: day, startMinutes: 9 * 60, endMinutes: 17 * 60 }
+                        : null,
+                    )
+                  }
+                  labelPosition="start"
+                />
                 {open ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                  /* Dua TimeInput compact (sm, lebar tetap) — tanpa width="100%"
+                     yang membuat baris meluber ke kanan dan input kedua terpotong. */
+                  <div className="flex min-w-0 items-center gap-2">
                     <TimeInput
                       label={t('ws.openAt')}
                       isLabelHidden
+                      size="sm"
                       hourFormat="24h"
                       value={toTimeString(entry.startMinutes)}
                       onChange={(value) =>
                         setDay(day, { ...entry, startMinutes: toMinutes(value) })
                       }
-                      width="100%"
                     />
-                    <span className="text-xs text-zinc-400">—</span>
+                    <span className="shrink-0 text-xs text-zinc-400">—</span>
                     <TimeInput
                       label={t('ws.closeAt')}
                       isLabelHidden
+                      size="sm"
                       hourFormat="24h"
                       value={toTimeString(entry.endMinutes)}
                       onChange={(value) =>
                         setDay(day, { ...entry, endMinutes: toMinutes(value) })
                       }
-                      width="100%"
                     />
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-400">{t('ws.hoursClosed')}</p>
+                  <span className="text-xs text-zinc-400">{t('ws.hoursClosed')}</span>
                 )}
               </div>
             );

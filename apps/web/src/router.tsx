@@ -7,6 +7,7 @@ import { RouteErrorElement } from './app/shell/RouteErrorElement';
 import { BookingDetailPage } from './app/pages/BookingDetailPage';
 import { BookingNewPage } from './app/pages/BookingNewPage';
 import { BookingsPage } from './app/pages/BookingsPage';
+import { CalendarPage } from './app/pages/CalendarPage';
 import { StaffPage } from './app/pages/StaffPage';
 import { ServicesPage } from './app/pages/ServicesPage';
 import { CallsPage } from './app/pages/CallsPage';
@@ -19,6 +20,7 @@ import { HelpPage } from './app/pages/HelpPage';
 import { InboxPage } from './app/pages/InboxPage';
 import { LandingPage } from './app/pages/LandingPage';
 import { OnboardingPage } from './app/pages/OnboardingPage';
+import { StaffDetailPage } from './app/pages/StaffDetailPage';
 import { WorkspaceSettingsPage } from './app/pages/WorkspaceSettingsPage';
 
 /**
@@ -36,14 +38,6 @@ const ForgotPasswordPage = lazy(() =>
 );
 const CallbackPage = lazy(() =>
   import('./app/auth/CallbackPage').then((m) => ({ default: m.CallbackPage })),
-);
-
-/**
- * AnalyticsPage di-lazy-load agar recharts (dependency tremor) tidak ikut
- * bundle awal — chunk terpisah baru dimuat saat membuka /app/analytics.
- */
-const AnalyticsPage = lazy(() =>
-  import('./app/pages/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })),
 );
 
 function withSuspense(Component: ComponentType) {
@@ -105,7 +99,9 @@ export const router = createBrowserRouter([
           { path: 'dashboard', ...PAGE_ERROR, element: <DashboardPage /> },
           { path: 'bookings', ...PAGE_ERROR, element: <BookingsPage /> },
           { path: 'bookings/new', ...PAGE_ERROR, element: <BookingNewPage /> },
+          { path: 'calendar', ...PAGE_ERROR, element: <CalendarPage /> },
           { path: 'staff', ...PAGE_ERROR, element: <StaffPage /> },
+          { path: 'staff/:id', ...PAGE_ERROR, element: <StaffDetailPage /> },
           { path: 'services', ...PAGE_ERROR, element: <ServicesPage /> },
           { path: 'bookings/:id', ...PAGE_ERROR, element: <BookingDetailPage /> },
           { path: 'contacts', ...PAGE_ERROR, element: <ContactsPage /> },
@@ -119,7 +115,6 @@ export const router = createBrowserRouter([
           // Backward compat: /app/channels lama → halaman Integrations.
           { path: 'channels', ...PAGE_ERROR, element: <Navigate to="/app/integrations" replace /> },
           { path: 'calls', ...PAGE_ERROR, element: <CallsPage /> },
-          { path: 'analytics', ...PAGE_ERROR, element: withSuspense(AnalyticsPage) },
           // Billing kini dialog dari dropdown akun (sidebar footer) — URL lama
           // dialihkan ke dashboard agar bookmark/link lama tidak 404.
           { path: 'billing', ...PAGE_ERROR, element: <Navigate to="/app/dashboard" replace /> },

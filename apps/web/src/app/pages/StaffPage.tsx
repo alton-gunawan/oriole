@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { Trans, useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
-  DateInput,
   Dialog,
   DialogHeader,
   DropdownMenu,
@@ -30,18 +29,18 @@ import {
   useTablePagination,
   useTableSelection,
   useTableSelectionState,
-  type ISODateString,
   type ISOTimeString,
   type TableColumn,
 } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
+import { tintedBadgeVariant } from '../../lib/badge-variant';
 import { errorMessage } from '../../lib/errors';
 import {
   type CreateStaffPayload,
   type ScheduleDraft,
   type StaffRecord,
-  type StaffTimeOff,
+  type StaffSchedule,
   type UpdateStaffPayload,
   WEEKDAY_LABEL_KEYS,
 } from '../../lib/staff';
@@ -106,16 +105,6 @@ function toMinutes(time: string | undefined): number {
   return h * 60 + m;
 }
 
-/** Format rentang menit → "09:00 – 17:00" untuk tampilan jadwal. */
-function rangeLabel(startMinutes: number, endMinutes: number): string {
-  return `${toTimeString(startMinutes)} – ${toTimeString(endMinutes)}`;
-}
-
-/** Format tanggal ISO → YYYY-MM-DD (bagian tanggal saja). */
-function dateOnly(iso: string): string {
-  return iso.slice(0, 10);
-}
-
 /** Jam langsung untuk zona waktu terpilih + UTC — dipakai di dialog tambah
  *  staf agar saat memilih zona waktu, user langsung melihat jam berapa
  *  sekarang di zona itu dibandingkan UTC. State lokal di komponen kecil ini
@@ -150,19 +139,17 @@ function TimezoneClock({ timezone }: { timezone: string }) {
 
 const STAFF_COLORS = ['#f59e0b', '#0ea5e9', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#14b8a6', '#6366f1', '#f97316', '#84cc16'];
 
-/** Dropdown aksi per baris staf — tombol ⋯ membuka menu (jadwal, cuti, edit,
+/** Dropdown aksi per baris staf — tombol ⋯ membuka menu (jadwal, edit,
  *  hapus). Menggantikan deretan IconButton agar kolom aksi ringkas & konsisten
  *  dengan kolom aksi di BookingsPage. */
 function StaffActionsMenu({
   staff,
   onSchedule,
-  onTimeOff,
   onEdit,
   onDelete,
 }: {
   staff: StaffRecord;
   onSchedule: () => void;
-  onTimeOff: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -188,11 +175,6 @@ function StaffActionsMenu({
         icon={<IconCalendar className="size-4" />}
         label={t('staff.editSchedule')}
         onClick={onSchedule}
-      />
-      <DropdownMenuItem
-        icon={<IconClock className="size-4" />}
-        label={t('staff.editTimeOff')}
-        onClick={onTimeOff}
       />
       <DropdownMenuItem
         icon={<IconEdit className="size-4" />}
@@ -221,6 +203,104 @@ const STATUS_TEXT: Record<string, string> = {
   active: 'text-emerald-600',
   inactive: 'text-zinc-500 dark:text-zinc-400',
 };
+
+/**
+ * Badge hari jadwal yang menyesuaikan lebar kolom — seperti text-overflow
+ * ellipsis: tampilkan SEBANYAK yang muat (satu atau lebih), sisanya diringkas
+ * badge "+N" di ujung. Lebar kolom diukur via ResizeObserver; lebar badge
+ * di-cache agar pengukuran ulang tetap akurat walau badge tersembunyi.
+ */
+function ScheduleDayBadges({ schedules }: { schedules: StaffSchedule[] }) {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLSpanElement>(null);
+  // Jumlah badge yang ditampilkan; null = belum diukur (tampilkan semua dulu).
+  const [fit, setFit] = useState<number | null>(null);
+  // Cache lebar AKTUAL badge per entry.id — tetap akurat walau badge sedang
+  // disembunyikan (saat kolom melebar, pengukuran ulang memakai cache ini
+  // untuk menampilkan kembali badge yang tadinya masuk "+N").
+  const widthsRef = useRef<Map<string, number>>(new Map());
+
+  // Satu badge per HARI kerja — jadwal dengan beberapa rentang di hari yang
+  // sama (mis. pagi + sore) tampil sekali, agar kolom tidak penuh badge hari
+  // ganda yang membingungkan. Urutan asli (hari naik dari API) dipertahankan.
+  const days = useMemo(() => {
+    const seen = new Set<number>();
+    const out: StaffSchedule[] = [];
+    for (const s of schedules) {
+      if (seen.has(s.dayOfWeek)) continue;
+      seen.add(s.dayOfWeek);
+      out.push(s);
+    }
+    return out;
+  }, [schedules]);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const n = days.length;
+    const measure = () => {
+      // Rekam lebar aktual badge hari yang sedang terlihat (badge dirender
+      // natural/shrink-0, jadi offsetWidth = lebar sebenarnya).
+      for (const child of Array.from(el.children)) {
+        const node = child as HTMLElement;
+        const dayId = node.dataset.day;
+        if (dayId && node.offsetWidth > 0) widthsRef.current.set(dayId, node.offsetWidth);
+      }
+      const gap = 4; // gap-1 (px)
+      const plusWidth = 44; // lebar badge "+N" (2 karakter + padding) + ruang aman
+      // Greedy dari kiri: tambahkan badge selama masih muat, memakai lebar
+      // AKTUAL (bukan perkiraan) — seperti text-overflow ellipsis yang memakai
+      // seluruh ruang kolom, bukan membulatkan ke jumlah badge utuh.
+      let total = plusWidth;
+      let k = 0;
+      for (let i = 0; i < days.length; i += 1) {
+        const w = widthsRef.current.get(days[i].id);
+        if (w === undefined) break; // badge belum pernah terukur — berhenti aman
+        const next = total + w + (i > 0 ? gap : 0);
+        if (next > el.clientWidth) break;
+        total = next;
+        k = i + 1;
+      }
+      // Selalu tampilkan minimal 1 badge bila ada hari (kolom sangat sempit).
+      if (k < 1 && n > 0) k = 1;
+      if (k > n) k = n;
+      setFit((prev) => (prev === k ? prev : k));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [days]);
+
+  const n = days.length;
+  const visible = fit ?? n;
+  const hiddenCount = n - visible;
+
+  return (
+    <span ref={containerRef} className="flex w-full items-center gap-1 overflow-hidden">
+      {/* Badge tampil berurutan dari kiri dengan lebar natural (shrink-0),
+          tidak meregang membagi rata kolom; hari yang tak muat diringkas
+          badge "+N" di ujung. */}
+      {days.slice(0, visible).map((entry) => (
+        <span key={entry.id} data-day={entry.id} className="shrink-0">
+          <Badge
+            variant={tintedBadgeVariant(String(entry.dayOfWeek))}
+            label={
+              <span className="block truncate">
+                {t(WEEKDAY_LABEL_KEYS[entry.dayOfWeek] ?? WEEKDAY_LABEL_KEYS[0]).slice(0, 3)}
+              </span>
+            }
+          />
+        </span>
+      ))}
+      {hiddenCount > 0 && (
+        <span className="shrink-0">
+          <Badge variant="neutral" label={`+${hiddenCount}`} />
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function StaffPage() {
   const { t } = useTranslation();
@@ -503,58 +583,6 @@ export function StaffPage() {
     }
   };
 
-  // ── Dialog cuti ────────────────────────────────────────────
-  const [timeOffStaff, setTimeOffStaff] = useState<StaffRecord | null>(null);
-  const [timeOffStart, setTimeOffStart] = useState('');
-  const [timeOffEnd, setTimeOffEnd] = useState('');
-  const [timeOffReason, setTimeOffReason] = useState('');
-  const [timeOffError, setTimeOffError] = useState<string | null>(null);
-
-  const openTimeOff = (staff: StaffRecord) => {
-    setTimeOffStaff(staff);
-    setTimeOffStart('');
-    setTimeOffEnd('');
-    setTimeOffReason('');
-    setTimeOffError(null);
-  };
-
-  const addTimeOffMutation = useMutation({
-    mutationFn: (payload: { startDate: string; endDate: string; reason?: string }) =>
-      apiFetch<{ timeOff: StaffTimeOff }>(`/staff/${timeOffStaff?.id}/time-off`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      setTimeOffStart('');
-      setTimeOffEnd('');
-      setTimeOffReason('');
-      queryClient.invalidateQueries({ queryKey: ['staff', activeWorkspaceId] });
-    },
-    onError: (err) => setTimeOffError(errorMessage(err, t, 'errors.saveTimeOff')),
-  });
-
-  const submitTimeOff = (event: FormEvent) => {
-    event.preventDefault();
-    if (!timeOffStart || !timeOffEnd) return;
-    if (timeOffEnd < timeOffStart) {
-      setTimeOffError(t('staff.timeOffInvalidRange'));
-      return;
-    }
-    setTimeOffError(null);
-    addTimeOffMutation.mutate({
-      startDate: timeOffStart,
-      endDate: timeOffEnd,
-      reason: timeOffReason.trim() || undefined,
-    });
-  };
-
-  const removeTimeOffMutation = useMutation({
-    mutationFn: ({ staffId, timeOffId }: { staffId: string; timeOffId: string }) =>
-      apiFetch(`/staff/${staffId}/time-off/${timeOffId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff', activeWorkspaceId] }),
-    onError: (err) => setTimeOffError(errorMessage(err, t, 'errors.deleteTimeOff')),
-  });
-
   // ── Tampilan tabel (mirror BookingsPage): pagination client-side ──
   // GET /api/staff mengembalikan SEMUA staf sekaligus (tanpa pagination
   // server) — data dislicing di client lewat paginateData (utilitas astryx
@@ -676,9 +704,19 @@ export function StaffPage() {
               {!staff.isActive && <Badge variant="neutral" label={t('staff.inactive')} />}
             </span>
             <span className="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">
-              {[staff.email, staff.phone].filter(Boolean).join(' · ') || '—'}
+              {staff.email ?? '—'}
             </span>
           </span>
+        </span>
+      ),
+    },
+    {
+      key: 'phone',
+      header: t('common.phone'),
+      width: pixel(150),
+      renderCell: (staff) => (
+        <span className="block truncate text-sm text-zinc-600 dark:text-zinc-400">
+          {staff.phone ?? <span className="text-zinc-300">—</span>}
         </span>
       ),
     },
@@ -687,57 +725,36 @@ export function StaffPage() {
       header: t('staff.timezone'),
       width: proportional(2),
       renderCell: (staff) => (
-        <span className="block min-w-0">
-          <span className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-            <IconClock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-            <span className="truncate">{staff.timezone}</span>
-          </span>
-          {staff.bufferMinutes > 0 && (
-            <span className="mt-0.5 block text-xs text-zinc-400">
-              {t('staff.bufferShort', { minutes: staff.bufferMinutes })}
-            </span>
-          )}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <IconClock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+          <span className="block truncate">{staff.timezone}</span>
         </span>
       ),
     },
     {
+      key: 'buffer',
+      header: t('staff.colBuffer'),
+      width: pixel(140),
+      renderCell: (staff) =>
+        staff.bufferMinutes > 0 ? (
+          <span className="block truncate text-sm text-zinc-600 dark:text-zinc-400">
+            {t('staff.bufferShort', { minutes: staff.bufferMinutes })}
+          </span>
+        ) : (
+          <span className="text-sm text-zinc-300">—</span>
+        ),
+    },
+    {
       key: 'schedule',
       header: t('staff.colSchedule'),
-      width: proportional(3),
+      width: proportional(2),
       renderCell: (staff) =>
         staff.schedules.length === 0 ? (
           <span className="text-sm text-zinc-400">{t('staff.noScheduleHint')}</span>
         ) : (
-          <span className="flex flex-wrap gap-1">
-            {staff.schedules.map((entry) => (
-              <span
-                key={entry.id}
-                className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400"
-              >
-                {t(WEEKDAY_LABEL_KEYS[entry.dayOfWeek] ?? WEEKDAY_LABEL_KEYS[0]).slice(0, 3)}
-                <span className="text-zinc-400">{rangeLabel(entry.startMinutes, entry.endMinutes)}</span>
-              </span>
-            ))}
-          </span>
-        ),
-    },
-    {
-      key: 'timeOff',
-      header: t('staff.timeOff'),
-      width: pixel(150),
-      renderCell: (staff) =>
-        staff.timeOff.length === 0 ? (
-          <span className="text-sm text-zinc-300">—</span>
-        ) : (
-          <span className="block min-w-0 text-sm text-zinc-600 dark:text-zinc-400">
-            <span className="block truncate">
-              {t('staff.timeOffCount', { count: staff.timeOff.length })}
-            </span>
-            {/* timeOff sudah terurut naik dari API — entri pertama = cuti terdekat. */}
-            <span className="mt-0.5 block truncate text-xs text-zinc-400">
-              {dateOnly(staff.timeOff[0].startDate)}
-            </span>
-          </span>
+          // Token badge hari (warna deterministik per hari) — tampilkan
+          // sebanyak yang muat selebar kolom + badge "+N" untuk sisanya.
+          <ScheduleDayBadges schedules={staff.schedules} />
         ),
     },
     {
@@ -750,7 +767,6 @@ export function StaffPage() {
           <StaffActionsMenu
             staff={staff}
             onSchedule={() => openSchedule(staff)}
-            onTimeOff={() => openTimeOff(staff)}
             onEdit={() => openEdit(staff)}
             onDelete={() => setDeleteTarget(staff)}
           />
@@ -767,7 +783,7 @@ export function StaffPage() {
         <button
           type="button"
           onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
         >
           <IconPlus className="size-4" />
           {t('staff.add')}
@@ -1236,45 +1252,42 @@ export function StaffPage() {
           }
           content={
             <LayoutContent>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {scheduleDraft.map((dayRanges, day) => (
                   <div key={day} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t(WEEKDAY_LABEL_KEYS[day])}</p>
+                      <p className="text-base font-semibold text-zinc-800 dark:text-zinc-200">{t(WEEKDAY_LABEL_KEYS[day])}</p>
                       <button
                         type="button"
                         onClick={() => addRange(day)}
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-amber-600 transition hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-base font-semibold text-amber-600 transition hover:bg-amber-50 dark:hover:bg-amber-950/40"
                       >
-                        <IconPlus className="size-3" />
+                        <IconPlus className="size-3.5" />
                         {t('staff.addRange')}
                       </button>
                     </div>
                     {dayRanges.length === 0 ? (
-                      <p className="mt-1.5 text-xs text-zinc-400">{t('staff.dayOff')}</p>
+                      <p className="mt-1.5 text-base text-zinc-400">{t('staff.dayOff')}</p>
                     ) : (
                       <div className="mt-2 space-y-2">
                         {dayRanges.map((range, index) => (
                           <div key={index} className="flex items-center gap-2">
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
-                              <TimeInput
-                                label={t('staff.startTime')}
-                                isLabelHidden
-                                hourFormat="24h"
-                                value={toTimeString(range.startMinutes)}
-                                onChange={(value) => setRange(day, index, { startMinutes: toMinutes(value) })}
-                                width="100%"
-                              />
-                              <span className="text-xs text-zinc-400">—</span>
-                              <TimeInput
-                                label={t('staff.endTime')}
-                                isLabelHidden
-                                hourFormat="24h"
-                                value={toTimeString(range.endMinutes)}
-                                onChange={(value) => setRange(day, index, { endMinutes: toMinutes(value) })}
-                                width="100%"
-                              />
-                            </div>
+                            <TimeInput
+                              label={t('staff.startTime')}
+                              isLabelHidden
+                              hourFormat="24h"
+                              value={toTimeString(range.startMinutes)}
+                              onChange={(value) => setRange(day, index, { startMinutes: toMinutes(value) })}
+                              width="7rem"
+                            />                              <span className="text-base text-zinc-400">—</span>
+                            <TimeInput
+                              label={t('staff.endTime')}
+                              isLabelHidden
+                              hourFormat="24h"
+                              value={toTimeString(range.endMinutes)}
+                              onChange={(value) => setRange(day, index, { endMinutes: toMinutes(value) })}
+                              width="7rem"
+                            />
                             <IconButton
                               icon={<IconTrash className="size-4" />}
                               label={t('staff.removeRange')}
@@ -1297,102 +1310,6 @@ export function StaffPage() {
               <div className="flex justify-end gap-2">
                 <Button label={t('common.cancel')} variant="ghost" onClick={() => setScheduleStaff(null)} isDisabled={scheduleSaving} />
                 <Button label={t('common.save')} variant="primary" isLoading={scheduleSaving} onClick={() => void saveSchedule()} />
-              </div>
-            </LayoutFooter>
-          }
-        />
-      </Dialog>
-
-      {/* Dialog cuti */}
-      <Dialog
-        isOpen={timeOffStaff !== null}
-        onOpenChange={(open) => { if (!open) setTimeOffStaff(null); }}
-        purpose="info"
-        width={480}
-      >
-        <Layout
-          header={
-            <DialogHeader
-              title={t('staff.timeOffTitle', { name: timeOffStaff?.name ?? '' })}
-              subtitle={t('staff.timeOffSubtitle')}
-              onOpenChange={(open) => { if (!open) setTimeOffStaff(null); }}
-              hasDivider
-            />
-          }
-          content={
-            <LayoutContent>
-              <div className="space-y-5">
-                <form id="add-time-off-form" onSubmit={submitTimeOff} className="space-y-4 rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <DateInput
-                      label={t('staff.startDate')}
-                      value={timeOffStart ? (timeOffStart as ISODateString) : undefined}
-                      onChange={(value) => setTimeOffStart(value ?? '')}
-                      format="date"
-                      isRequired
-                    />
-                    <DateInput
-                      label={t('staff.endDate')}
-                      value={timeOffEnd ? (timeOffEnd as ISODateString) : undefined}
-                      onChange={(value) => setTimeOffEnd(value ?? '')}
-                      format="date"
-                      isRequired
-                    />
-                  </div>
-                  <TextInput
-                    label={t('staff.reason')}
-                    placeholder={t('staff.reasonPlaceholder')}
-                    value={timeOffReason}
-                    onChange={setTimeOffReason}
-                    isOptional
-                  />
-                  {timeOffError && <p role="alert" className="text-sm text-red-600">{timeOffError}</p>}
-                  <div className="flex justify-end">
-                    <Button
-                      label={t('staff.addTimeOff')}
-                      variant="secondary"
-                      size="sm"
-                      icon={<IconPlus className="size-3.5" />}
-                      isLoading={addTimeOffMutation.isPending}
-                      isDisabled={addTimeOffMutation.isPending || !timeOffStart || !timeOffEnd}
-                      type="submit"
-                    />
-                  </div>
-                </form>
-
-                {(timeOffStaff?.timeOff.length ?? 0) === 0 ? (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('staff.noTimeOff')}</p>
-                ) : (
-                  <div className="space-y-2">
-                    {timeOffStaff?.timeOff.map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                            {dateOnly(entry.startDate)} → {dateOnly(entry.endDate)}
-                          </p>
-                          {entry.reason && <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.reason}</p>}
-                        </div>
-                        <IconButton
-                          icon={<IconTrash className="size-4" />}
-                          label={t('staff.deleteTimeOff')}
-                          variant="ghost"
-                          size="sm"
-                          isLoading={removeTimeOffMutation.isPending}
-                          onClick={() =>
-                            removeTimeOffMutation.mutate({ staffId: timeOffStaff.id, timeOffId: entry.id })
-                          }
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </LayoutContent>
-          }
-          footer={
-            <LayoutFooter hasDivider>
-              <div className="flex justify-end">
-                <Button label={t('common.close')} variant="ghost" onClick={() => setTimeOffStaff(null)} />
               </div>
             </LayoutFooter>
           }

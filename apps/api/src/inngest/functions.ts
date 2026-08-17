@@ -52,7 +52,12 @@ import {
 } from '../lib/analytics.ts';
 import type { VapiEventData } from '../lib/vapi-types.ts';
 import { parseCallName } from '../lib/vapi-types.ts';
-import { resolveInboundWorkspaceId } from '../lib/vapi-inbound.ts';
+import {
+  getInboundAssistantForWorkspace,
+  provisionInboundAssistantForWorkspace,
+  resolveInboundWorkspaceId,
+} from '../lib/vapi-inbound.ts';
+import type { VapiAssistantSyncData } from '../lib/vapi-assistant-sync.ts';
 import { inngest } from './client.ts';
 
 /**
@@ -72,6 +77,31 @@ interface VapiCallRef {
   workspaceId?: string;
   bookingId?: string;
 }
+
+/* ────────────────────────────────────────────────────────────
+ * Vapi — sinkronisasi asisten inbound (jalur hibrida)
+ * Dipicu perubahan data bisnis (layanan/KB/nama workspace) atau opt-in
+ * nomor inbound. Update-atau-skip: workspace yang belum di-provision
+ * TIDAK dibuatkan asisten diam-diam (kecuali create=true saat opt-in).
+ * ──────────────────────────────────────────────────────────── */
+
+export const syncVapiAssistant = inngest.createFunction(
+  { id: 'vapi-assistant-sync', triggers: { event: 'vapi/assistant.sync' } },
+  async ({ event, step }) => {
+    const { workspaceId, create } = (event.data ?? {}) as VapiAssistantSyncData;
+    if (!workspaceId) return { skipped: 'no-workspace-id' };
+
+    const existing = await step.run('cek-asisten-provisioned', () =>
+      getInboundAssistantForWorkspace(workspaceId),
+    );
+    if (!existing && !create) return { skipped: 'not-provisioned' };
+
+    const result = await step.run('sync-asisten', () =>
+      provisionInboundAssistantForWorkspace(workspaceId),
+    );
+    return { synced: true, ...result };
+  },
+);
 
 export const onVapiEvent = inngest.createFunction(
   { id: 'vapi-event-received', triggers: { event: 'vapi/event.received' } },

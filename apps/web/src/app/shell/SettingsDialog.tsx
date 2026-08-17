@@ -1,5 +1,4 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { useNavigate } from 'react-router';
 import {
   Button,
   Dialog,
@@ -22,7 +21,6 @@ import { errorMessage } from '../../lib/errors';
 import { applyAnalyticsConsent, isAnalyticsEnabled } from '../../lib/analytics';
 import { browserTimezone, TIMEZONE_CURATED, timezoneLabel } from '../../lib/timezones';
 import { callLanguageLabel, VOICE_OPTIONS, voiceLabel } from '../../lib/voice';
-import type { VapiVoiceStatusResponse } from '../../lib/integrations';
 import type { Workspace } from '../../lib/workspace';
 import { useConsentStore } from '../../stores/consent';
 import { useSessionStore } from '../../stores/session';
@@ -30,6 +28,8 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { LANGUAGE_OPTIONS } from './LocaleSwitcher';
+import { InboundNumberPanel } from './phone/InboundNumberPanel';
+import { PhoneNumberPanel } from './phone/PhoneNumberPanel';
 import { ConfirmDialog } from './ui';
 import {
   IconBell,
@@ -38,6 +38,7 @@ import {
   IconFolder,
   IconGlobe,
   IconPhone,
+  IconSettings,
   IconShield,
   IconTrash,
   IconUser,
@@ -46,7 +47,7 @@ import {
 
 /** Bagian dalam dialog Settings — ditampilkan di sidebar kiri dialog. */
 const SECTIONS: {
-  id: 'profile' | 'preferences' | 'voice' | 'notifications' | 'projects' | 'privacy';
+  id: 'profile' | 'preferences' | 'voice' | 'notifications' | 'businesses' | 'privacy';
   labelKey: TranslationKey;
   icon: ComponentType<IconProps>;
 }[] = [
@@ -55,18 +56,8 @@ const SECTIONS: {
   { id: 'voice', labelKey: 'settings.voice', icon: IconPhone },
   { id: 'notifications', labelKey: 'settings.notifications', icon: IconBell },
   { id: 'privacy', labelKey: 'consent.privacy', icon: IconShield },
-  { id: 'projects', labelKey: 'settings.projects', icon: IconFolder },
+  { id: 'businesses', labelKey: 'settings.businesses', icon: IconFolder },
 ];
-
-/** Nomor telepon E.164 → tampilan tersamar, mis. '+1 415 XXX XXXX'. */
-function maskPhoneNumber(phone: string | null | undefined): string {
-  const raw = (phone ?? '').replace(/\D/g, '');
-  if (raw.length < 8) return phone ?? '';
-  const countryLen = raw.startsWith('1') ? 1 : 2;
-  const country = raw.slice(0, countryLen);
-  const area = raw.slice(countryLen, countryLen + 3);
-  return `+${country} ${area} XXX XXXX`;
-}
 
 /** Bahasa panggilan — opsi dropdown Voice AI. */
 const CALL_LANGUAGE_OPTIONS = [
@@ -110,14 +101,13 @@ function LanguageDropdown({
         variant: 'secondary',
         size: 'sm',
         children: (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-            <span className="text-sm leading-none">{current.flag}</span>
-            <span className="tracking-wide">{current.short}</span>
+          <span className="max-w-44 truncate text-base font-semibold text-zinc-600 dark:text-zinc-400">
+            {current.label}
           </span>
         ),
         endContent: (
           <IconChevronDown
-            className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
+            className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
           />
         ),
       }}
@@ -127,7 +117,6 @@ function LanguageDropdown({
         return (
           <DropdownMenuItem
             key={option.code}
-            icon={<span className="text-sm leading-none">{option.flag}</span>}
             label={option.label}
             onClick={() => onSelect(option.code)}
             endContent={selected ? <IconCheck className="size-3.5 text-amber-500" /> : undefined}
@@ -159,7 +148,7 @@ function VoiceLanguageDropdown({
         variant: 'secondary',
         size: 'sm',
         children: (
-          <span className="flex w-44 items-center justify-between gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+          <span className="flex w-44 items-center justify-between gap-2 text-base font-semibold text-zinc-600 dark:text-zinc-400">
             <span className="truncate">{callLanguageLabel(value)}</span>
             <IconChevronDown
               className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
@@ -201,7 +190,7 @@ function VoiceDropdown({
         variant: 'secondary',
         size: 'sm',
         children: (
-          <span className="flex w-44 items-center justify-between gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+          <span className="flex w-44 items-center justify-between gap-2 text-base font-semibold text-zinc-600 dark:text-zinc-400">
             <span className="truncate">{voiceLabel(value)}</span>
             <IconChevronDown
               className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
@@ -265,7 +254,7 @@ function TimezoneDropdown({
         variant: 'secondary',
         size: 'sm',
         children: (
-          <span className="max-w-44 truncate text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+          <span className="max-w-44 truncate text-base font-semibold text-zinc-600 dark:text-zinc-400">
             {display}
           </span>
         ),
@@ -307,8 +296,6 @@ export function SettingsDialog({
   );
   // null = Auto (ikuti zona waktu browser).
   const [prefTimezone, setPrefTimezone] = useState<string | null>(user?.timezone ?? null);
-  // ── Voice AI — status koneksi (Section A) ────────────────
-  const [voiceStatus, setVoiceStatus] = useState<VapiVoiceStatusResponse | null>(null);
   // ── Voice AI — pengaturan workspace (Section B & C) ───────
   const [voiceName, setVoiceName] = useState('Sarah');
   const [voiceLanguage, setVoiceLanguage] = useState<'en' | 'id'>('en');
@@ -316,14 +303,13 @@ export function SettingsDialog({
   const [autoCallEnabled, setAutoCallEnabled] = useState(false);
   const [autoCallLeadHours, setAutoCallLeadHours] = useState(24);
   const [maxCallAttempts, setMaxCallAttempts] = useState(2);
-  const navigate = useNavigate();
   // Privasi — consent replay/survei (sync dengan stores/consent + PostHog).
   const replayConsent = useConsentStore((s) => s.replayConsent);
   const setReplayConsent = useConsentStore((s) => s.setReplayConsent);
   // Notifikasi — state lokal (placeholder; belum ada API persist).
   const [notif, setNotif] = useState({ email: true, call: false, weekly: true });
 
-  // ── Hapus project (soft-delete, permanen setelah 3 hari) ──
+  // ── Hapus bisnis (soft-delete, permanen setelah 3 hari) ──
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
@@ -349,9 +335,6 @@ export function SettingsDialog({
       setAutoCallEnabled(activeWs?.autoCallEnabled ?? false);
       setAutoCallLeadHours(activeWs?.autoCallLeadHours ?? 24);
       setMaxCallAttempts(activeWs?.maxCallAttempts ?? 2);
-      void apiFetch<VapiVoiceStatusResponse>('/integrations/vapi')
-        .then(setVoiceStatus)
-        .catch(() => setVoiceStatus(null));
     }
   }, [isOpen, user?.name, user?.timezone, workspaces, activeWorkspaceId]);
 
@@ -366,12 +349,12 @@ export function SettingsDialog({
       await apiFetch<{ ok: boolean }>(`/me/workspaces/${workspaceId}`, { method: 'DELETE' });
       removeWorkspace(workspaceId);
       setConfirmDeleteId(null);
-      // Project terakhir dihapus → tutup dialog Settings; di belakangnya app
+      // Bisnis terakhir dihapus → tutup dialog Settings; di belakangnya app
       // berpindah ke state kosong/onboarding (activeWorkspaceId null).
       if (workspaces.length === 1) onOpenChange(false);
     } catch (err) {
       setConfirmDeleteId(null);
-      setDeleteError(errorMessage(err, t, 'errors.deleteProject'));
+      setDeleteError(errorMessage(err, t, 'errors.deleteBusiness'));
     } finally {
       setIsDeleting(false);
     }
@@ -446,6 +429,7 @@ export function SettingsDialog({
           <DialogHeader
             title={t('settings.title')}
             subtitle={t('settings.description')}
+            startContent={<IconSettings className="size-5 shrink-0 text-amber-600" />}
             onOpenChange={(open) => {
               if (!open) close();
             }}
@@ -468,14 +452,14 @@ export function SettingsDialog({
                       type="button"
                       onClick={() => setActiveSection(section.id)}
                       aria-current={active ? 'true' : undefined}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-base font-medium transition ${
                         active
                           ? 'bg-amber-500/10 text-amber-700'
                           : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
                       }`}
                     >
                       <section.icon
-                        className={`size-4 shrink-0 ${active ? 'text-amber-600' : 'text-zinc-400'}`}
+                        className={`size-[18px] shrink-0 ${active ? 'text-amber-600' : 'text-zinc-400'}`}
                       />
                       {t(section.labelKey)}
                     </button>
@@ -512,113 +496,60 @@ export function SettingsDialog({
                       isDisabled
                       width="100%"
                     />
-
-                    <p className="text-xs leading-relaxed text-zinc-400">{t('settings.emailManaged')}</p>
                   </div>
                 )}
 
                 {activeSection === 'preferences' && (
-                  <div className="space-y-4">
-                    <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      {t('settings.preferencesDesc')}
-                    </p>
+                  <div className="space-y-5">
+                    {/* Bahasa — ganti langsung (i18n), disimpan saat Save. */}
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('settings.language')}
+                      </p>
+                      <p className="mb-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                        {t('settings.languageDesc')}
+                      </p>
+                      <LanguageDropdown
+                        value={prefLanguage}
+                        onSelect={(code) => {
+                          setPrefLanguage(code);
+                          if (code !== i18n.resolvedLanguage) void i18n.changeLanguage(code);
+                        }}
+                      />
+                    </div>
 
-                    <div className="space-y-3">
-                      {/* Bahasa — ganti langsung (i18n), disimpan saat Save. */}
-                      <div className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            {t('settings.language')}
-                          </p>
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                            {t('settings.languageDesc')}
-                          </p>
-                        </div>
-                        <LanguageDropdown
-                          value={prefLanguage}
-                          onSelect={(code) => {
-                            setPrefLanguage(code);
-                            if (code !== i18n.resolvedLanguage) void i18n.changeLanguage(code);
-                          }}
-                        />
-                      </div>
-
-                      {/* Zona waktu — default booking/jadwal baru. */}
-                      <div className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            {t('settings.timezone')}
-                          </p>
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                            {t('settings.timezoneDesc')}
-                          </p>
-                        </div>
-                        <TimezoneDropdown
-                          value={prefTimezone}
-                          onSelect={setPrefTimezone}
-                          autoLabel={`${t('settings.timezoneAuto')} (${browserTimezone()})`}
-                        />
-                      </div>
+                    {/* Zona waktu — default booking/jadwal baru. */}
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('settings.timezone')}
+                      </p>
+                      <p className="mb-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                        {t('settings.timezoneDesc')}
+                      </p>
+                      <TimezoneDropdown
+                        value={prefTimezone}
+                        onSelect={setPrefTimezone}
+                        autoLabel={`${t('settings.timezoneAuto')} (${browserTimezone()})`}
+                      />
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'voice' && (
                   <div className="space-y-5">
-                    {/* Bagian A — status koneksi Voice AI */}
-                    <section className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        {t('voiceAi.title')}
-                      </p>
-                      <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        {t('voiceAi.desc')}
-                      </p>
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`size-2.5 shrink-0 rounded-full ${
-                                voiceStatus?.selected ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-500'
-                              }`}
-                            />
-                            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                              {voiceStatus?.selected
-                                ? t('voiceAi.connected')
-                                : t('voiceAi.notConnected')}
-                            </p>
-                          </div>
-                          {voiceStatus?.selected ? (
-                            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                              {maskPhoneNumber(
-                                voiceStatus.selected.identifier ??
-                                  voiceStatus.selected.config.phoneNumber,
-                              )}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-xs leading-relaxed text-zinc-400">
-                              {t('voiceAi.connectHint')}
-                            </p>
-                          )}
-                        </div>
-                        <Button
-                          label={
-                            voiceStatus?.selected
-                              ? t('voiceAi.manage')
-                              : t('voiceAi.connectVoice')
-                          }
-                          variant={voiceStatus?.selected ? 'secondary' : 'primary'}
-                          size="sm"
-                          onClick={() => navigate('/app/integrations')}
-                        />
-                      </div>
-                    </section>
+                    {/* Bagian A — Phone Number: entry point setup + management */}
+                    <PhoneNumberPanel />
+
+                    {/* Bagian A2 — Inbound (AI receptionist): nomor yang
+                        dilayani resepsionis AI saat customer menelepon. */}
+                    <InboundNumberPanel />
 
                     {/* Bagian B — AI assistant (name/language/voice) */}
-                    <section className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
                         {t('voiceAi.assistantTitle')}
                       </p>
-                      <div className="mt-3 space-y-4">
+                      <div className="space-y-4">
                         <TextInput
                           label={t('voiceAi.assistantName')}
                           value={voiceName}
@@ -628,27 +559,27 @@ export function SettingsDialog({
                         />
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div>
-                            <p className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                            <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
                               {t('voiceAi.language')}
                             </p>
                             <VoiceLanguageDropdown value={voiceLanguage} onSelect={setVoiceLanguage} />
                           </div>
                           <div>
-                            <p className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                            <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
                               {t('voiceAi.voice')}
                             </p>
                             <VoiceDropdown value={voiceId} onSelect={setVoiceId} />
                           </div>
                         </div>
                       </div>
-                    </section>
+                    </div>
 
                     {/* Bagian C — call behavior (auto-call + timing + attempts) */}
-                    <section className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
                         {t('voiceAi.behaviorTitle')}
                       </p>
-                      <div className="mt-3 space-y-4">
+                      <div className="space-y-4">
                         <Switch
                           label={t('voiceAi.autoCall')}
                           description={t('voiceAi.autoCallDesc')}
@@ -660,16 +591,14 @@ export function SettingsDialog({
                         {/* Call timing — backend hanya mendukung jam SEBELUM
                             jadwal (autoCallLeadHours); "Immediately" tidak
                             didukung mesin auto-call (Inngest). */}
-                        <div className="flex items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                              {t('voiceAi.callTiming')}
-                            </p>
-                            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                              {t('voiceAi.beforeAppointment')}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
+                        <div>
+                          <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                            {t('voiceAi.callTiming')}
+                          </p>
+                          <p className="mb-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                            {t('voiceAi.beforeAppointment')}
+                          </p>
+                          <div className="flex items-center gap-2">
                             <NumberInput
                               label={t('voiceAi.hoursBefore')}
                               isLabelHidden
@@ -679,20 +608,18 @@ export function SettingsDialog({
                               max={10080}
                               width="w-20"
                             />
-                            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            <span className="text-sm text-zinc-500 dark:text-zinc-400">
                               {t('voiceAi.hours')}
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                              {t('voiceAi.maxAttempts')}
-                            </p>
-                            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                              {t('voiceAi.maxAttemptsDesc')}
-                            </p>
-                          </div>
+                        <div>
+                          <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                            {t('voiceAi.maxAttempts')}
+                          </p>
+                          <p className="mb-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                            {t('voiceAi.maxAttemptsDesc')}
+                          </p>
                           <NumberInput
                             label={t('voiceAi.maxAttempts')}
                             isLabelHidden
@@ -704,17 +631,17 @@ export function SettingsDialog({
                           />
                         </div>
                       </div>
-                    </section>
+                    </div>
 
                     {/* Bagian D — call goal (read-only, berbasis industri) */}
-                    <section className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
                         {t('voiceAi.goalTitle')}
                       </p>
-                      <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      <p className="mb-1.5 text-sm text-zinc-500 dark:text-zinc-400">
                         {t('voiceAi.goalDesc')}
                       </p>
-                      <ul className="mt-3 space-y-2">
+                      <ul className="space-y-2">
                         <li className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
                           <IconCheck className="size-4 shrink-0 text-emerald-500" />
                           {t('voiceAi.goalConfirm')}
@@ -728,18 +655,18 @@ export function SettingsDialog({
                           {t('voiceAi.goalCancel')}
                         </li>
                       </ul>
-                    </section>
+                    </div>
                   </div>
                 )}
 
-                {activeSection === 'projects' && (
+                {activeSection === 'businesses' && (
                   <div className="space-y-4">
-                    <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t('settings.projectsDesc')}</p>
+                    <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t('settings.businessesDesc')}</p>
 
                     <div className="space-y-2">
                       {workspaces.length === 0 ? (
                         <p className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-600 px-4 py-8 text-center text-sm text-zinc-400">
-                          {t('settings.projectsEmpty')}
+                          {t('settings.businessesEmpty')}
                         </p>
                       ) : (
                         workspaces.map((workspace) => (
@@ -751,7 +678,7 @@ export function SettingsDialog({
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</p>
                               {workspace.id === activeWorkspaceId && (
-                                <p className="text-xs font-medium text-amber-600">{t('nav.activeProject')}</p>
+                                <p className="text-xs font-medium text-amber-600">{t('nav.activeBusiness')}</p>
                               )}
                             </div>
                             <Button
@@ -777,31 +704,29 @@ export function SettingsDialog({
                 )}
 
                 {activeSection === 'privacy' && (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t('consent.privacyDesc')}</p>
 
-                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4">
-                      <Switch
-                        label={t('consent.sessionReplayLabel')}
-                        description={t('consent.sessionReplayDesc')}
-                        value={replayConsent === 'granted'}
-                        onChange={(enabled) => {
-                          const next = enabled ? 'granted' : 'denied';
-                          setReplayConsent(next);
-                          void applyAnalyticsConsent(next);
-                        }}
-                        labelPosition="start"
-                        labelSpacing="spread"
-                      />
-                    </div>
+                    <Switch
+                      label={t('consent.sessionReplayLabel')}
+                      description={t('consent.sessionReplayDesc')}
+                      value={replayConsent === 'granted'}
+                      onChange={(enabled) => {
+                        const next = enabled ? 'granted' : 'denied';
+                        setReplayConsent(next);
+                        void applyAnalyticsConsent(next);
+                      }}
+                      labelPosition="start"
+                      labelSpacing="spread"
+                    />
 
                     {!isAnalyticsEnabled && (
-                      <p className="text-xs leading-relaxed text-zinc-400">
+                      <p className="text-sm leading-relaxed text-zinc-400">
                         {t('consent.analyticsDisabled')}
                       </p>
                     )}
                     {replayConsent === 'denied' && (
-                      <p className="text-xs leading-relaxed text-zinc-400">
+                      <p className="text-sm leading-relaxed text-zinc-400">
                         {t('consent.deniedNote')}
                       </p>
                     )}
@@ -809,7 +734,7 @@ export function SettingsDialog({
                 )}
 
                 {activeSection === 'notifications' && (
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4">
+                  <div className="space-y-5">
                     <Switch
                       label={t('settings.transactionalEmail')}
                       description={t('settings.transactionalEmailDesc')}
@@ -864,7 +789,7 @@ export function SettingsDialog({
         }        />
       </Dialog>
 
-      {/* Konfirmasi hapus project — Dialog astryx memakai elemen <dialog>
+      {/* Konfirmasi hapus bisnis — Dialog astryx memakai elemen <dialog>
           native (top layer), jadi dua dialog menumpuk dengan benar:
           confirm menutupi dialog Settings dengan backdrop sendiri. */}
       <ConfirmDialog
