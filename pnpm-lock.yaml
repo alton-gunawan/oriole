@@ -15,8 +15,8 @@ importers:
   apps/api:
     dependencies:
       '@hono/node-server':
-        specifier: ^2.0.12
-        version: 2.0.12(hono@4.12.34)
+        specifier: ^2.1.0
+        version: 2.1.0(hono@4.12.34)
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.12.34)(zod@4.4.3)
@@ -913,8 +913,8 @@ packages:
   '@hexagon/base64@1.1.28':
     resolution: {integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==}
 
-  '@hono/node-server@2.0.12':
-    resolution: {integrity: sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==}
+  '@hono/node-server@2.1.0':
+    resolution: {integrity: sha512-XovyyCCnBzW+zKu+z/zq8hwNs4KOR5rEMAOxo2f40Q5xoOI37IMm6MIg2COOUtUApo0i6850MTBKH2u4QLGIqg==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
@@ -3085,6 +3085,9 @@ packages:
   core-js@3.49.0:
     resolution: {integrity: sha512-es1U2+YTtzpwkxVLwAFdSpaIMyQaq0PBgm3YD1W3Qpsn1NAmO3KSgZfu+oGSWVu6NvLHoHCV/aYcsE5wiB7ALg==}
 
+  core-js@3.50.0:
+    resolution: {integrity: sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw==}
+
   country-flag-icons@1.6.20:
     resolution: {integrity: sha512-py8JiEKzjhYw6HPJ0L7SxLgCYim36UPRTZX43/kqGueUCZLSvnrqAiwW8HtQibur7mdkFQUkjOgdK+o/9FBtaw==}
 
@@ -3351,12 +3354,12 @@ packages:
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
-  eventsource-parser@3.1.0:
-    resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
+  eventsource-parser@3.1.1:
+    resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
     engines: {node: '>=18.0.0'}
 
-  eventsource@4.1.0:
-    resolution: {integrity: sha512-2GuF51iuHX6A9xdTccMTsNb7VO0lHZihApxhvQzJB5A03DvHDd2FQepodbMaztPBmBcE/ox7o2gqaxGhYB9LhQ==}
+  eventsource@4.1.1:
+    resolution: {integrity: sha512-D6bTRWh6KahHTK/m4WnjPQyEinNPf9eFLEZSEoj7d6fTibspnAVYfzHvirL7u/aoX5d9YYfIkBVAhmigUELk9w==}
     engines: {node: '>=20.0.0'}
 
   expect-type@1.4.0:
@@ -5043,7 +5046,7 @@ snapshots:
 
   '@hexagon/base64@1.1.28': {}
 
-  '@hono/node-server@2.0.12(hono@4.12.34)':
+  '@hono/node-server@2.1.0(hono@4.12.34)':
     dependencies:
       hono: 4.12.34
 
@@ -5110,7 +5113,7 @@ snapshots:
       '@instantdb/core': 1.0.57
       '@instantdb/react-common': 1.0.57(react@19.2.8)
       '@instantdb/version': 1.0.57
-      eventsource: 4.1.0
+      eventsource: 4.1.1
       react: 19.2.8
 
   '@instantdb/version@1.0.57': {}
@@ -6983,7 +6986,7 @@ snapshots:
   '@triplit/db@1.1.10(typescript@7.0.2)':
     dependencies:
       '@triplit/logger': 0.0.3(typescript@7.0.2)
-      core-js: 3.49.0
+      core-js: 3.50.0
       elen: 1.0.10
       nanoid: 5.1.16
       sorted-btree: 1.8.1
@@ -7353,6 +7356,8 @@ snapshots:
 
   core-js@3.49.0: {}
 
+  core-js@3.50.0: {}
+
   country-flag-icons@1.6.20: {}
 
   cross-fetch@4.1.0:
@@ -7582,11 +7587,11 @@ snapshots:
 
   eventemitter3@4.0.7: {}
 
-  eventsource-parser@3.1.0: {}
+  eventsource-parser@3.1.1: {}
 
-  eventsource@4.1.0:
+  eventsource@4.1.1:
     dependencies:
-      eventsource-parser: 3.1.0
+      eventsource-parser: 3.1.1
 
   expect-type@1.4.0: {}
 
