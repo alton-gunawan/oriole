@@ -5,6 +5,14 @@
  * disesuaikan per industri via INDUSTRY_PROFILES.
  */
 export const INDUSTRIES = [
+  'barbershop',
+  'nail-salon',
+  'massage-spa',
+  'pet-grooming',
+  'car-detailing',
+  'yoga-pilates',
+  'personal-trainer',
+  'photography-studio',
   'clinic',
   'salon',
   'fitness',

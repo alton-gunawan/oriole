@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Button } from '@astryxdesign/core';
+import { useId, useRef, useState } from 'react';
+import { Button, Field } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import { PLANETS_API_BASE, PlanetIcon } from './PlanetIcon';
@@ -85,6 +85,7 @@ interface AvatarPickerProps {
  */
 export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
   const { t } = useTranslation();
+  const fieldId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   // Mode awal mengikuti nilai yang ada: planet DiceBear → tab planet,
   // data URL upload → tab upload, null → planet.
@@ -146,18 +147,15 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
 
   const isUploaded = value !== null && !isDicebearUrl(value);
   const tabClass = (active: boolean) =>
-    `rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+    `rounded-md px-2.5 py-1 text-xs font-medium transition ${
       active
-        ? 'bg-zinc-950 text-white shadow-sm'
-        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 hover:text-zinc-800 dark:hover:text-zinc-200'
+        ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-xs'
+        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
     }`;
 
   return (
-    <div>
-      <span className="mb-2 block text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('ws.avatarLabel')}</span>
-      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">{t('ws.avatarDesc')}</p>
-
-      <div className="mb-4 inline-flex gap-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1">
+    <Field label={t('ws.avatarLabel')} description={t('ws.avatarDesc')} inputID={fieldId}>
+      <div className="mt-1 mb-3 inline-flex gap-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 p-0.5">
         <button type="button" className={tabClass(mode === 'planet')} onClick={() => setMode('planet')}>
           {t('ws.avatarPlanetTab')}
         </button>
@@ -169,7 +167,7 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
       {mode === 'planet' ? (
         <div className="space-y-4">
           <div className="flex items-center gap-4">
-            <Preview value={value} name={name} size={72} />
+            <Preview value={value} name={name} size={64} />
             <div className="space-y-2">
               <Button
                 label={t('ws.avatarShuffle')}
@@ -228,7 +226,7 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-4">
-            <Preview value={value} name={name} size={72} />
+            <Preview value={value} name={name} size={64} />
             <div className="space-y-2">
               <Button
                 label={t('ws.avatarUploadButton')}
@@ -249,7 +247,7 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
               )}
             </div>
           </div>
-          <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{t('ws.avatarUploadHint')}</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('ws.avatarUploadHint')}</p>
           <input
             ref={inputRef}
             type="file"
@@ -263,9 +261,8 @@ export function AvatarPicker({ value, onChange, name }: AvatarPickerProps) {
           />
         </div>
       )}
-
-      {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
-    </div>
+      {error && <p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
+    </Field>
   );
 }
 

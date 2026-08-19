@@ -1,6 +1,14 @@
 import type { GoalType, Industry } from './types.ts';
 
 export const INDUSTRY_LABELS: Record<Industry, string> = {
+  barbershop: 'Barbershop',
+  'nail-salon': 'Nail salon',
+  'massage-spa': 'Massage/spa',
+  'pet-grooming': 'Pet grooming',
+  'car-detailing': 'Car detailing',
+  'yoga-pilates': 'Yoga / Pilates studio',
+  'personal-trainer': 'Personal trainer',
+  'photography-studio': 'Photography Studio',
   clinic: 'Clinic',
   salon: 'Salon',
   fitness: 'Fitness',

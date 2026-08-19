@@ -50,6 +50,150 @@ interface IndustryProfile {
 }
 
 export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
+  barbershop: {
+    appointmentNoun: 'barber appointment',
+    serviceNote: 'haircut or grooming',
+    businessNoun: 'barbershop',
+    confirmFlow: [
+      'Confirm which barber the appointment is with and ask if they want the same one.',
+      'Ask what service they are planning, such as a haircut, beard trim, or shave.',
+      'Remind them to arrive on time so the barber can keep the schedule.',
+    ],
+    rescheduleFlow: [
+      'Offer a new slot with the same barber whenever possible.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      barber: { type: 'string', description: 'The barber confirmed for the appointment.' },
+      service: { type: 'string', description: 'The grooming service the customer wants.' },
+    },
+  },
+  'nail-salon': {
+    appointmentNoun: 'nail appointment',
+    serviceNote: 'manicure, pedicure, or nail art',
+    businessNoun: 'nail salon',
+    confirmFlow: [
+      'Confirm which nail technician the appointment is booked with.',
+      'Ask what nail service they want (e.g. manicure, pedicure, gel, acrylic, or nail art).',
+      'Remind them to arrive on time for their treatment.',
+    ],
+    rescheduleFlow: [
+      'Offer a new slot with the same technician whenever possible.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      technician: { type: 'string', description: 'The nail technician confirmed for the appointment.' },
+      service: { type: 'string', description: 'The nail service the customer wants.' },
+    },
+  },
+  'massage-spa': {
+    appointmentNoun: 'massage or wellness treatment',
+    serviceNote: 'massage or spa treatment',
+    businessNoun: 'massage & spa',
+    confirmFlow: [
+      'Confirm which massage or treatment and practitioner the session is booked with.',
+      'Ask about any specific areas of tension, allergies, or injuries the therapist should know.',
+      'Remind the customer to arrive 10 minutes early so the session starts on time.',
+    ],
+    rescheduleFlow: [
+      'Offer a new slot with the same therapist whenever possible.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      treatment: { type: 'string', description: 'The treatment that was confirmed.' },
+      therapist: { type: 'string', description: 'The therapist confirmed for the session.' },
+    },
+  },
+  'pet-grooming': {
+    appointmentNoun: 'pet grooming appointment',
+    serviceNote: 'pet grooming or bath',
+    businessNoun: 'pet grooming salon',
+    confirmFlow: [
+      'Confirm the pet name, breed, and requested grooming package.',
+      'Ask if the pet has any special behavioral needs or skin sensitivities.',
+      'Remind them about vaccination records and to arrive on time for drop-off.',
+    ],
+    rescheduleFlow: [
+      'Offer a new grooming slot that fits their schedule.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      petName: { type: 'string', description: 'The name of the pet confirmed for grooming.' },
+      service: { type: 'string', description: 'The pet grooming package confirmed.' },
+    },
+  },
+  'car-detailing': {
+    appointmentNoun: 'car detailing appointment',
+    serviceNote: 'car wash, detailing, or coating',
+    businessNoun: 'car detailing studio',
+    confirmFlow: [
+      'Confirm the vehicle make, model, and requested detailing package.',
+      'Remind them to remove personal items from the vehicle prior to drop-off.',
+      'Confirm the drop-off time and estimated completion duration.',
+    ],
+    rescheduleFlow: [
+      'Offer alternative drop-off times for detailing.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      vehicle: { type: 'string', description: 'The vehicle make and model confirmed.' },
+      package: { type: 'string', description: 'The detailing package confirmed.' },
+    },
+  },
+  'yoga-pilates': {
+    appointmentNoun: 'yoga or Pilates session',
+    serviceNote: 'studio class or private session',
+    businessNoun: 'yoga & Pilates studio',
+    confirmFlow: [
+      'Confirm whether the booking is for a group class or private reformer/mat session.',
+      'Ask if they have any injuries or limitations so the instructor can adapt.',
+      'Remind them to bring grip socks, water, and arrive 10 minutes early.',
+    ],
+    rescheduleFlow: [
+      'Offer another class or training slot that fits their schedule.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      sessionType: { type: 'string', description: 'The class or session type confirmed.' },
+      instructor: { type: 'string', description: 'The instructor confirmed for the session.' },
+    },
+  },
+  'personal-trainer': {
+    appointmentNoun: 'personal training session',
+    serviceNote: '1-on-1 coaching session',
+    businessNoun: 'personal training',
+    confirmFlow: [
+      'Confirm the training focus for this workout session.',
+      'Ask about any muscle soreness, fatigue, or injuries since the last session.',
+      'Remind them to bring workout gear, water, and arrive on time.',
+    ],
+    rescheduleFlow: [
+      'Offer open coaching slots with their personal trainer.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      trainer: { type: 'string', description: 'The personal trainer confirmed for the session.' },
+      focus: { type: 'string', description: 'The workout focus confirmed.' },
+    },
+  },
+  'photography-studio': {
+    appointmentNoun: 'photography shoot',
+    serviceNote: 'photo shoot session',
+    businessNoun: 'photography studio',
+    confirmFlow: [
+      'Confirm the type of photo shoot (e.g. portrait, family, commercial, or graduation).',
+      'Discuss outfit changes, styling, and props if applicable.',
+      'Remind them to arrive 10-15 minutes early to prepare.',
+    ],
+    rescheduleFlow: [
+      'Offer alternative studio slots with the photographer.',
+      'Confirm the new date and time clearly before ending the call.',
+    ],
+    resultExtras: {
+      shootType: { type: 'string', description: 'The type of photo shoot confirmed.' },
+      photographer: { type: 'string', description: 'The photographer confirmed for the shoot.' },
+    },
+  },
   clinic: {
     appointmentNoun: 'medical appointment',
     serviceNote: 'clinic visit',

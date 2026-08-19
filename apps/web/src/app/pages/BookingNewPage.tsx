@@ -30,7 +30,7 @@ import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
 import { IconChevronLeft, IconCalendar, IconSearch, IconUsers } from '../shell/icons';
-import { Card, PageHeader } from '../shell/ui';
+import { PageHeader } from '../shell/ui';
 
 /** Kontak = customer (nama + telepon) yang pernah dipakai di booking bisnis ini. */
 interface ContactSuggestion {
@@ -195,16 +195,25 @@ export function BookingNewPage() {
       >
         <Link
           to="/app/bookings"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 hover:border-zinc-300 dark:hover:border-zinc-600 active:scale-[0.98]"
         >
           <IconChevronLeft className="size-4" />
           {t('common.cancel')}
         </Link>
+        <Button
+          label={t('bookingNew.submit')}
+          variant="primary"
+          isLoading={isSubmitting}
+          // Booking harus berasal dari layanan katalog — tidak ada booking
+          // tanpa service.
+          isDisabled={!serviceId || !scheduledAt}
+          type="submit"
+          form="booking-new-form"
+        />
       </PageHeader>
 
-      <form onSubmit={onSubmit} className="space-y-6">
-        <Card className="space-y-5 p-5 sm:p-6">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <form id="booking-new-form" onSubmit={onSubmit} className="space-y-6 [&_label]:!text-blue-600 dark:[&_label]:!text-blue-400">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             {/* Layanan katalog — WAJIB dipilih. Title, durasi, dan staf
                 tunggal diisi otomatis dari service; tidak ada input manual. */}
             <div className="sm:col-span-2">
@@ -335,7 +344,7 @@ export function BookingNewPage() {
                   />
                   {recurrence.frequency === 'weekly' && (
                     <div className="sm:col-span-2">
-                      <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('bookingNew.repeatWeekdays')}</p>
+                      <p className="mb-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">{t('bookingNew.repeatWeekdays')}</p>
                       <div className="flex flex-wrap gap-1.5">
                         {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day, index) => {
                           const selected = (recurrence.weekdays ?? []).includes(index);
@@ -390,25 +399,12 @@ export function BookingNewPage() {
               width="100%"
             />
           </div>
-        </Card>
 
         {error && (
           <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
             {error}
           </p>
         )}
-
-        <div className="flex justify-end">
-          <Button
-            label={t('bookingNew.submit')}
-            variant="primary"
-            isLoading={isSubmitting}
-            // Booking harus berasal dari layanan katalog — tidak ada booking
-            // tanpa service.
-            isDisabled={!serviceId || !scheduledAt}
-            type="submit"
-          />
-        </div>
       </form>
 
       {/* Dialog pilih kontak — sumber: customer pada booking bisnis ini */}
@@ -418,6 +414,7 @@ export function BookingNewPage() {
             <DialogHeader
               title={t('bookingNew.pickContactTitle')}
               subtitle={t('bookingNew.pickContactSubtitle')}
+              startContent={<IconUsers className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={closePicker}
               hasDivider
             />

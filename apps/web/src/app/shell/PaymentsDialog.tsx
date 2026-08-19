@@ -212,6 +212,7 @@ export function PaymentsDialog({
           <DialogHeader
             title={t('payments.dialogTitle')}
             subtitle={bookingId ? t('payments.dialogSubtitleBooking') : t('payments.dialogSubtitle')}
+            startContent={<IconCreditCard className="size-5 shrink-0 text-amber-600" />}
             onOpenChange={onOpenChange}
             endContent={
               <IconButton

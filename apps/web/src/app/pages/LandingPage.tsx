@@ -1,5 +1,4 @@
 import { type ComponentType, Fragment, useCallback, useEffect, useState } from 'react';
-import { Button } from '@astryxdesign/core';
 import { motion } from 'framer-motion';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -8,6 +7,7 @@ import { AppLogo } from '../components/AppLogo';
 import {
   IconAlertTriangle,
   IconBattery,
+  IconCalendarCheck,
   IconCheck,
   IconClock,
   IconCreditCard,
@@ -26,6 +26,7 @@ import {
   IconRefreshCw,
   IconRepeat,
   IconSearchX,
+  IconShield,
   IconSignal,
   IconSquaresFour,
   IconUsers,
@@ -38,6 +39,7 @@ import {
 import type { TranslationKey } from '../../i18n';
 import { apiFetch } from '../../lib/api';
 import { getAccessToken } from '../../lib/token';
+import { applyTheme } from '../../lib/theme';
 import { type ChannelListResponse } from '../../lib/messaging';
 import { type IntegrationListResponse } from '../../lib/integrations';
 import { loadObsidianConfig } from '../../lib/obsidian';
@@ -77,13 +79,13 @@ function FooterColumn({ column }: { column: (typeof footerColumns)[number] }) {
   const { t } = useTranslation();
   return (
     <nav aria-label={t(column.titleKey)}>
-      <h2 className="text-[15px] font-medium text-[#101010]">{t(column.titleKey)}</h2>
+      <h2 className="text-[15px] font-medium text-white">{t(column.titleKey)}</h2>
       <ul className="mt-5 space-y-4">
         {column.links.map((link) => (
           <li key={link.labelKey}>
             <a
               href={link.href}
-              className="text-[15px] leading-6 text-[#858585] transition-colors hover:text-[#1017e8]"
+              className="text-[15px] leading-6 text-zinc-400 transition-colors hover:text-white"
             >
               {t(link.labelKey)}
             </a>
@@ -100,20 +102,20 @@ function FooterColumn({ column }: { column: (typeof footerColumns)[number] }) {
  * Ini menjaga landing page tetap jujur: tidak menampilkan konektor yang belum ada.
  */
 const integrationTiles = [
-  { key: 'whatsapp', labelKey: 'landing.integrationWhatsapp', logo: '/brands/whatsapp.svg', icon: null, tone: 'bg-[#eafaf0]' },
-  { key: 'telegram', labelKey: 'landing.integrationTelegram', logo: '/brands/telegram.svg', icon: null, tone: 'bg-[#eaf6ff]' },
-  { key: 'slack', labelKey: 'landing.integrationSlack', logo: '/brands/slack.svg', icon: null, tone: 'bg-[#eef4f5]' },
-  { key: 'instagram', labelKey: 'landing.integrationInstagram', logo: '/brands/instagram.svg', icon: null, tone: 'bg-[#fceef4]' },
-  { key: 'facebook', labelKey: 'landing.integrationFacebook', logo: '/brands/facebook.svg', icon: null, tone: 'bg-[#eef3fc]' },
-  { key: 'video', labelKey: 'landing.integrationVideo', logo: null, icon: IconVideo, tone: 'bg-[#eefaf6]' },
-  { key: 'google-calendar', labelKey: 'landing.integrationGoogleCalendar', logo: '/brands/google-calendar.svg', icon: null, tone: 'bg-[#eef5ff]' },
-  { key: 'google-forms', labelKey: 'landing.integrationGoogleForms', logo: '/brands/google-forms.svg', icon: null, tone: 'bg-[#fff3f0]' },
-  { key: 'tally', labelKey: 'landing.integrationTally', logo: '/brands/tally.svg', icon: null, tone: 'bg-[#f5f5f5]' },
-  { key: 'notion', labelKey: 'landing.integrationNotion', logo: '/brands/notion.svg', icon: null, tone: 'bg-[#f5f5f5]' },
-  { key: 'obsidian', labelKey: 'landing.integrationObsidian', logo: '/brands/obsidian.svg', icon: null, tone: 'bg-[#f1edff]' },
-  { key: 'email', labelKey: 'landing.integrationEmail', logo: null, icon: IconMail, tone: 'bg-[#fff8e8]' },
-  { key: 'payments', labelKey: 'landing.integrationPayments', logo: null, icon: IconCreditCard, tone: 'bg-[#f1f0ff]' },
-  { key: 'webhook', labelKey: 'landing.integrationWebhook', logo: null, icon: IconWebhook, tone: 'bg-[#eef4f5]' },
+  { key: 'whatsapp', labelKey: 'landing.integrationWhatsapp', logo: '/brands/whatsapp.svg', icon: null },
+  { key: 'telegram', labelKey: 'landing.integrationTelegram', logo: '/brands/telegram.svg', icon: null },
+  { key: 'slack', labelKey: 'landing.integrationSlack', logo: '/brands/slack.svg', icon: null },
+  { key: 'instagram', labelKey: 'landing.integrationInstagram', logo: '/brands/instagram.svg', icon: null },
+  { key: 'facebook', labelKey: 'landing.integrationFacebook', logo: '/brands/facebook.svg', icon: null },
+  { key: 'video', labelKey: 'landing.integrationVideo', logo: null, icon: IconVideo },
+  { key: 'google-calendar', labelKey: 'landing.integrationGoogleCalendar', logo: '/brands/google-calendar.svg', icon: null },
+  { key: 'google-forms', labelKey: 'landing.integrationGoogleForms', logo: '/brands/google-forms.svg', icon: null },
+  { key: 'tally', labelKey: 'landing.integrationTally', logo: '/brands/tally.svg', icon: null },
+  { key: 'notion', labelKey: 'landing.integrationNotion', logo: '/brands/notion.svg', icon: null },
+  { key: 'obsidian', labelKey: 'landing.integrationObsidian', logo: '/brands/obsidian.svg', icon: null },
+  { key: 'email', labelKey: 'landing.integrationEmail', logo: null, icon: IconMail },
+  { key: 'payments', labelKey: 'landing.integrationPayments', logo: null, icon: IconCreditCard },
+  { key: 'webhook', labelKey: 'landing.integrationWebhook', logo: null, icon: IconWebhook },
 ] as const;
 
 function IntegrationTile({ tile, connected = false }: { tile: (typeof integrationTiles)[number]; connected?: boolean }) {
@@ -127,12 +129,12 @@ function IntegrationTile({ tile, connected = false }: { tile: (typeof integratio
       className="group flex min-w-0 flex-col items-center gap-2"
     >
       <span
-        className={`relative flex size-[4.25rem] items-center justify-center rounded-[1.35rem] border border-white/90 shadow-[0_10px_24px_-16px_rgba(10,19,23,0.55)] transition duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_16px_30px_-16px_rgba(10,19,23,0.45)] sm:size-[5rem] ${tile.tone} ${connected ? 'ring-2 ring-emerald-400/80' : ''}`}
+        className={`relative flex size-[4.25rem] items-center justify-center rounded-[1.35rem] border border-white/10 bg-zinc-900 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.8)] transition duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_16px_30px_-16px_rgba(0,0,0,0.9)] sm:size-[5rem] ${connected ? 'ring-2 ring-emerald-400/80' : ''}`}
       >
         {tile.logo ? (
           <img src={tile.logo} alt="" className="size-10 object-contain sm:size-12" />
         ) : TileIcon ? (
-          <TileIcon className="size-9 text-[#0a1317] sm:size-10" strokeWidth={1.7} aria-hidden="true" />
+          <TileIcon className="size-9 text-zinc-100 sm:size-10" strokeWidth={1.7} aria-hidden="true" />
         ) : null}
         {connected && (
           <span
@@ -143,7 +145,7 @@ function IntegrationTile({ tile, connected = false }: { tile: (typeof integratio
           </span>
         )}
       </span>
-      <span className="max-w-[5.5rem] truncate text-center text-[10px] font-medium text-[#71808b] sm:text-[11px]">
+      <span className="max-w-[5.5rem] truncate text-center text-[10px] font-medium text-zinc-400 sm:text-[11px]">
         {label}
       </span>
     </div>
@@ -245,15 +247,38 @@ const whoForCards = [
   { emoji: '💅', titleKey: 'landing.whoBeautyTitle', descKey: 'landing.whoBeautyDesc' },
   { emoji: '🩺', titleKey: 'landing.whoHealthTitle', descKey: 'landing.whoHealthDesc' },
   { emoji: '💼', titleKey: 'landing.whoProTitle', descKey: 'landing.whoProDesc' },
-  { emoji: '🏪', titleKey: 'landing.whoLocalTitle', descKey: 'landing.whoLocalDesc' },
+  { emoji: '🚗', titleKey: 'landing.whoLocalTitle', descKey: 'landing.whoLocalDesc' },
+] as const;
+
+const trustCards = [
+  {
+    icon: IconClock,
+    titleKey: 'landing.trustStat1Title',
+    descKey: 'landing.trustStat1Desc',
+  },
+  {
+    icon: IconPhone,
+    titleKey: 'landing.trustStat2Title',
+    descKey: 'landing.trustStat2Desc',
+  },
+  {
+    icon: IconCalendarCheck,
+    titleKey: 'landing.trustStat3Title',
+    descKey: 'landing.trustStat3Desc',
+  },
+  {
+    icon: IconShield,
+    titleKey: 'landing.trustStat4Title',
+    descKey: 'landing.trustStat4Desc',
+  },
 ] as const;
 
 const landingFaqs = [
-  { questionKey: 'help.faq1q', answerKey: 'help.faq1a' },
-  { questionKey: 'help.faq2q', answerKey: 'help.faq2a' },
-  { questionKey: 'help.faq3q', answerKey: 'help.faq3a' },
-  { questionKey: 'help.faq4q', answerKey: 'help.faq4a' },
-  { questionKey: 'help.faq5q', answerKey: 'help.faq5a' },
+  { questionKey: 'landing.faq1Q', answerKey: 'landing.faq1A' },
+  { questionKey: 'landing.faq2Q', answerKey: 'landing.faq2A' },
+  { questionKey: 'landing.faq3Q', answerKey: 'landing.faq3A' },
+  { questionKey: 'landing.faq4Q', answerKey: 'landing.faq4A' },
+  { questionKey: 'landing.faq5Q', answerKey: 'landing.faq5A' },
 ] as const;
 
 const painPoints = [
@@ -365,12 +390,12 @@ function BookDemoButton({ size }: { size: 'sm' | 'lg' }) {
       href={demoFormUrl}
       target="_blank"
       rel="noreferrer"
-      className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[#0a1317] bg-transparent text-[#0a1317] transition hover:bg-[#0a1317]/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a1317] ${
-        size === 'lg' ? 'h-11 px-5' : 'h-9 px-4'
+      className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-white/20 bg-transparent text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+        size === 'lg' ? 'h-11 px-5 text-base font-medium' : 'h-9 px-4 text-sm font-medium'
       }`}
     >
       <IconPhonePhosphor className="size-4" aria-hidden="true" />
-      <span className="text-base font-medium">{t('landing.bookDemo')}</span>
+      <span>{t('landing.bookDemo')}</span>
     </a>
   );
 }
@@ -382,11 +407,11 @@ function OpenAppButton({ size }: { size: 'sm' | 'lg' }) {
     <a
       href="/app/dashboard"
       className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-[#1017e8] text-white transition hover:bg-[#0c12bd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] ${
-        size === 'lg' ? 'h-11 px-5' : 'h-9 px-4'
+        size === 'lg' ? 'h-11 px-5 text-base font-medium' : 'h-9 px-4 text-sm font-medium'
       }`}
     >
       <IconSquaresFour className="size-4" aria-hidden="true" />
-      <span className="text-base font-medium">{t('landing.goToDashboard')}</span>
+      <span>{t('landing.goToDashboard')}</span>
     </a>
   );
 }
@@ -407,11 +432,11 @@ function SectionTopic({
   return (
     <div
       className={`mb-4 inline-flex items-center gap-2.5 text-xs font-semibold uppercase tracking-[0.2em] ${
-        isDark ? 'text-white' : 'text-[#1017e8]'
+        isDark ? 'text-white' : 'text-blue-400'
       }`}
     >
       <TopicIcon
-        className={`size-4 ${isDark ? 'text-amber-300' : 'text-[#1017e8]'}`}
+        className={`size-4 ${isDark ? 'text-amber-300' : 'text-blue-400'}`}
         strokeWidth={2}
         aria-hidden="true"
       />
@@ -429,27 +454,20 @@ let authChunkPrefetched = false;
 function prefetchAuthPages(): void {
   if (authChunkPrefetched) return;
   authChunkPrefetched = true;
-  // Import dinamis yang sama dengan router → Vite memakai chunk yang sama,
-  // jadi ini murni prefetch, tidak menduplikasi kode.
   void Promise.all([import('../auth/SignInPage'), import('../auth/SignUpPage')]);
 }
 
 export function LandingPage() {
   const { t } = useTranslation();
-  // User yang sudah login tidak melihat CTA "Sign in / Get started" —
-  // diganti tombol tunggal menuju dashboard app. Saat sesi masih 'loading'
-  // (boot), pakai snapshot localStorage agar CTA tampil benar tanpa menunggu
-  // /api/me; RequireAuth tetap jadi pengaman bila snapshot ternyata stale.
   const sessionStatus = useSessionStore((s) => s.status);
   const isAuthenticated =
     sessionStatus === 'authenticated' ||
     (sessionStatus === 'loading' && getCachedSessionStatus() === 'authenticated');
 
-  // ── Status integrasi live (user login saja) ───────────────
-  // Saat integrasi/channel diubah di halaman Integrations, seksi "Everything
-  // your business needs, connected." ikut ter-update otomatis: tile yang
-  // terhubung ditandai centang + deskripsi menampilkan jumlah terhubung.
-  // null = visitor anonim / API gagal → tampilan statis marketing.
+  useEffect(() => {
+    applyTheme('dark');
+  }, []);
+
   const [connectedTiles, setConnectedTiles] = useState<Set<string> | null>(null);
 
   const loadIntegrationState = useCallback(async () => {
@@ -469,8 +487,6 @@ export function LandingPage() {
       }
       for (const item of integrationsRes.integrations) {
         if (!item.isActive) continue;
-        // Key tile ≡ integrationType (lihat integrationTiles) — bukan
-        // whitelist terpisah yang bisa melenceng saat integrasi baru ditambah.
         if (item.integrationType === 'google-calendar') connected.add('google-calendar');
         if (item.integrationType === 'google-forms') connected.add('google-forms');
         if (item.integrationType === 'tally') connected.add('tally');
@@ -480,29 +496,21 @@ export function LandingPage() {
         if (item.integrationType === 'slack') connected.add('slack');
         if (item.integrationType === 'video') connected.add('video');
       }
-      // Obsidian tersimpan lokal per perangkat (browser) — bukan API.
       if (loadObsidianConfig()) connected.add('obsidian');
       setConnectedTiles(connected);
     } catch {
-      // 401 / API down → tampilan statis; jangan ganggu halaman publik.
       setConnectedTiles(null);
     }
   }, []);
 
   useEffect(() => {
-    // Hanya user login yang punya state integrasi nyata — visitor anonim
-    // tidak perlu memanggil API sama sekali.
     if (!getAccessToken()) return;
     void loadIntegrationState();
-    // "Otomatis": refresh saat tab difokuskan kembali (mis. integrasi diubah
-    // di tab lain, lalu kembali ke landing page).
     const onFocus = () => void loadIntegrationState();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [loadIntegrationState]);
 
-  // ── Animasi demo chat: pesan muncul satu per satu + indikator mengetik,
-  // lalu loop dari awal. Hormati prefers-reduced-motion (tampil statis). ──
   const [reducedMotion, setReducedMotion] = useState(false);
   const [visibleCount, setVisibleCount] = useState(0);
   const [typing, setTyping] = useState(false);
@@ -518,14 +526,12 @@ export function LandingPage() {
   useEffect(() => {
     if (reducedMotion) return;
     if (visibleCount >= demoMessages.length) {
-      // Semua pesan tampil → jeda, lalu ulang dari awal.
       setTyping(false);
       const timer = setTimeout(() => setVisibleCount(0), 3000);
       return () => clearTimeout(timer);
     }
     const message = demoMessages[visibleCount];
     if (message.sender === 'ai') {
-      // Sebelum balasan AI: tampilkan indikator mengetik dulu.
       setTyping(true);
       const timer = setTimeout(() => {
         setTyping(false);
@@ -537,8 +543,6 @@ export function LandingPage() {
     return () => clearTimeout(timer);
   }, [visibleCount, reducedMotion]);
 
-  // ── Animasi kartu form: chat (ala CONVERSATIONAL BOOKING) mengirim tautan
-  // Tally → form terisi → kembali ke chat untuk konfirmasi AI — loop. ──
   const [formStage, setFormStage] = useState<'chat' | 'form'>('chat');
   const [chatCount, setChatCount] = useState(0);
   const [chatTyping, setChatTyping] = useState(false);
@@ -550,7 +554,6 @@ export function LandingPage() {
   const [callConnected, setCallConnected] = useState(false);
   const [callSeconds, setCallSeconds] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  // Menu navigasi mobile — hamburger membuka panel berisi tautan seksi.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -558,7 +561,6 @@ export function LandingPage() {
     if (formStage === 'chat') {
       const next = chatCount < formChatMessages.length ? formChatMessages[chatCount] : null;
       if (next && (chatCount < 4 || formVisited)) {
-        // Pesan berikutnya — indikator mengetik dulu sebelum balasan AI.
         if (next.sender === 'ai' && !chatTyping) {
           setChatTyping(true);
           const timer = setTimeout(() => {
@@ -571,7 +573,6 @@ export function LandingPage() {
         return () => clearTimeout(timer);
       }
       if (chatCount >= 4 && !formVisited) {
-        // Percakapan sebelum form selesai (tautan terkirim) → pindah ke form.
         const timer = setTimeout(() => {
           setFormStage('form');
           setFormPhase(0);
@@ -581,7 +582,6 @@ export function LandingPage() {
         return () => clearTimeout(timer);
       }
       if (chatCount >= formChatMessages.length) {
-        // Seluruh alur selesai → jeda, lalu ulang dari awal.
         const timer = setTimeout(() => {
           setChatCount(0);
           setChatTyping(false);
@@ -591,109 +591,100 @@ export function LandingPage() {
       }
       return;
     }
-    // form stage
     if (formPhase >= formSteps.length) {
-      // Form terisi (tombol confirm) → kembali ke chat, lanjut percakapan.
       setFormFilled(false);
       const timer = setTimeout(() => {
         setFormStage('chat');
         setChatCount(4);
-      }, 1500);
+        setFormPhase(0);
+      }, 1600);
       return () => clearTimeout(timer);
     }
     if (!formFilled) {
-      // Pertanyaan tampil dulu, lalu jawaban terisi.
-      const timer = setTimeout(() => setFormFilled(true), 1000);
+      const timer = setTimeout(() => setFormFilled(true), 600);
       return () => clearTimeout(timer);
     }
     const timer = setTimeout(() => {
-      setFormPhase((current) => current + 1);
       setFormFilled(false);
-    }, 1600);
+      setFormPhase((phase) => phase + 1);
+    }, 1400);
     return () => clearTimeout(timer);
   }, [formStage, chatCount, chatTyping, formVisited, formPhase, formFilled, reducedMotion]);
 
-  // ── Mesin panggilan: ringing (avatar berdenyut) → tersambung
-  // (timer berjalan + transkrip realtime kata per kata) → selesai → loop. ──
   useEffect(() => {
     if (reducedMotion) return;
-    if (callVisibleCount >= callTranscript.length) {
-      // Panggilan selesai — jeda, lalu mulai ringing lagi dari awal.
+    if (!callConnected) {
+      const timer = setTimeout(() => {
+        setCallConnected(true);
+        setCallVisibleCount(1);
+        setCallWordCount(0);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+    if (callVisibleCount === 0) return;
+    if (callVisibleCount > callTranscript.length) {
       const timer = setTimeout(() => {
         setCallConnected(false);
-        setCallSeconds(0);
         setCallVisibleCount(0);
         setCallWordCount(0);
-      }, 2800);
+        setCallSeconds(0);
+      }, 4000);
       return () => clearTimeout(timer);
     }
-
-    if (!callConnected) {
-      // Fase ringing — visual saja, tanpa audio.
-      const timer = setTimeout(() => setCallConnected(true), 3200);
+    const current = callTranscript[callVisibleCount - 1];
+    const totalWords = t(current.textKey).split(/\s+/).length;
+    if (callWordCount < totalWords) {
+      const timer = setTimeout(() => setCallWordCount((c) => c + 1), 180);
       return () => clearTimeout(timer);
     }
-
-    const current = callTranscript[callVisibleCount];
-    const wordTotal = t(current.textKey).split(/\s+/).length;
-
-    if (callWordCount < wordTotal) {
-      // Baris aktif sedang dibicarakan — tambah kata berikutnya.
-      const timer = setTimeout(() => setCallWordCount((count) => count + 1), 340);
-      return () => clearTimeout(timer);
-    }
-
-    // Baris selesai — jeda singkat, lalu pembicara berikutnya mulai.
     const timer = setTimeout(() => {
-      setCallVisibleCount((count) => count + 1);
+      setCallVisibleCount((c) => c + 1);
       setCallWordCount(0);
     }, 500);
     return () => clearTimeout(timer);
   }, [callVisibleCount, callWordCount, callConnected, reducedMotion, t]);
 
-  // Timer panggilan — berjalan (dan reset) hanya saat panggilan tersambung.
   useEffect(() => {
     if (reducedMotion || !callConnected) return;
     const timer = setTimeout(() => setCallSeconds((s) => s + 1), 1000);
     return () => clearTimeout(timer);
   }, [callConnected, callSeconds, reducedMotion]);
 
-  // Pembicara aktif: saat agen AI berbicara → avatar tengah berganti ke ikon
-  // app (bulat penuh); saat pelanggan/awal panggilan → avatar "S" tetap tampil.
   const activeSpeaker =
-    reducedMotion || callVisibleCount >= callTranscript.length
+    reducedMotion || callVisibleCount > callTranscript.length || callVisibleCount === 0
       ? 'ai'
-      : callVisibleCount > 0
-        ? callTranscript[callVisibleCount - 1].speaker
-        : null;
+      : callTranscript[callVisibleCount - 1].speaker;
   const callDurationText = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(
     callSeconds % 60,
   ).padStart(2, '0')}`;
   return (
-    <main className="flex min-h-screen flex-col bg-[#f8fafb] text-[#0a1317]">
-      <header className="bg-white">
+    <main className="landing-page flex min-h-screen flex-col bg-[#090d10] text-zinc-100">
+      <header className="sticky top-0 z-40">
+        <div
+          aria-hidden="true"
+          className="landing-header-blur pointer-events-none absolute inset-x-0 top-0 h-48 -z-10"
+        />
         <div className="mx-auto flex h-[72px] w-full max-w-5xl items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5" aria-label={t('landing.ariaHome')}>
-            <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-[#0a1317] shadow-sm">
+            <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white text-zinc-950 shadow-sm">
               <AppLogo />
             </span>
-            <span className="text-[15px] font-semibold tracking-[-0.03em] text-[#0a1317]">oriole</span>
+            <span className="text-[17px] font-semibold tracking-[-0.03em] text-white sm:text-lg">oriole</span>
           </Link>
 
-          {/* Menu navigasi — tautan ke seksi landing (desktop) */}
-          <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-7 md:flex">
+          <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-8 md:flex">
             {landingNavLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
-                className="text-base font-medium text-[#4e606f] transition-colors hover:text-[#1017e8]"
+                className="text-lg font-medium text-white transition-opacity hover:opacity-80"
               >
                 {t(link.labelKey)}
               </a>
             ))}
           </nav>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             {isAuthenticated ? (
               <>
                 <BookDemoButton size="sm" />
@@ -701,53 +692,51 @@ export function LandingPage() {
               </>
             ) : (
               <>
-                <Button
-                  label={t('landing.signIn')}
-                  variant="ghost"
-                  size="sm"
-                  href="/auth/sign-in"
+                <Link
+                  to="/auth/sign-in"
                   onMouseEnter={prefetchAuthPages}
                   onFocus={prefetchAuthPages}
                   onPointerDown={prefetchAuthPages}
-                />
-                <Button
-                  label={t('landing.getStarted')}
-                  variant="primary"
-                  size="sm"
-                  href="/auth/sign-up"
+                  className="inline-flex h-10 items-center justify-center rounded-lg px-4 text-lg font-medium text-white transition hover:bg-white/10"
+                >
+                  {t('landing.signIn')}
+                </Link>
+                <Link
+                  to="/auth/sign-up"
                   onMouseEnter={prefetchAuthPages}
                   onFocus={prefetchAuthPages}
                   onPointerDown={prefetchAuthPages}
-                />
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-white px-5 text-lg font-medium text-black transition hover:bg-zinc-200"
+                >
+                  {t('landing.getStarted')}
+                </Link>
               </>
             )}
-            {/* Toggle menu mobile */}
             <button
               type="button"
               aria-expanded={mobileMenuOpen}
               aria-label={mobileMenuOpen ? t('nav.closeMenu') : t('nav.openMenu')}
               onClick={() => setMobileMenuOpen((open) => !open)}
-              className="flex size-8 items-center justify-center rounded-md text-[#0a1317] transition hover:bg-[#eef0ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] md:hidden"
+              className="flex size-9 items-center justify-center rounded-md text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:hidden"
             >
               {mobileMenuOpen ? (
-                <IconX className="size-4" aria-hidden="true" />
+                <IconX className="size-5" aria-hidden="true" />
               ) : (
-                <IconMenu className="size-4" aria-hidden="true" />
+                <IconMenu className="size-5" aria-hidden="true" />
               )}
             </button>
           </div>
         </div>
 
-        {/* Panel menu mobile — tautan seksi muncul di bawah header */}
         {mobileMenuOpen && (
-          <nav aria-label={t('landing.navLabel')} className="border-t border-[#e6ebef] bg-white px-5 pb-5 pt-2 md:hidden">
+          <nav aria-label={t('landing.navLabel')} className="border-t border-white/10 bg-[#090d10] pb-5 pt-2 md:hidden">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-1">
               {landingNavLinks.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-base font-medium text-[#4e606f] transition-colors hover:bg-[#f8fafb] hover:text-[#1017e8]"
+                  className="rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
                 >
                   {t(link.labelKey)}
                 </a>
@@ -757,16 +746,18 @@ export function LandingPage() {
         )}
       </header>
 
-      <section className="flex flex-1 items-center justify-center bg-white px-5 py-24 sm:px-8">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-start text-left">
-          <h1 className="text-3xl font-semibold leading-[1.1] tracking-[-0.05em] text-[#0a1317] sm:text-5xl">
+      {/* 01 — Hero */}
+      <section className="relative flex flex-1 items-center justify-center bg-[#090d10] px-5 pb-16 pt-20 sm:px-8 sm:pb-20 sm:pt-28">
+        <div className="pointer-events-none absolute left-1/2 top-1/3 size-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/15 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto flex w-full max-w-5xl flex-col items-start text-left">
+          <SectionTopic icon={IconRepeat} word={t('landing.heroEyebrow')} />
+          <h1 className="text-4xl font-bold leading-[1.08] tracking-[-0.05em] text-white sm:text-6xl lg:text-[64px]">
             {t('landing.heroHeadline')}
           </h1>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-[#4e606f] sm:text-lg sm:leading-8">
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300 sm:text-xl sm:leading-9">
             {t('landing.heroSubheadline')}
           </p>
 
-          {/* Tombol aksi — user login melihat dashboard, visitor melihat CTA */}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
             {isAuthenticated ? (
               <>
@@ -775,241 +766,126 @@ export function LandingPage() {
               </>
             ) : (
               <>
-                <Button
-                  label={t('landing.getStarted')}
-                  variant="primary"
-                  size="lg"
-                  href="/auth/sign-up"
+                <Link
+                  to="/auth/sign-up"
                   onMouseEnter={prefetchAuthPages}
                   onFocus={prefetchAuthPages}
                   onPointerDown={prefetchAuthPages}
-                />
-                <Button
-                  label={t('landing.signIn')}
-                  variant="ghost"
-                  size="lg"
-                  href="/auth/sign-in"
-                  onMouseEnter={prefetchAuthPages}
-                  onFocus={prefetchAuthPages}
-                  onPointerDown={prefetchAuthPages}
-                />
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-white px-7 text-lg font-semibold text-black shadow-sm transition hover:bg-zinc-200"
+                >
+                  {t('landing.heroCtaStart')}
+                </Link>
+                <a
+                  href="#demo"
+                  className="inline-flex h-12 items-center justify-center rounded-xl border border-white/20 bg-transparent px-7 text-lg font-medium text-white transition hover:bg-white/10"
+                >
+                  {t('landing.heroCtaDemo')}
+                </a>
               </>
             )}
           </div>
-        </div>
-      </section>
 
-      {/* Pain points — empat kolom masalah utama seperti template referensi */}
-      <section className="relative overflow-hidden border-y border-[#232850] bg-[#0d1130] px-5 py-20 text-white sm:px-8 sm:py-24">
-        {/* Glow indigo halus — pola sama dengan seksi Integrasi, memperkuat warna brand */}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/15 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto w-full max-w-5xl">
-          <SectionTopic icon={IconAlertTriangle} word={t('landing.topicPain')} tone="dark" />
-          <h2 className="max-w-3xl whitespace-pre-line text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
-            <Trans
-              i18nKey="landing.painTitle"
-              components={{ strong: <strong className="text-amber-300" /> }}
-            />
-          </h2>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-[#adb3c7] sm:text-lg sm:leading-8">
-            <Trans
-              i18nKey="landing.painDesc"
-              components={{ strong: <strong className="font-semibold text-amber-300" /> }}
-            />
-          </p>
-
-          <div className="mt-14 grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-10 lg:gap-y-0">
-            {painPoints.map((point) => {
-              const PointIcon = point.icon;
-              return (
-                <article key={point.titleKey}>
-                  <PointIcon className="size-8 text-[#969caf]" strokeWidth={1.8} aria-hidden="true" />
-                  <h3 className="mt-9 text-base font-semibold leading-tight tracking-[-0.02em] text-white sm:text-lg lg:min-h-[3rem]">
-                    {t(point.titleKey)}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-[#adb3c7]">
-                    {t(point.descKey)}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Integrasi — mengikuti pola visual referensi, tetapi memakai konektor nyata */}
-      <section id="integrations" className="relative scroll-mt-6 overflow-hidden border-y border-[#e6ebef] bg-white px-5 py-24 sm:px-8 sm:py-28">
-        <div className="pointer-events-none absolute left-1/2 top-24 size-[28rem] -translate-x-1/2 rounded-full bg-[#eef0ff] opacity-60 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto w-full max-w-5xl text-center">
-          <SectionTopic icon={IconPlug} word={t('landing.topicIntegrations')} />
-          <h2 className="mx-auto max-w-4xl text-2xl font-semibold leading-[1.1] tracking-[-0.05em] text-[#0a1317] sm:text-4xl lg:text-5xl">
-            {t('landing.integrationTitle')}
-          </h2>
-          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#4e606f] sm:text-lg sm:leading-8">
-            {connectedTiles !== null
-              ? t('landing.integrationConnectedDesc', {
-                  count: connectedTiles.size,
-                  total: integrationTiles.length,
-                })
-              : t('landing.integrationDesc')}
-          </p>
-
-          <div className="mx-auto mt-14 grid max-w-4xl grid-cols-3 gap-x-4 gap-y-7 sm:grid-cols-5 sm:gap-x-8 sm:gap-y-9 lg:gap-x-10">
-            {integrationTiles.map((tile) => (
-              <IntegrationTile
-                key={tile.key}
-                tile={tile}
-                connected={connectedTiles !== null && connectedTiles.has(tile.key)}
-              />
-            ))}
-          </div>
-
-          <p className="mx-auto mt-14 max-w-3xl text-base leading-7 text-[#0a1317] sm:text-lg sm:leading-8">
-            {t('landing.integrationFootnote')}
+          <p className="mt-6 font-mono text-xs text-zinc-400">
+            {t('landing.heroTrustBadge')}
           </p>
         </div>
       </section>
 
-      {/* Cara kerja — tiga langkah menuju asisten AI */}
-      <section id="how-it-works" className="scroll-mt-6 border-y border-[#e6ebef] bg-white px-5 py-20 sm:px-8">
-        <div className="mx-auto w-full max-w-5xl">
-          <SectionTopic icon={IconRepeat} word={t('landing.topicHow')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-[#0a1317] sm:text-4xl">
-            {t('landing.howTitle')}
-          </h2>
-
-          <div className="mt-12 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 lg:gap-x-10">
-            {howItWorksSteps.map((step) => {
-              return (
-                <article key={step.titleKey}>
-                  <div className="aspect-[1.08] overflow-hidden rounded-2xl border border-[#e6ebef] bg-[#f8fafb]">
-                    <img
-                      src={step.image}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="mt-5 text-sm leading-6 sm:text-base sm:leading-7">
-                    <h3 className="inline font-semibold tracking-[-0.02em] text-[#0a1317]">
-                      {t(step.titleKey)}
-                    </h3>{' '}
-                    <p className="inline text-[#858585]">{t(step.descKey)}</p>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Demo percakapan — mock chat customer ↔ AI */}
-      <section className="px-5 py-20 sm:px-8">
+      {/* 02 — Instant Product Proof (Demo) */}
+      <section id="demo" className="scroll-mt-6 border-y border-white/10 bg-[#06090c] px-5 py-24 sm:px-8 sm:py-28">
         <div className="mx-auto w-full max-w-5xl">
           <SectionTopic icon={IconVideo} word={t('landing.topicDemo')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-[#0a1317] sm:text-4xl">
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
             {t('landing.demoTitle')}
           </h2>
-          <p className="mt-5 text-base leading-7 text-[#4e606f] sm:text-lg sm:leading-8">
+          <p className="mt-5 text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
             {t('landing.demoDesc')}
           </p>
 
           <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-            {/* Chat — booking lewat percakapan */}
+            {/* Card 1: Chat Demo */}
             <div className="flex flex-col">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#1017e8]">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-blue-400">
                 {t('landing.demoChatCaption')}
               </p>
-              {/* Tinggi FIXED (h-[36.5rem]) agar frame phone tidak pernah berubah
-                  saat animasi loop berjalan — konten penuh (±577px) selalu muat;
-                  overflow-y-auto di area pesan jadi jaring pengaman bila kolom
-                  sangat sempit (pesan baru tetap menempel di bawah). */}
-              <div className="flex h-[36.5rem] flex-col overflow-hidden rounded-2xl border border-[#e6ebef] bg-white shadow-sm">
-              {/* Header chat */}
-              <div className="flex items-center gap-3 border-b border-[#e6ebef] px-4 py-3">
-                <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a1317]">
-                  <AppLogo />
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#0a1317]">{t('landing.demoAssistant')}</p>
-                  <p className="flex items-center gap-1.5 text-xs text-[#4e606f]">
-                    <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                    {t('landing.demoOnline')}
-                  </p>
+              <div className="flex h-[36.5rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 shadow-sm">
+                <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-zinc-950">
+                    <AppLogo />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{t('landing.demoAssistant')}</p>
+                    <p className="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                      {t('landing.demoOnline')}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              {/* Pesan — muncul satu per satu (loop) + indikator mengetik.
-                  Overflow DIHILANGKAN (bukan scroll): pesan terbaru menempel
-                  di bawah, yang lebih lama terpotong di atas; header tetap. */}
-              <div className="flex min-h-0 flex-1 flex-col justify-end space-y-4 overflow-hidden px-4 py-5">
-                {(reducedMotion ? demoMessages : demoMessages.slice(0, visibleCount)).map((message) => {
-                  const isCustomer = message.sender === 'customer';
-                  return (
-                    <motion.div
-                      key={message.textKey}
-                      initial={{ opacity: 0, y: 10, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.35, ease: 'easeOut' }}
-                      className={isCustomer ? 'flex justify-start' : 'flex justify-end'}
-                    >
-                      <div className="max-w-[85%]">
-                        <p
-                          className={`mb-1 text-[11px] font-semibold ${isCustomer ? 'text-[#4e606f]' : 'text-amber-700'}`}
-                        >
-                          {isCustomer ? t('landing.demoCustomerLabel') : t('landing.demoAiLabel')}
-                        </p>
-                        <div
-                          className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
-                            isCustomer
-                              ? 'rounded-tl-sm border border-[#e6ebef] bg-white text-[#0a1317]'
-                              : 'rounded-tr-sm bg-amber-500 text-zinc-950'
-                          }`}
-                        >
-                          <p className="whitespace-pre-line">{t(message.textKey)}</p>
-                          <p className={`mt-1 text-right text-[10px] ${isCustomer ? 'text-[#8a9aa8]' : 'text-zinc-900/60'}`}>
-                            {message.time}
+                <div className="flex min-h-0 flex-1 flex-col justify-end space-y-4 overflow-hidden px-4 py-5">
+                  {(reducedMotion ? demoMessages : demoMessages.slice(0, visibleCount)).map((message) => {
+                    const isCustomer = message.sender === 'customer';
+                    return (
+                      <motion.div
+                        key={message.textKey}
+                        initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ duration: 0.35, ease: 'easeOut' }}
+                        className={isCustomer ? 'flex justify-start' : 'flex justify-end'}
+                      >
+                        <div className="max-w-[85%]">
+                          <p
+                            className={`mb-1 font-mono text-[11px] font-semibold ${isCustomer ? 'text-zinc-400' : 'text-amber-400'}`}
+                          >
+                            {isCustomer ? t('landing.demoCustomerLabel') : t('landing.demoAiLabel')}
                           </p>
+                          <div
+                            className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
+                              isCustomer
+                                ? 'rounded-tl-sm border border-white/10 bg-zinc-800 text-white'
+                                : 'rounded-tr-sm bg-amber-500 text-zinc-950'
+                            }`}
+                          >
+                            <p className="whitespace-pre-line">{t(message.textKey)}</p>
+                            <p className={`mt-1 font-mono text-right text-[10px] ${isCustomer ? 'text-zinc-400' : 'text-zinc-900/60'}`}>
+                              {message.time}
+                            </p>
+                          </div>
                         </div>
+                      </motion.div>
+                    );
+                  })}
+
+                  {!reducedMotion && typing && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex justify-end"
+                    >
+                      <div className="flex items-center gap-1.5 rounded-2xl rounded-tr-sm bg-amber-500 px-4 py-3.5">
+                        {[0, 1, 2].map((dot) => (
+                          <motion.span
+                            key={dot}
+                            className="size-1.5 rounded-full bg-zinc-950/70"
+                            animate={{ y: [0, -3, 0], opacity: [0.35, 1, 0.35] }}
+                            transition={{ duration: 0.8, repeat: Infinity, delay: dot * 0.18, ease: 'easeInOut' }}
+                          />
+                        ))}
                       </div>
                     </motion.div>
-                  );
-                })}
-
-                {!reducedMotion && typing && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex justify-end"
-                  >
-                    <div className="flex items-center gap-1.5 rounded-2xl rounded-tr-sm bg-amber-500 px-4 py-3.5">
-                      {[0, 1, 2].map((dot) => (
-                        <motion.span
-                          key={dot}
-                          className="size-1.5 rounded-full bg-zinc-950/70"
-                          animate={{ y: [0, -3, 0], opacity: [0.35, 1, 0.35] }}
-                          transition={{ duration: 0.8, repeat: Infinity, delay: dot * 0.18, ease: 'easeInOut' }}
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* AI Call — panggilan konfirmasi otomatis */}
+            {/* Card 2: Voice AI Call */}
             <div className="flex flex-col">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#1017e8]">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-blue-400">
                 {t('landing.demoCallCaption')}
               </p>
-              {/* Layar panggilan — avatar tengah TETAP tampil; saat agen AI
-                  menjawab avatar berganti ikon app (bulat penuh). Live transcript
-                  di posisi FIXED antara teks ringing dan tombol aksi bawah. */}
-              <div className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-[#0a1317] shadow-sm">
-                {/* Status bar */}
-                <div className="flex items-center justify-between px-5 pt-3 text-[10px] font-medium tabular-nums text-white/70">
+              <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-sm">
+                <div className="flex items-center justify-between px-5 pt-3 font-mono text-[10px] font-medium tabular-nums text-white/70">
                   <span>9:41</span>
                   <div className="flex items-center gap-1.5">
                     <IconSignal className="size-3" />
@@ -1018,15 +894,14 @@ export function LandingPage() {
                   </div>
                 </div>
 
-                {/* Header panggilan — tombol kembali + nama + status panggilan */}
                 <div className="relative flex items-center justify-center px-4 pt-2">
                   <IconChevronLeft className="absolute left-4 size-5 text-white/90" />
                   <div className="text-center">
                     <p className="text-[15px] font-semibold tracking-[-0.02em] text-white">
                       {t('landing.demoCallContact')}
                     </p>
-                    <p className="mt-0.5 text-xs text-white/60">
-                      {reducedMotion || callVisibleCount >= callTranscript.length
+                    <p className="mt-0.5 font-mono text-xs text-white/60">
+                      {reducedMotion || callVisibleCount > callTranscript.length || callVisibleCount === 0
                         ? t('landing.demoCallStatus')
                         : callConnected
                           ? `${t('landing.demoCallConnected')} · ${callDurationText}`
@@ -1035,12 +910,9 @@ export function LandingPage() {
                   </div>
                 </div>
 
-                {/* Tengah — avatar bulat penuh + status panggilan; avatar berganti
-                    ke ikon app saat agen AI berbicara. Saat ringing:
-                    cincin denyut menyebar + teks "Ringing…" ala panggilan sungguhan. */}
                 <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-6">
                   <div className="relative flex size-24 items-center justify-center">
-                    {!reducedMotion && !callConnected && callVisibleCount < callTranscript.length && (
+                    {!reducedMotion && !callConnected && (
                       <>
                         <motion.span
                           className="absolute inset-0 rounded-full bg-amber-500/25"
@@ -1072,26 +944,23 @@ export function LandingPage() {
                       )}
                     </motion.span>
                   </div>
-                  <p className="text-sm font-medium text-white/80">
+                  <p className="font-mono text-xs font-medium text-white/80">
                     {activeSpeaker === 'ai'
                       ? t('landing.demoCallAgent')
                       : activeSpeaker === 'customer'
                         ? t('landing.demoCallCustomer')
-                        : !callConnected && callVisibleCount < callTranscript.length
+                        : !callConnected
                           ? t('landing.demoCallRinging')
                           : t('landing.demoCallContact')}
                   </p>
                 </div>
 
-                {/* Live transcript — gaya YouTube: daftar baris polos (waktu +
-                    pembicara + teks), baris yang sedang dibicarakan disorot;
-                    posisi FIXED antara teks ringing dan tombol aksi. */}
                 <div className="border-t border-white/10 px-4 pb-4 pt-3">
                   <div className="mb-2.5 flex items-center justify-between">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                    <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
                       {t('landing.demoCallTranscript')}
                     </p>
-                    <span className="flex items-center gap-1.5 text-[10px] text-emerald-300">
+                    <span className="flex items-center gap-1.5 font-mono text-[10px] text-emerald-300">
                       <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
                       {t('landing.demoCallAgent')}
                     </span>
@@ -1103,7 +972,6 @@ export function LandingPage() {
                         const isAi = message.speaker === 'ai';
                         const isCurrent =
                           !reducedMotion &&
-                          callVisibleCount < callTranscript.length &&
                           index === callVisibleCount - 1;
                         const wordTotal = t(message.textKey).split(/\s+/).length;
                         const words = isCurrent ? callWordCount : wordTotal;
@@ -1122,11 +990,11 @@ export function LandingPage() {
                             }`}
                           >
                             <div className="flex items-baseline gap-2">
-                              <span className="w-9 shrink-0 text-[10px] tabular-nums text-white/40">
+                              <span className="w-9 shrink-0 font-mono text-[10px] tabular-nums text-white/40">
                                 {message.time}
                               </span>
                               <span
-                                className={`flex w-20 shrink-0 items-center gap-1 truncate text-[10px] font-semibold ${
+                                className={`flex w-20 shrink-0 items-center gap-1 truncate font-mono text-[10px] font-semibold ${
                                   isAi ? 'text-amber-300' : 'text-white/60'
                                 }`}
                               >
@@ -1152,28 +1020,14 @@ export function LandingPage() {
                         );
                       },
                     )}
-
-
-                    {(reducedMotion || callVisibleCount >= callTranscript.length) && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="-mx-4 flex items-center gap-1.5 px-4 pt-1.5 text-[10px] font-medium text-emerald-300"
-                      >
-                        <IconCheck className="size-3.5" />
-                        {t('landing.demoCallStatus')}
-                      </motion.div>
-                    )}
                   </div>
                 </div>
 
-                {/* Kontrol panggilan */}
                 <div className="flex items-center justify-center gap-5 px-6 pb-7 pt-2 sm:gap-6">
                   <span className="flex size-12 items-center justify-center rounded-full bg-white/10 text-white">
                     <IconRefreshCw className="size-5" />
                   </span>
-                  <span className="flex size-12 items-center justify-center rounded-full bg-white text-[#0a1317]">
+                  <span className="flex size-12 items-center justify-center rounded-full bg-white text-zinc-950">
                     <IconVideo className="size-5" />
                   </span>
                   <span className="flex size-12 items-center justify-center rounded-full bg-white/10 text-white">
@@ -1184,34 +1038,28 @@ export function LandingPage() {
                   </span>
                 </div>
 
-                {/* Home indicator */}
                 <div className="flex justify-center pb-2">
                   <span className="h-1 w-32 rounded-full bg-white/70" aria-hidden="true" />
                 </div>
               </div>
             </div>
 
-            {/* Form — satu kartu: chat (ala CONVERSATIONAL BOOKING) → form
-                Tally terisi → kembali ke chat untuk konfirmasi AI. */}
+            {/* Card 3: Form Workflow */}
             <div className="flex flex-col">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#1017e8]">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-blue-400">
                 {t('landing.demoFormCaption')}
               </p>
-              {/* Tinggi FIXED (h-[36.5rem]) — sama seperti kartu chat, agar
-                  frame form tidak berubah saat animasi chat → form → chat
-                  berjalan; konten berlebih terpotong, header tetap tampil. */}
-              <div className="flex h-[36.5rem] flex-col overflow-hidden rounded-2xl border border-[#e6ebef] bg-white shadow-sm">
+              <div className="flex h-[36.5rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 shadow-sm">
                 {formStage === 'form' && !reducedMotion ? (
-                  /* ── Tampilan form Tally ── */
                   <Fragment>
-                    <div className="border-b border-[#e6ebef] px-4 py-3">
-                      <p className="text-sm font-semibold text-[#0a1317]">{t('landing.demoFormTitle')}</p>
-                      <p className="flex items-center gap-1 text-xs text-[#4e606f]">
+                    <div className="border-b border-white/10 px-4 py-3">
+                      <p className="text-sm font-semibold text-white">{t('landing.demoFormTitle')}</p>
+                      <p className="flex items-center gap-1 text-xs text-zinc-400">
                         <Trans
                           i18nKey="landing.demoFormPoweredBy"
                           components={{
                             icon: (
-                              <span className="inline-flex size-3.5 items-center justify-center overflow-hidden rounded-sm bg-[#0a1317]">
+                              <span className="inline-flex size-3.5 items-center justify-center overflow-hidden rounded-sm bg-white text-zinc-950">
                                 <AppLogo alt="" />
                               </span>
                             ),
@@ -1220,8 +1068,7 @@ export function LandingPage() {
                       </p>
                     </div>
 
-                    {/* Progress bar gaya Tally */}
-                    <div className="h-1 w-full bg-[#e6ebef]" aria-hidden="true">
+                    <div className="h-1 w-full bg-zinc-800" aria-hidden="true">
                       <div
                         className="h-full bg-amber-500 transition-all duration-700 ease-out"
                         style={{
@@ -1236,19 +1083,17 @@ export function LandingPage() {
 
                     <div className="flex flex-1 flex-col px-5 py-6">
                       {formPhase >= formSteps.length ? (
-                        /* Semua terisi → tombol confirm menyala */
                         <div className="flex flex-1 flex-col items-center justify-center">
                           <motion.div
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.3, ease: 'easeOut' }}
-                            className="flex w-full max-w-[220px] items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm"
+                            className="flex w-full max-w-[220px] items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 shadow-sm"
                           >
                             {t('landing.demoFormSubmit')}
                           </motion.div>
                         </div>
                       ) : (
-                        /* Satu pertanyaan per layar — terisi dari awal hingga akhir */
                         (() => {
                           const step = formSteps[formPhase];
                           return (
@@ -1259,10 +1104,10 @@ export function LandingPage() {
                               transition={{ duration: 0.3, ease: 'easeOut' }}
                               className="flex flex-1 flex-col justify-center"
                             >
-                              <p className="text-sm font-semibold text-[#0a1317]">{t(step.labelKey)}</p>
+                              <p className="text-sm font-semibold text-white">{t(step.labelKey)}</p>
                               <div className="mt-3">
                                 {step.kind === 'text' ? (
-                                  <div className="flex items-center rounded-lg border border-[#e6ebef] bg-[#f8fafb] px-3 py-2.5 text-sm text-[#0a1317]">
+                                  <div className="flex items-center rounded-lg border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white">
                                     <Typewriter
                                       text={t(step.valueKey)}
                                       filled={formFilled}
@@ -1275,13 +1120,13 @@ export function LandingPage() {
                                       className={`rounded-lg border px-3 py-2 text-sm transition-colors duration-300 ${
                                         formFilled
                                           ? 'border-amber-500 bg-amber-500 font-semibold text-zinc-950 shadow-sm'
-                                          : 'border-[#e6ebef] bg-white text-[#4e606f]'
+                                          : 'border-white/10 bg-zinc-800 text-zinc-300'
                                       }`}
                                     >
                                       {t(step.valueKey)}
                                     </span>
                                     {step.option2Key && (
-                                      <span className="rounded-lg border border-[#e6ebef] bg-white px-3 py-2 text-sm text-[#4e606f]">
+                                      <span className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
                                         {t(step.option2Key)}
                                       </span>
                                     )}
@@ -1295,24 +1140,20 @@ export function LandingPage() {
                     </div>
                   </Fragment>
                 ) : (
-                  /* ── Tampilan chat — layout ala CONVERSATIONAL BOOKING ── */
                   <Fragment>
-                    <div className="flex items-center gap-3 border-b border-[#e6ebef] px-4 py-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0a1317]">
+                    <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+                      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-zinc-950">
                         <AppLogo />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#0a1317]">{t('landing.demoAssistant')}</p>
-                        <p className="flex items-center gap-1.5 text-xs text-[#4e606f]">
+                        <p className="truncate text-sm font-semibold text-white">{t('landing.demoAssistant')}</p>
+                        <p className="flex items-center gap-1.5 text-xs text-zinc-400">
                           <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                           {t('landing.demoOnline')}
                         </p>
                       </div>
                     </div>
 
-                    {/* Pesan — muncul berurutan; reduced motion → semua tampil.
-                        Overflow dihilangkan: pesan terbaru menempel di bawah,
-                        yang lama terpotong di atas; header tetap tampil. */}
                     <div className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden px-4 py-5">
                       {(reducedMotion ? formChatMessages : formChatMessages.slice(0, chatCount)).map((message) => {
                         const isCustomer = message.sender === 'customer';
@@ -1326,14 +1167,14 @@ export function LandingPage() {
                           >
                             <div className="max-w-[85%]">
                               <p
-                                className={`mb-1 text-[11px] font-semibold ${isCustomer ? 'text-[#4e606f]' : 'text-amber-700'}`}
+                                className={`mb-1 font-mono text-[11px] font-semibold ${isCustomer ? 'text-zinc-400' : 'text-amber-400'}`}
                               >
                                 {isCustomer ? t('landing.demoCustomerLabel') : t('landing.demoAiLabel')}
                               </p>
                               <div
                                 className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
                                   isCustomer
-                                    ? 'rounded-tl-sm border border-[#e6ebef] bg-white text-[#0a1317]'
+                                    ? 'rounded-tl-sm border border-white/10 bg-zinc-800 text-white'
                                     : 'rounded-tr-sm bg-amber-500 text-zinc-950'
                                 }`}
                               >
@@ -1343,14 +1184,14 @@ export function LandingPage() {
                                     href={demoFormUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[#1017e8] shadow-sm transition hover:bg-[#f8fafb]"
+                                    className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-zinc-800 px-3 py-2 text-xs font-semibold text-amber-400 shadow-sm transition hover:bg-zinc-700"
                                   >
                                     <IconExternalLink className="size-3.5" />
                                     {t('landing.demoFormLink')}
                                   </a>
                                 )}
                                 <p
-                                  className={`mt-1 text-right text-[10px] ${isCustomer ? 'text-[#8a9aa8]' : 'text-zinc-900/60'}`}
+                                  className={`mt-1 font-mono text-right text-[10px] ${isCustomer ? 'text-zinc-400' : 'text-zinc-900/60'}`}
                                 >
                                   {message.time}
                                 </p>
@@ -1388,22 +1229,128 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Untuk siapa — built for service businesses */}
-      <section className="border-y border-[#e6ebef] bg-white px-5 py-20 sm:px-8">
+      {/* 03 — Pain Points */}
+      <section className="relative overflow-hidden border-y border-[#232850] bg-[#0d1130] px-5 py-20 text-white sm:px-8 sm:py-24">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/15 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto w-full max-w-5xl">
+          <SectionTopic icon={IconAlertTriangle} word={t('landing.topicPain')} tone="dark" />
+          <h2 className="max-w-3xl whitespace-pre-line text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+            <Trans
+              i18nKey="landing.painTitle"
+              components={{ strong: <strong className="text-amber-300" /> }}
+            />
+          </h2>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-[#adb3c7] sm:text-lg sm:leading-8">
+            <Trans
+              i18nKey="landing.painDesc"
+              components={{ strong: <strong className="font-semibold text-amber-300" /> }}
+            />
+          </p>
+
+          <div className="mt-14 grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-10 lg:gap-y-0">
+            {painPoints.map((point) => {
+              const PointIcon = point.icon;
+              return (
+                <article key={point.titleKey}>
+                  <PointIcon className="size-8 text-[#969caf]" strokeWidth={1.8} aria-hidden="true" />
+                  <h3 className="mt-9 text-base font-semibold leading-tight tracking-[-0.02em] text-white sm:text-lg lg:min-h-[3rem]">
+                    {t(point.titleKey)}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-[#adb3c7]">
+                    {t(point.descKey)}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 04 — How It Works */}
+      <section id="how-it-works" className="scroll-mt-6 border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
+        <div className="mx-auto w-full max-w-5xl">
+          <SectionTopic icon={IconRepeat} word={t('landing.topicHow')} />
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+            {t('landing.howTitle')}
+          </h2>
+
+          <div className="mt-12 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 lg:gap-x-10">
+            {howItWorksSteps.map((step) => {
+              return (
+                <article key={step.titleKey}>
+                  <div className="aspect-[1.08] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900">
+                    <img
+                      src={step.image}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="mt-5 text-sm leading-6 sm:text-base sm:leading-7">
+                    <h3 className="inline font-semibold tracking-[-0.02em] text-white">
+                      {t(step.titleKey)}
+                    </h3>{' '}
+                    <p className="inline text-zinc-400">{t(step.descKey)}</p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 05 — Integrations & Channels */}
+      <section id="integrations" className="relative scroll-mt-6 overflow-hidden border-y border-white/10 bg-[#090d10] px-5 py-24 sm:px-8 sm:py-28">
+        <div className="pointer-events-none absolute left-1/2 top-24 size-[28rem] -translate-x-1/2 rounded-full bg-[#1017e8]/15 opacity-60 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto w-full max-w-5xl text-center">
+          <SectionTopic icon={IconPlug} word={t('landing.topicIntegrations')} />
+          <h2 className="mx-auto max-w-4xl text-2xl font-semibold leading-[1.1] tracking-[-0.05em] text-white sm:text-4xl lg:text-5xl">
+            {t('landing.integrationTitle')}
+          </h2>
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
+            {connectedTiles !== null
+              ? t('landing.integrationConnectedDesc', {
+                  count: connectedTiles.size,
+                  total: integrationTiles.length,
+                })
+              : t('landing.integrationDesc')}
+          </p>
+
+          <div className="mx-auto mt-14 grid max-w-4xl grid-cols-3 gap-x-4 gap-y-7 sm:grid-cols-5 sm:gap-x-8 sm:gap-y-9 lg:gap-x-10">
+            {integrationTiles.map((tile) => (
+              <IntegrationTile
+                key={tile.key}
+                tile={tile}
+                connected={connectedTiles !== null && connectedTiles.has(tile.key)}
+              />
+            ))}
+          </div>
+
+          <p className="mx-auto mt-14 max-w-3xl text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
+            {t('landing.integrationFootnote')}
+          </p>
+        </div>
+      </section>
+
+      {/* 06 — Who It's For */}
+      <section className="border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
         <div className="mx-auto w-full max-w-5xl">
           <SectionTopic icon={IconUsers} word={t('landing.topicWho')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-[#0a1317] sm:text-4xl">
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
             {t('landing.whoTitle')}
           </h2>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
+            {t('landing.whoDesc')}
+          </p>
 
           <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {whoForCards.map((card) => (
-              <div key={card.titleKey} className="rounded-2xl border border-[#e6ebef] bg-[#f8fafb] p-6">
+              <div key={card.titleKey} className="rounded-2xl border border-white/10 bg-zinc-900 p-6">
                 <span className="text-2xl" aria-hidden="true">{card.emoji}</span>
-                <h3 className="mt-3 text-base font-semibold tracking-[-0.02em] text-[#0a1317]">
+                <h3 className="mt-3 text-base font-semibold tracking-[-0.02em] text-white">
                   {t(card.titleKey)}
                 </h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#4e606f]">
+                <p className="mt-1.5 text-sm leading-6 text-zinc-400">
                   {t(card.descKey)}
                 </p>
               </div>
@@ -1412,15 +1359,47 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* FAQ — jawaban cepat dalam gaya percakapan Inbox */}
-      <section id="faq" className="scroll-mt-6 border-y border-[#e6ebef] bg-[#f8fafb] px-5 py-20 sm:px-8">
+      {/* 07 — Built for Real-World Reliability */}
+      <section className="border-y border-white/10 bg-[#06090c] px-5 py-20 sm:px-8">
+        <div className="mx-auto w-full max-w-5xl">
+          <SectionTopic icon={IconShield} word={t('landing.topicTrust')} />
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+            {t('landing.trustTitle')}
+          </h2>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
+            {t('landing.trustDesc')}
+          </p>
+
+          <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {trustCards.map((card) => {
+              const TrustIcon = card.icon;
+              return (
+                <div key={card.titleKey} className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6">
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                    <TrustIcon className="size-5" />
+                  </span>
+                  <h3 className="mt-4 text-base font-semibold tracking-[-0.02em] text-white">
+                    {t(card.titleKey)}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">
+                    {t(card.descKey)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 08 — FAQ */}
+      <section id="faq" className="scroll-mt-6 border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
         <div className="mx-auto grid w-full max-w-5xl gap-y-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-x-16 lg:gap-y-0">
           <div>
             <SectionTopic icon={IconHelp} word={t('landing.topicFaq')} />
-            <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-[#0a1317] sm:text-4xl">
+            <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
               {t('landing.faqTitle')}
             </h2>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-[#4e606f] sm:text-lg sm:leading-8">
+            <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
               {t('landing.faqDesc')}
             </p>
           </div>
@@ -1435,7 +1414,7 @@ export function LandingPage() {
                       type="button"
                       aria-expanded={isOpen}
                       onClick={() => setOpenFaq((current) => (current === index ? null : index))}
-                      className="flex max-w-[94%] items-center gap-4 rounded-2xl rounded-tl-sm border border-[#e6ebef] bg-white px-3.5 py-3 text-left text-sm leading-relaxed text-zinc-800 shadow-sm transition hover:border-[#cfd7de] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1017e8] sm:text-base"
+                      className="flex max-w-[94%] items-center gap-4 rounded-2xl rounded-tl-sm border border-white/10 bg-zinc-900 px-3.5 py-3 text-left text-sm leading-relaxed text-zinc-100 shadow-sm transition hover:border-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 sm:text-base"
                     >
                       <span className="flex-1 font-semibold">{t(faq.questionKey)}</span>
                       <IconChevronDown
@@ -1459,30 +1438,72 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-[#e6ebef] bg-white px-5 py-16 sm:px-8 lg:py-20">
+      {/* 09 — Final Conversion CTA */}
+      <section className="relative overflow-hidden border-y border-[#232850] bg-gradient-to-b from-[#0d1130] to-[#090d10] px-5 py-24 text-center text-white sm:px-8 sm:py-28">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/20 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto max-w-3xl">
+          <h2 className="text-3xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+            {t('landing.finalCtaTitle')}
+          </h2>
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#adb3c7] sm:text-lg sm:leading-8">
+            {t('landing.finalCtaDesc')}
+          </p>
+
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {isAuthenticated ? (
+              <OpenAppButton size="lg" />
+            ) : (
+              <>
+                <Link
+                  to="/auth/sign-up"
+                  onMouseEnter={prefetchAuthPages}
+                  onFocus={prefetchAuthPages}
+                  onPointerDown={prefetchAuthPages}
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-white px-8 text-lg font-semibold text-black shadow-sm transition hover:bg-zinc-200"
+                >
+                  {t('landing.finalCtaButton')}
+                </Link>
+                <a
+                  href="#demo"
+                  className="inline-flex h-12 items-center justify-center rounded-xl border border-white/20 bg-transparent px-7 text-lg font-medium text-white transition hover:bg-white/10"
+                >
+                  {t('landing.heroCtaDemo')}
+                </a>
+              </>
+            )}
+          </div>
+
+          <p className="mt-6 font-mono text-xs text-zinc-400">
+            {t('landing.finalCtaSubtext')}
+          </p>
+        </div>
+      </section>
+
+      {/* 10 — Footer */}
+      <footer className="border-t border-white/10 bg-[#090d10] px-5 py-16 sm:px-8 lg:py-20">
         <div className="mx-auto w-full max-w-5xl">
           <div className="grid grid-cols-1 gap-x-12 gap-y-12 sm:grid-cols-2 lg:grid-cols-[1.35fr_1fr_1fr]">
             <div className="space-y-4 lg:pr-12">
               <Link to="/" className="inline-flex items-center gap-2.5" aria-label={t('landing.ariaHome')}>
-                <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-[#0a1317] shadow-sm">
+                <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white text-zinc-950 shadow-sm">
                   <AppLogo />
                 </span>
-                <span className="text-[15px] font-semibold tracking-[-0.03em] text-[#0a1317]">oriole</span>
+                <span className="text-[15px] font-semibold tracking-[-0.03em] text-white">oriole</span>
               </Link>
-              <p className="max-w-sm text-[15px] leading-6 text-[#858585]">{t('landing.footerDescription')}</p>
-              <p className="text-sm font-medium text-[#1017e8]">{t('landing.footerTagline')}</p>
+              <p className="max-w-sm text-[15px] leading-6 text-zinc-400">{t('landing.footerDescription')}</p>
+              <p className="text-sm font-medium text-blue-400">{t('landing.footerTagline')}</p>
             </div>
 
             <FooterColumn column={footerColumns[0]} />
             <FooterColumn column={footerColumns[1]} />
           </div>
 
-          <div className="mt-14 flex flex-col gap-4 border-t border-[#e6ebef] pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm leading-6 text-[#858585]">
+          <div className="mt-14 flex flex-col gap-4 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-zinc-500">
               {t('landing.footerCopyright', { year: new Date().getFullYear() })}
             </p>
             <div
-              className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700"
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-800/60 bg-emerald-950/40 px-3 py-1.5 font-mono text-xs font-medium text-emerald-400"
               role="status"
             >
               <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" aria-hidden="true" />

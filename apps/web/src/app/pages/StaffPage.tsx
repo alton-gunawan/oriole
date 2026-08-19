@@ -777,7 +777,7 @@ export function StaffPage() {
   ], [t]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader title={t('staff.title')} description={t('staff.description')} icon={IconStaff}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
         <button
@@ -790,14 +790,15 @@ export function StaffPage() {
         </button>
       </PageHeader>
 
-      {/* Filter bar — mirror BookingsPage: cari staf + status + zona waktu.
-          Hanya muncul saat sudah ada staf (daftar kosong = empty state tambah). */}
-      {!isPending && !isError && data && staffList.length > 0 && (
-        <Card className="p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+      <div className="space-y-4">
+        {/* Filter bar — mirror BookingsPage: cari staf + status + zona waktu.
+            Hanya muncul saat sudah ada staf (daftar kosong = empty state tambah). */}
+        {!isPending && !isError && data && staffList.length > 0 && (
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
               <TextInput
                 label={t('staff.colMember')}
+                isLabelHidden
                 placeholder={t('staff.searchPlaceholder')}
                 value={searchFilter}
                 onChange={(value) => setFilter('q', value)}
@@ -809,6 +810,8 @@ export function StaffPage() {
             <div className="min-w-0 flex-1">
               <Selector
                 label={t('common.status')}
+                isLabelHidden
+                placeholder={t('staff.allStatuses')}
                 options={[
                   {
                     value: '',
@@ -845,6 +848,8 @@ export function StaffPage() {
             <div className="min-w-0 flex-1">
               <Selector
                 label={t('staff.timezone')}
+                isLabelHidden
+                placeholder={t('staff.allTimezones')}
                 options={[
                   { value: '', label: t('staff.allTimezones') },
                   ...timezoneOptions.map((tz) => ({ value: tz, label: tz })),
@@ -866,8 +871,7 @@ export function StaffPage() {
               )}
             </div>
           </div>
-        </Card>
-      )}
+        )}
 
       {deleteError && (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
@@ -1036,6 +1040,7 @@ export function StaffPage() {
           )}
         </>
       )}
+      </div>
 
       {/* Dialog tambah staf */}
       <Dialog isOpen={isAddOpen} onOpenChange={(open) => { if (!open) closeAdd(); }} purpose="info" width={520}>
@@ -1044,6 +1049,7 @@ export function StaffPage() {
             <DialogHeader
               title={t('staff.addTitle')}
               subtitle={t('staff.addSubtitle')}
+              startContent={<IconStaff className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => { if (!open) closeAdd(); }}
               hasDivider
             />
@@ -1140,6 +1146,7 @@ export function StaffPage() {
             <DialogHeader
               title={t('staff.editTitle')}
               subtitle={editing?.name}
+              startContent={<IconStaff className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => { if (!open) setEditing(null); }}
               hasDivider
             />
@@ -1246,67 +1253,108 @@ export function StaffPage() {
             <DialogHeader
               title={t('staff.scheduleTitle', { name: scheduleStaff?.name ?? '' })}
               subtitle={t('staff.scheduleSubtitle', { timezone: scheduleStaff?.timezone ?? '' })}
+              startContent={<IconCalendar className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => { if (!open) setScheduleStaff(null); }}
               hasDivider
             />
           }
           content={
             <LayoutContent>
-              <div className="space-y-3">
-                {scheduleDraft.map((dayRanges, day) => (
-                  <div key={day} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-base font-semibold text-zinc-800 dark:text-zinc-200">{t(WEEKDAY_LABEL_KEYS[day])}</p>
-                      <button
-                        type="button"
-                        onClick={() => addRange(day)}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-base font-semibold text-amber-600 transition hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                      >
-                        <IconPlus className="size-3.5" />
-                        {t('staff.addRange')}
-                      </button>
-                    </div>
-                    {dayRanges.length === 0 ? (
-                      <p className="mt-1.5 text-base text-zinc-400">{t('staff.dayOff')}</p>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        {dayRanges.map((range, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <TimeInput
-                              label={t('staff.startTime')}
-                              isLabelHidden
-                              hourFormat="24h"
-                              value={toTimeString(range.startMinutes)}
-                              onChange={(value) => setRange(day, index, { startMinutes: toMinutes(value) })}
-                              width="7rem"
-                            />                              <span className="text-base text-zinc-400">—</span>
-                            <TimeInput
-                              label={t('staff.endTime')}
-                              isLabelHidden
-                              hourFormat="24h"
-                              value={toTimeString(range.endMinutes)}
-                              onChange={(value) => setRange(day, index, { endMinutes: toMinutes(value) })}
-                              width="7rem"
-                            />
-                            <IconButton
-                              icon={<IconTrash className="size-4" />}
-                              label={t('staff.removeRange')}
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeRange(day, index)}
-                            />
-                          </div>
-                        ))}
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {scheduleDraft.map((dayRanges, day) => {
+                  const hasRanges = dayRanges.length > 0;
+                  const isWeekend = day === 0 || day === 6;
+                  return (
+                    <div key={day} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                      {/* Day label + status */}
+                      <div className="w-28 shrink-0 pt-0.5">
+                        <p className={`text-sm font-semibold ${
+                          isWeekend
+                            ? 'text-zinc-400 dark:text-zinc-500'
+                            : 'text-zinc-800 dark:text-zinc-200'
+                        }`}
+                        >
+                          {t(WEEKDAY_LABEL_KEYS[day])}
+                        </p>
+                        {hasRanges ? (
+                          <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                            {dayRanges.length === 1
+                              ? toTimeString(dayRanges[0].startMinutes) + ' – ' + toTimeString(dayRanges[0].endMinutes)
+                              : t('staff.addRange').replace('Add range', dayRanges.length + ' ranges')}
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-xs text-zinc-300 dark:text-zinc-600">{t('staff.dayOff')}</p>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {/* Ranges or empty state */}
+                      <div className="min-w-0 flex-1">
+                        {hasRanges ? (
+                          <div className="space-y-2">
+                            {dayRanges.map((range, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <TimeInput
+                                  label={t('staff.startTime')}
+                                  isLabelHidden
+                                  hourFormat="24h"
+                                  value={toTimeString(range.startMinutes)}
+                                  onChange={(value) => setRange(day, index, { startMinutes: toMinutes(value) })}
+                                  width="7rem"
+                                />
+                                <span className="text-sm text-zinc-300 dark:text-zinc-600">–</span>
+                                <TimeInput
+                                  label={t('staff.endTime')}
+                                  isLabelHidden
+                                  hourFormat="24h"
+                                  value={toTimeString(range.endMinutes)}
+                                  onChange={(value) => setRange(day, index, { endMinutes: toMinutes(value) })}
+                                  width="7rem"
+                                />
+                                <IconButton
+                                  icon={<IconTrash className="size-3.5" />}
+                                  label={t('staff.removeRange')}
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeRange(day, index)}
+                                />
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => addRange(day)}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-amber-600 transition hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                            >
+                              <IconPlus className="size-3" />
+                              {t('staff.addRange')}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => addRange(day)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition hover:border-amber-300 hover:text-amber-600 dark:hover:border-amber-700 dark:hover:text-amber-500"
+                          >
+                            <IconPlus className="size-3" />
+                            {t('staff.addRange')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </LayoutContent>
           }
           footer={
             <LayoutFooter hasDivider>
-              {scheduleError && <p role="alert" className="pb-2 text-right text-sm text-red-600">{scheduleError}</p>}
+              {scheduleError && (
+                <p
+                  role="alert"
+                  className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+                >
+                  {scheduleError}
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <Button label={t('common.cancel')} variant="ghost" onClick={() => setScheduleStaff(null)} isDisabled={scheduleSaving} />
                 <Button label={t('common.save')} variant="primary" isLoading={scheduleSaving} onClick={() => void saveSchedule()} />

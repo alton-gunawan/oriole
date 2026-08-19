@@ -24,6 +24,7 @@ import {
   useTableSelection,
   useTableSelectionState,
   useTableStickyColumns,
+  useToast,
   type BadgeVariant,
   type ButtonVariant,
   type DateRange,
@@ -49,12 +50,14 @@ import {
   IconAlertTriangle,
   IconArrowUpRight,
   IconCalendar,
+  IconCalendarCheck,
   IconCheck,
   IconDotsHorizontal,
   IconPlus,
   IconSearch,
   IconTrash,
   IconUsers,
+  IconX,
 } from '../shell/icons';
 import { Card, PageHeader, ReloadMenuButton } from '../shell/ui';
 
@@ -250,6 +253,7 @@ function BookingsLiveStatus({
 
 export function BookingsPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const queryClient = useQueryClient();
 
@@ -433,11 +437,30 @@ export function BookingsPage() {
 
       return { previousLists };
     },
-    onError: (err, _variables, context) => {
+    onSuccess: (_data, variables) => {
+      if (variables.ids.length > 1) {
+        toast({
+          body: t('bookings.bulkStatusUpdated', { count: variables.ids.length }),
+          type: 'info',
+          isAutoHide: true,
+          autoHideDuration: 4000,
+        });
+      }
+    },
+    onError: (err, variables, context) => {
       context?.previousLists.forEach((value, key) => {
         queryClient.setQueryData(JSON.parse(key) as string[], value);
       });
-      setActionError(err instanceof Error ? err.message : t('errors.changeStatus'));
+      const msg = err instanceof Error ? err.message : t('errors.changeStatus');
+      setActionError(msg);
+      if (variables.ids.length > 1) {
+        toast({
+          body: msg,
+          type: 'error',
+          isAutoHide: true,
+          autoHideDuration: 5000,
+        });
+      }
     },
     onSettled: (_data, _error, variables) => {
       setMutating(null);
@@ -720,11 +743,11 @@ export function BookingsPage() {
 
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title={t('bookings.title')}
         description={t('bookings.description')}
-        icon={IconCalendar}
+        icon={IconCalendarCheck}
         status={
           <BookingsLiveStatus
             dataUpdatedAt={dataUpdatedAt}
@@ -747,12 +770,13 @@ export function BookingsPage() {
         </Link>
       </PageHeader>
 
-      {/* Filter bar — komponen Astryx (TextInput + Typeahead + Selector + DateInput) */}
-      <Card className="p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+      <div className="space-y-4">
+        {/* Filter bar — komponen Astryx (TextInput + Typeahead + Selector + DateInput) */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <TextInput
               label={t('bookings.colService')}
+              isLabelHidden
               placeholder={t('bookings.servicePlaceholder')}
               value={titleFilter}
               onChange={(value) => setFilter('title', value)}
@@ -764,6 +788,7 @@ export function BookingsPage() {
           <div className="min-w-0 flex-1">
             <Typeahead<CustomerItem>
               label={t('common.customer')}
+              isLabelHidden
               placeholder={t('bookings.customerPlaceholder')}
               searchSource={customerSearchSource}
               value={customerValue}
@@ -779,6 +804,7 @@ export function BookingsPage() {
           <div className="min-w-0 flex-1">
             <Selector
               label={t('common.status')}
+              isLabelHidden
               placeholder={t('bookings.allStatuses')}
               options={[
                 {
@@ -815,6 +841,7 @@ export function BookingsPage() {
           <div className="min-w-0 flex-1">
             <DateRangeInput
               label={t('bookings.dateRange')}
+              isLabelHidden
               placeholder={t('bookings.dateRangePlaceholder')}
               value={dateRangeValue}
               numberOfMonths={2}
@@ -835,7 +862,6 @@ export function BookingsPage() {
             )}
           </div>
         </div>
-      </Card>
 
       {/* Konten tabel — daftar booking dengan filter. Kalender kini berada di
           halaman Calendar (/app/calendar). */}
@@ -905,12 +931,29 @@ export function BookingsPage() {
                 />
               ) : (
                 <>
+                  {/* Floating bottom center row selection toolbar */}
                   {selectedKeys.size > 0 && (
-                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                        {t('bookings.selectedCount', { count: selectedKeys.size })}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div
+                      role="region"
+                      aria-label={t('bookings.selectedCount', { count: selectedKeys.size })}
+                      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-zinc-200/90 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5 duration-200 dark:border-zinc-700/90 dark:bg-zinc-900/95 max-w-[calc(100vw-2rem)]"
+                    >
+                      {actionError && (
+                        <div
+                          role="alert"
+                          className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 shadow-md dark:border-red-900/60 dark:bg-red-950/90 dark:text-red-400"
+                        >
+                          {actionError}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 border-r border-zinc-200 pr-3 dark:border-zinc-700">
+                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                          {t('bookings.selectedCount', { count: selectedKeys.size })}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
                         <Button
                           label={t('bookings.confirm')}
                           variant="primary"
@@ -935,13 +978,16 @@ export function BookingsPage() {
                           isLoading={mutating !== null && mutating.ids.length > 1 && mutating.to === 'cancelled'}
                           onClick={() => bulkChangeStatus('cancelled')}
                         />
-                        <Button
-                          label={t('bookings.clearSelection')}
-                          variant="ghost"
-                          size="sm"
-                          isDisabled={mutating !== null}
+                        <button
+                          type="button"
+                          aria-label={t('bookings.clearSelection')}
+                          title={t('bookings.clearSelection')}
+                          disabled={mutating !== null}
                           onClick={resetSelection}
-                        />
+                          className="ml-1 inline-flex size-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          <IconX className="size-4" />
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1021,6 +1067,7 @@ export function BookingsPage() {
             </>
           )}
         </>
+      </div>
     </div>
   );
 }

@@ -3,13 +3,13 @@ export type AppTheme = 'system' | 'light' | 'dark';
 
 export const THEME_STORAGE_KEY = 'oriole.sidebarTheme';
 
-/** Baca preferensi tema tersimpan (default 'system' bila belum pernah di-set). */
+/** Baca preferensi tema tersimpan (default 'dark' bila belum pernah di-set). */
 export function readStoredTheme(): AppTheme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 

@@ -219,11 +219,62 @@
   border-color: #f0f0f2;
 }
 
-.bookings-calendar [class~="border-r"],
-.bookings-calendar [class~="border-l"],
-.bookings-calendar [class~="border-t"],
-.bookings-calendar [class~="border-b"] {
-  border-color: #e4e4e7;
+.bookings-calendar {
+  border-top: 1px solid #e4e4e7 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+
+.bookings-calendar > * {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+
+.bookings-calendar .bookings-calendar-view-header,
+.bookings-calendar .bookings-calendar-native-header {
+  border-bottom: 1px solid #e4e4e7 !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.bookings-calendar :where(
+  .border,
+  .border-x,
+  .border-l,
+  .border-t,
+  .border-r,
+  [class~="border"],
+  [class~="border-x"],
+  [class~="border-l"],
+  [class~="border-t"],
+  [class~="border-r"],
+  [class*="border-l"],
+  [class*="border-t"],
+  [class*="border-r"]
+) {
+  border-left: none !important;
+  border-left-width: 0 !important;
+  border-left-color: transparent !important;
+  border-top: none !important;
+  border-top-width: 0 !important;
+  border-top-color: transparent !important;
+  border-right: none !important;
+  border-right-width: 0 !important;
+  border-right-color: transparent !important;
+}
+
+.bookings-calendar [data-testid*="all-day"],
+.bookings-calendar [data-testid*="all-day"] *,
+.bookings-calendar [data-testid="all-day-row"],
+.bookings-calendar [data-testid="all-day-row"] *,
+.bookings-calendar [data-testid="vertical-grid-all-day"],
+.bookings-calendar [data-testid="vertical-grid-all-day"] * {
+  border-bottom: none !important;
+  border-bottom-width: 0 !important;
+  border-bottom-color: transparent !important;
 }
 
 .bookings-calendar .bg-muted {
@@ -697,17 +748,63 @@ html[data-theme='dark'] .bookings-calendar .bookings-calendar-native-header {
   border-color: #2a2a2e;
 }
 
-html[data-theme='dark'] .bookings-calendar [class~='border-r'],
-html[data-theme='dark'] .bookings-calendar [class~='border-l'],
-html[data-theme='dark'] .bookings-calendar [class~='border-t'],
-html[data-theme='dark'] .bookings-calendar [class~='border-b'] {
-  border-color: #333338;
+html[data-theme='dark'] .bookings-calendar {
+  border-top: 1px solid #3f3f46 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
 }
 
-html[data-theme='dark'] .bookings-calendar .border-border,
-html[data-theme='dark'] .bookings-calendar .divide-border > :not([hidden]),
-html[data-theme='dark'] .bookings-calendar :where(.border, .border-x, .border-y) {
-  border-color: #333338;
+html[data-theme='dark'] .bookings-calendar > * {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+
+html[data-theme='dark'] .bookings-calendar .bookings-calendar-view-header,
+html[data-theme='dark'] .bookings-calendar .bookings-calendar-native-header {
+  background: #17171a;
+  border-bottom: 1px solid #2a2a2e !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+html[data-theme='dark'] .bookings-calendar :where(
+  .border,
+  .border-x,
+  .border-l,
+  .border-t,
+  .border-r,
+  [class~="border"],
+  [class~="border-x"],
+  [class~="border-l"],
+  [class~="border-t"],
+  [class~="border-r"],
+  [class*="border-l"],
+  [class*="border-t"],
+  [class*="border-r"]
+) {
+  border-left: none !important;
+  border-left-width: 0 !important;
+  border-left-color: transparent !important;
+  border-top: none !important;
+  border-top-width: 0 !important;
+  border-top-color: transparent !important;
+  border-right: none !important;
+  border-right-width: 0 !important;
+  border-right-color: transparent !important;
+}
+
+html[data-theme='dark'] .bookings-calendar [data-testid*="all-day"],
+html[data-theme='dark'] .bookings-calendar [data-testid*="all-day"] *,
+html[data-theme='dark'] .bookings-calendar [data-testid="all-day-row"],
+html[data-theme='dark'] .bookings-calendar [data-testid="all-day-row"] *,
+html[data-theme='dark'] .bookings-calendar [data-testid="vertical-grid-all-day"],
+html[data-theme='dark'] .bookings-calendar [data-testid="vertical-grid-all-day"] * {
+  border-bottom: none !important;
+  border-bottom-width: 0 !important;
+  border-bottom-color: transparent !important;
 }
 
 html[data-theme='dark'] .bookings-calendar .text-muted-foreground {
@@ -863,4 +960,40 @@ html[data-theme='dark'] [data-astryx-theme] {
   --color-border-gray: #262626;
   --color-icon-gray: #a3a3a3;
   --color-text-gray: #e5e5e5;
+}
+
+/* ── Form label color for New Booking (matches blue section headers in Booking Details) ── */
+#booking-new-form label {
+  color: #2563eb !important;
+}
+
+html[data-theme='dark'] #booking-new-form label {
+  color: #60a5fa !important;
+}
+
+/* ── Landing page sticky header frosted blur with feathered fade ── */
+.landing-header-blur {
+  background: linear-gradient(
+    to bottom,
+    rgba(9, 13, 16, 0.3) 0%,
+    rgba(9, 13, 16, 0.2) 35%,
+    rgba(9, 13, 16, 0.08) 65%,
+    transparent 100%
+  );
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 100%);
+}
+
+/* ── Landing Page Typography (Geist primary, Maple Mono for technical accents) ── */
+.landing-page,
+.landing-page * {
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.landing-page .font-mono,
+.landing-page .font-mono *,
+.landing-page [class*="font-mono"] {
+  font-family: 'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
 }

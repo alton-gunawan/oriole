@@ -358,6 +358,7 @@ export function PhoneNumberWizardDialog({
               replaceMode ? t('phoneNumber.wizardTitleReplace') : t('phoneNumber.wizardTitle')
             }
             subtitle={t('phoneNumber.wizardSubtitle')}
+            startContent={<IconPhone className="size-5 shrink-0 text-amber-600" />}
             onOpenChange={handleOpenChange}
             hasDivider
           />

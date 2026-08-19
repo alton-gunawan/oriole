@@ -17,7 +17,9 @@ import { SettingsDialog } from './SettingsDialog';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { AppLogo } from '../components/AppLogo';
 import {
+  IconBuildings,
   IconCalendar,
+  IconCalendarCheck,
   IconCheck,
   IconChat,
   IconChevronDown,
@@ -26,7 +28,6 @@ import {
   IconDotsHorizontal,
   IconHelp,
   IconLogout,
-  IconPlus,
   IconMenu,
   IconMonitor,
   IconMoon,
@@ -53,7 +54,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/app/dashboard', labelKey: 'nav.dashboard', icon: IconDashboard },
-  { to: '/app/bookings', labelKey: 'nav.bookings', icon: IconCalendar },
+  { to: '/app/bookings', labelKey: 'nav.bookings', icon: IconCalendarCheck },
   { to: '/app/calendar', labelKey: 'nav.calendar', icon: IconCalendar },
   { to: '/app/contacts', labelKey: 'nav.contacts', icon: IconUsers },
   { to: '/app/services', labelKey: 'nav.services', icon: IconServices },
@@ -367,7 +368,7 @@ export function AppShell() {
                 }}
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-amber-600 transition hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
               >
-                <IconPlus className="size-3.5" /> {t('nav.manageBusinesses')}
+                <IconBuildings className="size-3.5" /> {t('nav.manageBusinesses')}
               </NavLink>
             </div>
           </DropdownMenu>

@@ -16,7 +16,6 @@ import { errorMessage } from '../../lib/errors';
 import { goalTypeKey, toneKey, voicemailKey } from '../../i18n/enums';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { IconCheck, IconChevronDown, IconPhone } from './icons';
-import { Card } from './ui';
 
 type GoalTypeSelection = (typeof GOAL_TYPES)[number] | 'auto';
 
@@ -99,17 +98,17 @@ export function AiBehaviorCard({
   const isCustomized = Boolean(value?.goalType || value?.customInstruction?.trim());
 
   return (
-    <Card className="p-5">
+    <section className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
               {t('bookingDetail.aiBehavior')}
             </h2>
             {isCustomized && <Badge variant="neutral" label={t('goal.customized')} />}
           </div>
           {active ? (
-            <p className="mt-1.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p className="mt-1.5 text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
               {t('bookingDetail.aiHandles')}{' '}
               <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 font-medium text-zinc-800 dark:text-zinc-200">
                 <span className="inline-flex items-center gap-1">
@@ -174,14 +173,14 @@ export function AiBehaviorCard({
           </div>
 
           {goalType === 'auto' && (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {t('bookingDetail.goalAuto', { goal: active.title })}
             </p>
           )}
 
           <dl className="flex flex-wrap gap-x-8 gap-y-2">
             <div className="flex items-center gap-2">
-              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-400">
+              <dt className="text-sm font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 {t('bookingDetail.tone')}
               </dt>
               <dd className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -189,7 +188,7 @@ export function AiBehaviorCard({
               </dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-400">
+              <dt className="text-sm font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 {t('bookingDetail.voicemail')}
               </dt>
               <dd className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -221,6 +220,6 @@ export function AiBehaviorCard({
           </div>
         </div>
       )}
-    </Card>
+    </section>
   );
 }

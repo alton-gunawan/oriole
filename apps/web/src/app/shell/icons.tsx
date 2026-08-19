@@ -6,7 +6,6 @@ import {
   Battery,
   Bell,
   Bookmark,
-  Calendar,
   ChartColumn,
   Check,
   ChevronDown,
@@ -22,13 +21,12 @@ import {
   Globe,
   House,
   Hourglass,
-  IdCard,
+  Info,
   List,
 
   LogOut,
   Mail,
   Menu,
-  MessageSquare,
   MicOff,
   Monitor,
   Moon,
@@ -37,8 +35,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Phone,
-  Plug,
   Plus,
   Receipt,
   RefreshCw,
@@ -52,12 +48,10 @@ import {
   SlidersVertical,
   Sun,
   SunMoon,
-  Tags,
   Trash2,
   TriangleAlert,
   Upload,
   User,
-  Users,
   EyeOff,
   Video,
   Webhook,
@@ -81,23 +75,26 @@ export type IconProps = SVGProps<SVGSVGElement>;
  *   IconStaff  → IdCard               (kartu + orang + baris teks)
  */
 
-// Dashboard memakai glyph Phosphor "house-line" (bukan Lucide House) —
-// dipakai di sidebar nav dan header halaman dashboard.
+// Ikon sidebar & header memakai glyph Phosphor (phosphoricons.com, regular weight)
 export const IconDashboard = IconHouseLine;
+export const IconCalendarCheck = IconCalendarCheckPhosphor;
+export const IconCalendar = IconCalendarBlank;
+export const IconStaff = IconIdentificationCard;
+export const IconServices = IconTagPhosphor;
+export const IconUsers = IconUsersPhosphor;
+export const IconChat = IconChats;
+export const IconPhone = IconPhonePhosphor;
+export const IconPlug = IconPlugPhosphor;
 export const IconHome = House;
-export const IconCalendar = Calendar;
-export const IconStaff = IdCard;
-export const IconServices = Tags;
-export const IconUsers = Users;
 export const IconChart = ChartColumn;
 export const IconSettings = SlidersVertical;
 export const IconHelp = CircleHelp;
+export const IconInfo = Info;
 export const IconUser = User;
 export const IconLogout = LogOut;
 export const IconMenu = Menu;
 export const IconList = List;
 export const IconX = X;
-export const IconPhone = Phone;
 export const IconArrowLeft = ArrowLeft;
 export const IconArrowRight = ArrowRight;
 export const IconArrowUpRight = ArrowUpRight;
@@ -121,10 +118,8 @@ export const IconAlertTriangle = TriangleAlert;
 export const IconRefreshCw = RefreshCw;
 export const IconEdit = Pencil;
 export const IconTrash = Trash2;
-export const IconChat = MessageSquare;
 export const IconSend = Send;
 export const IconCopy = Copy;
-export const IconPlug = Plug;
 export const IconRepeat = Repeat;
 export const IconRefresh = RotateCcw;
 export const IconWebhook = Webhook;
@@ -220,6 +215,78 @@ export function IconPhonePhosphor(props: IconProps) {
   return (
     <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
       <path d="M222.37,158.46l-48-24A16,16,0,0,0,155.8,138l-19.16,24c-22.39-11.45-43.23-32.28-54.68-54.67L106,88.19A16,16,0,0,0,109.53,69.6l-24-48A16,16,0,0,0,67.38,13.23L23.1,28.2A16,16,0,0,0,12,43.28C12,149.6,98.4,236,204.72,236a16,16,0,0,0,15.08-11.1l14.97-44.28A16,16,0,0,0,222.37,158.46ZM204.72,220C107.27,220,28,140.73,28,43.28L72.28,28.31,96.28,76.31,73.8,94.3a8,8,0,0,0-2,9.39c14,27.53,38.77,52.3,66.3,66.3a8,8,0,0,0,9.39-2l18-22.48,48,24Z" />
+    </svg>
+  );
+}
+
+export function IconNotePencil(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M227.31,73.37,182.63,28.69a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96A16,16,0,0,0,227.31,73.37ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.69,147.31,64l24-24L216,84.69Z" />
+    </svg>
+  );
+}
+
+export function IconCalendarCheckPhosphor(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Zm-38.34-85.66a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L116,164.69l42.34-42.35A8,8,0,0,1,169.66,122.34Z" />
+    </svg>
+  );
+}
+
+export function IconCalendarBlank(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Z" />
+    </svg>
+  );
+}
+
+export function IconUsersPhosphor(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M117.25,157.92a60,60,0,1,0-66.5,0A95.83,95.83,0,0,0,3.53,195.63a8,8,0,1,0,13.4,8.74,80,80,0,0,1,134.14,0,8,8,0,0,0,13.4-8.74A95.83,95.83,0,0,0,117.25,157.92ZM40,108a44,44,0,1,1,44,44A44.05,44.05,0,0,1,40,108Zm210.14,98.7a8,8,0,0,1-11.07-2.33A79.83,79.83,0,0,0,172,168a8,8,0,0,1,0-16,44,44,0,1,0-16.34-84.87,8,8,0,1,1-5.94-14.85,60,60,0,0,1,55.53,105.64,95.83,95.83,0,0,1,47.22,37.71A8,8,0,0,1,250.14,206.7Z" />
+    </svg>
+  );
+}
+
+export function IconTagPhosphor(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M243.31,136,144,36.69A15.86,15.86,0,0,0,132.69,32H40a8,8,0,0,0-8,8v92.69A15.86,15.86,0,0,0,36.69,144L136,243.31a16,16,0,0,0,22.63,0l84.68-84.68a16,16,0,0,0,0-22.63Zm-96,96L48,132.69V48h84.69L232,147.31ZM96,84A12,12,0,1,1,84,72,12,12,0,0,1,96,84Z" />
+    </svg>
+  );
+}
+
+export function IconIdentificationCard(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M200,112a8,8,0,0,1-8,8H152a8,8,0,0,1,0-16h40A8,8,0,0,1,200,112Zm-8,24H152a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm40-80V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Zm-80.26-34a8,8,0,1,1-15.5,4c-2.63-10.26-13.06-18-24.25-18s-21.61,7.74-24.25,18a8,8,0,1,1-15.5-4,39.84,39.84,0,0,1,17.19-23.34,32,32,0,1,1,45.12,0A39.76,39.76,0,0,1,135.75,166ZM96,136a16,16,0,1,0-16-16A16,16,0,0,0,96,136Z" />
+    </svg>
+  );
+}
+
+export function IconChats(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M216,80H184V48a16,16,0,0,0-16-16H40A16,16,0,0,0,24,48V176a8,8,0,0,0,13,6.22L72,154V184a16,16,0,0,0,16,16h93.59L219,230.22a8,8,0,0,0,5,1.78,8,8,0,0,0,8-8V96A16,16,0,0,0,216,80ZM66.55,137.78,40,159.25V48H168v88H71.58A8,8,0,0,0,66.55,137.78ZM216,207.25l-26.55-21.47a8,8,0,0,0-5-1.78H88V152h80a16,16,0,0,0,16-16V96h32Z" />
+    </svg>
+  );
+}
+
+export function IconPlugPhosphor(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M237.66,66.34a8,8,0,0,0-11.32,0L192,100.69,155.31,64l34.35-34.34a8,8,0,1,0-11.32-11.32L144,52.69,117.66,26.34a8,8,0,0,0-11.32,11.32L112.69,44l-53,53a40,40,0,0,0,0,56.57l15.71,15.71L26.34,218.34a8,8,0,0,0,11.32,11.32l49.09-49.09,15.71,15.71a40,40,0,0,0,56.57,0l53-53,6.34,6.35a8,8,0,0,0,11.32-11.32L203.31,112l34.35-34.34A8,8,0,0,0,237.66,66.34ZM147.72,185a24,24,0,0,1-33.95,0L71,142.23a24,24,0,0,1,0-33.95l53-53L200.69,132Z" />
+    </svg>
+  );
+}
+
+export function IconBuildings(props: IconProps) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M240,208H224V96a16,16,0,0,0-16-16H144V32a16,16,0,0,0-24.88-13.32L39.12,72A16,16,0,0,0,32,85.34V208H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM208,96V208H144V96ZM48,85.34,128,32V208H48ZM112,112v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm-32,0v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm0,56v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Zm32,0v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Z" />
     </svg>
   );
 }

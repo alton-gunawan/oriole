@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   Badge,
@@ -58,6 +58,7 @@ import {
   IconTrash,
   IconVideo,
   IconWebhook,
+  type IconProps,
 } from '../shell/icons';
 import {
   clearObsidianConfig,
@@ -96,7 +97,7 @@ const CHANNEL_DEFS: {
   /** Logo brand resmi dari svgl.app (aset SVG di-bundle lokal di /brands). */
   logo?: string;
   /** Ikon fallback untuk channel tanpa brand logo (email). */
-  icon?: typeof IconPlug;
+  icon?: ComponentType<IconProps>;
   accent?: string;
 }[] = [
   {
@@ -144,7 +145,7 @@ const CHANNEL_COMING_SOON: {
   label: string;
   descriptionKey: TranslationKey;
   requirementKey: TranslationKey;
-  icon: typeof IconChat;
+  icon: ComponentType<IconProps>;
   accent: string;
 }[] = [
   {
@@ -2821,6 +2822,14 @@ export function IntegrationsPage() {
                   ? t('channels.telegramDesc')
                   : t('channels.telegramSetupSubtitle')
               }
+              startContent={
+                <BrandLogo
+                  src="/brands/telegram.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-sky-50 shadow-none ring-1 ring-sky-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) {
                   setSetupDialog(null);
@@ -2958,6 +2967,7 @@ export function IntegrationsPage() {
                   ? t('channels.lineDesc')
                   : t('channels.lineSetupSubtitle')
               }
+              startContent={<IconChat className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) {
                   setSetupDialog(null);
@@ -3100,6 +3110,14 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('notion.dialogTitle')}
               subtitle={t('notion.dialogSubtitle')}
+              startContent={
+                <BrandLogo
+                  src="/brands/notion.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 shadow-none ring-1 ring-zinc-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeNotionDialog();
               }}
@@ -3225,6 +3243,14 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('obsidian.dialogTitle')}
               subtitle={t('obsidian.dialogSubtitle')}
+              startContent={
+                <BrandLogo
+                  src="/brands/obsidian.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-purple-50 shadow-none ring-1 ring-purple-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeObsidianDialog();
               }}
@@ -3318,6 +3344,14 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('googleForms.dialogTitle')}
               subtitle={t('googleForms.dialogSubtitle')}
+              startContent={
+                <BrandLogo
+                  src="/brands/google-forms.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-purple-50 shadow-none ring-1 ring-purple-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeFormsDialog();
               }}
@@ -3594,6 +3628,14 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('googleCalendar.dialogTitle')}
               subtitle={t('googleCalendar.dialogSubtitle')}
+              startContent={
+                <BrandLogo
+                  src="/brands/google-calendar.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-blue-50 shadow-none ring-1 ring-blue-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeCalendarDialog();
               }}
@@ -3720,6 +3762,7 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('webhook.connect')}
               subtitle={t('webhook.desc')}
+              startContent={<IconWebhook className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) closeWebhookDialog();
               }}
@@ -3800,6 +3843,14 @@ export function IntegrationsPage() {
                   : t('channels.facebookTitle')
               }
               subtitle={t('channels.metaDesc')}
+              startContent={
+                <BrandLogo
+                  src={metaDialogType === 'instagram' ? '/brands/instagram.svg' : '/brands/facebook.svg'}
+                  alt=""
+                  chip="size-8 rounded-lg bg-pink-50 shadow-none ring-1 ring-pink-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeMetaDialog();
               }}
@@ -3913,6 +3964,7 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('video.connect')}
               subtitle={t('video.desc')}
+              startContent={<IconVideo className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) closeVideoDialog();
               }}
@@ -3983,6 +4035,14 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('slack.connect')}
               subtitle={t('slack.desc')}
+              startContent={
+                <BrandLogo
+                  src="/brands/slack.svg"
+                  alt=""
+                  chip="size-8 rounded-lg bg-white dark:bg-zinc-900 shadow-none ring-1 ring-zinc-200"
+                  img="size-5"
+                />
+              }
               onOpenChange={(open) => {
                 if (!open) closeSlackDialog();
               }}
@@ -4058,6 +4118,7 @@ export function IntegrationsPage() {
             <DialogHeader
               title={t('channels.settingsTitle')}
               subtitle={t('channels.reminderDesc')}
+              startContent={<IconSettings className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) closeReminderSettings();
               }}
@@ -4118,6 +4179,7 @@ export function IntegrationsPage() {
               subtitle={t('formSend.dialogSubtitle', {
                 form: googleForms?.identifier ?? t('googleForms.name'),
               })}
+              startContent={<IconSend className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) closeSendForm();
               }}

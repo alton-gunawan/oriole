@@ -208,6 +208,7 @@ export function BillingDialog({
           <DialogHeader
             title={t('billing.title')}
             subtitle={t('billing.description')}
+            startContent={<IconCreditCard className="size-5 shrink-0 text-amber-600" />}
             onOpenChange={onOpenChange}
             endContent={
               <IconButton

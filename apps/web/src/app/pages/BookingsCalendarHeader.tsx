@@ -16,89 +16,97 @@ import {
 } from '@astryxdesign/core';
 import {
   defaultTranslations,
-  useIlamyCalendarContext,
   type CalendarEvent,
+  type Dayjs,
   type Translations,
 } from '@ilamy/calendar';
 
 import { IconChevronLeft, IconChevronRight } from '../shell/icons';
 
-const STATUS_LEGEND = [
+export const STATUS_LEGEND = [
   { status: 'pending', color: '#f59e0b' },
   { status: 'confirmed', color: '#10b981' },
   { status: 'completed', color: '#71717a' },
   { status: 'cancelled', color: '#ef4444' },
 ] as const;
 
-/* ── Header kustom (menggantikan header default @ilamy/calendar) ──────── */
+/** API kalender yang diangkat ke luar IlamyCalendar (via CalendarContextBridge)
+ *  agar toolbar bisa dirender di header halaman, bukan di dalam kalender. */
+export interface CalendarToolbarApi {
+  currentDate: Dayjs;
+  view: string;
+  setView: (view: string, date?: Dayjs) => void;
+  prevPeriod: () => void;
+  nextPeriod: () => void;
+  today: () => void;
+  getViews: () => { name: string }[];
+}
+
+/* ── Switcher tampilan kalender (Month/Week/Day) ─────────────────────── */
 
 /**
- * Header bergaya Astryx: ← → (navigasi), Today, dan switcher bulan/minggu/hari.
- * Tidak menampilkan tombol "New" — booking dibuat lewat `/app/bookings/new`.
+ * Tombol switcher tampilan kalender (bulan, minggu, hari) untuk dirender di
+ * header action halaman (PageHeader).
  */
-export function CalendarHeader() {
+export function CalendarViewButtons({
+  activeView,
+  onViewChange,
+}: {
+  activeView: string;
+  onViewChange: (view: 'month' | 'week' | 'day') => void;
+}) {
   const { t } = useTranslation();
-  const { currentDate, prevPeriod, nextPeriod, today, view, setView, getViews } =
-    useIlamyCalendarContext();
-
-  const views = getViews().filter((v) => {
-    // Sembunyikan year view — tidak relevan untuk booking app.
-    return v.name !== 'year';
-  });
+  const views = ['month', 'week', 'day'] as const;
 
   return (
-    <div className="bookings-calendar-header">
-      <div className="bookings-calendar-toolbar">
-        <div className="bookings-calendar-toolbar-start">
-          <h2 className="bookings-calendar-period">{currentDate.format('MMMM YYYY')}</h2>
-
-          {/* Navigasi ← → + Today */}
-          <div className="flex items-center gap-2">
-            <div className="bookings-calendar-button-group">
-              <ButtonGroup label={t('calendar.navigation')}>
-                <Button
-                  label={t('calendar.previous')}
-                  variant="ghost"
-                  isIconOnly
-                  icon={<IconChevronLeft className="size-4" />}
-                  onClick={prevPeriod}
-                />
-                <Button
-                  label={t('calendar.next')}
-                  variant="ghost"
-                  isIconOnly
-                  icon={<IconChevronRight className="size-4" />}
-                  onClick={nextPeriod}
-                />
-              </ButtonGroup>
-            </div>
-            <Button label={t('calendar.today')} variant="secondary" size="sm" onClick={today} />
-          </div>
-        </div>
-
-        {/* Switcher tampilan: bulan / minggu / hari */}
-        <div className="bookings-calendar-button-group">
-          <ButtonGroup label={t('calendar.viewMode')}>
-            {views.map((v) => (
-              <Button
-                key={v.name}
-                label={viewLabel(v.name, t as unknown as SimpleT)}
-                variant={view === v.name ? 'primary' : 'ghost'}
-                onClick={() => setView(v.name)}
-              />
-            ))}
-          </ButtonGroup>
-        </div>
-      </div>
-
-      <div className="bookings-calendar-legend" aria-label={t('calendar.viewMode')}>
-        {STATUS_LEGEND.map(({ status, color }) => (
-          <span key={status} className="bookings-calendar-legend-item">
-            <span className="bookings-calendar-legend-dot" style={{ backgroundColor: color }} />
-            {t(`status.${status}`)}
-          </span>
+    <div className="bookings-calendar-button-group">
+      <ButtonGroup label={t('calendar.viewMode')}>
+        {views.map((name) => (
+          <Button
+            key={name}
+            label={viewLabel(name, t as unknown as SimpleT)}
+            variant={activeView === name ? 'primary' : 'ghost'}
+            onClick={() => onViewChange(name)}
+          />
         ))}
-      </div>
+      </ButtonGroup>
+    </div>
+  );
+}
+
+/* ── Navigasi kalender (Prev/Next) ───────────────────────────────────── */
+
+/**
+ * Tombol navigasi kalender (←, →) untuk dirender di header action halaman
+ * (PageHeader) di sebelah kiri switcher Month/Week/Day.
+ */
+export function CalendarNavButtons({
+  onPrev,
+  onNext,
+}: {
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="bookings-calendar-button-group">
+      <ButtonGroup label={t('calendar.navigation')}>
+        <Button
+          label={t('calendar.previous')}
+          variant="ghost"
+          isIconOnly
+          icon={<IconChevronLeft className="size-4" />}
+          onClick={onPrev}
+        />
+        <Button
+          label={t('calendar.next')}
+          variant="ghost"
+          isIconOnly
+          icon={<IconChevronRight className="size-4" />}
+          onClick={onNext}
+        />
+      </ButtonGroup>
     </div>
   );
 }

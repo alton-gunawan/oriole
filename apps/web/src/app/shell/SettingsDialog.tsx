@@ -33,9 +33,9 @@ import { PhoneNumberPanel } from './phone/PhoneNumberPanel';
 import { ConfirmDialog } from './ui';
 import {
   IconBell,
+  IconBuildings,
   IconCheck,
   IconChevronDown,
-  IconFolder,
   IconGlobe,
   IconPhone,
   IconSettings,
@@ -56,7 +56,7 @@ const SECTIONS: {
   { id: 'voice', labelKey: 'settings.voice', icon: IconPhone },
   { id: 'notifications', labelKey: 'settings.notifications', icon: IconBell },
   { id: 'privacy', labelKey: 'consent.privacy', icon: IconShield },
-  { id: 'businesses', labelKey: 'settings.businesses', icon: IconFolder },
+  { id: 'businesses', labelKey: 'settings.businesses', icon: IconBuildings },
 ];
 
 /** Bahasa panggilan — opsi dropdown Voice AI. */

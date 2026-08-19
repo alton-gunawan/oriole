@@ -72,12 +72,16 @@ export function ReloadMenuButton({
 export function PageHeader({
   title,
   description,
+  eyebrow,
   icon: Icon,
   status,
   children,
 }: {
   title: string;
-  description?: string;
+  description?: ReactNode;
+  /** Label kecil di atas judul (mis. konteks halaman: "Booking detail").
+   *  Dirender sebagai baris flex (rata kiri) — bisa diisi ikon + teks. */
+  eyebrow?: ReactNode;
   /** Ikon ditampilkan di kiri judul — wadah badge amber konsisten antar halaman. */
   icon?: ComponentType<IconProps>;
   /** Elemen kecil di kanan judul (mis. StatusDot kesegaran data real-time). */
@@ -87,6 +91,11 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between">
       <div>
+        {eyebrow && (
+          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {eyebrow}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {Icon && <Icon className="size-6 shrink-0 text-amber-600" />}
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h1>

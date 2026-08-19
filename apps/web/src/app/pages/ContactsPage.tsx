@@ -60,7 +60,7 @@ function ContactActionsMenu({
   return (
     <DropdownMenu
       placement="below"
-      menuWidth={180}
+      menuWidth={140}
       isMenuOpen={open}
       onOpenChange={setOpen}
       button={{
@@ -74,16 +74,12 @@ function ContactActionsMenu({
     >
       <DropdownMenuItem
         icon={<IconArrowUpRight className="size-4" />}
-        label={t('contacts.openDetail')}
+        label={t('common.view')}
         onClick={() => navigate(`/app/contacts/${contact.id}`)}
       />
       <DropdownMenuItem
         icon={<IconTrash className="size-4 text-red-500" />}
-        label={
-          <span className="font-medium text-red-600">
-            {t('contacts.deleteFor', { name: contact.name })}
-          </span>
-        }
+        label={<span className="font-medium text-red-600">{t('common.delete')}</span>}
         onClick={onDelete}
       />
     </DropdownMenu>
@@ -180,12 +176,23 @@ export function ContactsPage() {
               <span className="block truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 transition group-hover:text-amber-600">
                 {contact.name}
               </span>
-              <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {contact.phone}
-                {contact.email ? ` · ${contact.email}` : ''}
-              </span>
+              {contact.email && (
+                <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  {contact.email}
+                </span>
+              )}
             </span>
           </Link>
+        ),
+      },
+      {
+        key: 'phone',
+        header: t('common.phone'),
+        width: proportional(2),
+        renderCell: (contact) => (
+          <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
+            {contact.phone || <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+          </span>
         ),
       },
       {
@@ -194,7 +201,7 @@ export function ContactsPage() {
         width: proportional(2),
         renderCell: (contact) => (
           <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
-            {contact.notes ?? <span className="text-zinc-300">—</span>}
+            {contact.notes ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
           </span>
         ),
       },
@@ -295,7 +302,7 @@ export function ContactsPage() {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title={t('contacts.title')}
         description={t('contacts.description')}
@@ -313,12 +320,13 @@ export function ContactsPage() {
         </button>
       </PageHeader>
 
-      {/* Filter bar — mengikuti pola Bookings: tiap filter di kolomnya sendiri (flex-1). */}
-      <Card className="p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+      <div className="space-y-4">
+        {/* Filter bar — mengikuti pola Bookings: tiap filter di kolomnya sendiri (flex-1). */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <TextInput
               label={t('common.name')}
+              isLabelHidden
               placeholder={t('contacts.filterNamePlaceholder')}
               value={filters.name}
               onChange={(value) => setFilter('name', value)}
@@ -329,6 +337,7 @@ export function ContactsPage() {
           <div className="min-w-0 flex-1">
             <TextInput
               label={t('contacts.phoneLabel')}
+              isLabelHidden
               placeholder={t('contacts.filterPhonePlaceholder')}
               value={filters.phone}
               onChange={(value) => setFilter('phone', value)}
@@ -339,6 +348,7 @@ export function ContactsPage() {
           <div className="min-w-0 flex-1">
             <TextInput
               label={t('common.email')}
+              isLabelHidden
               type="email"
               placeholder={t('contacts.filterEmailPlaceholder')}
               value={filters.email}
@@ -358,7 +368,6 @@ export function ContactsPage() {
             )}
           </div>
         </div>
-      </Card>
 
       {deleteError && (
         <p
@@ -477,6 +486,7 @@ export function ContactsPage() {
           )}
         </>
       )}
+      </div>
 
       {/* Dialog tambah kontak — struktur, spacing, footer, dan error placement
           mengikuti dialog tambah staf agar semua resource forms konsisten. */}
@@ -493,6 +503,7 @@ export function ContactsPage() {
             <DialogHeader
               title={t('contacts.addTitle')}
               subtitle={t('contacts.addSubtitle')}
+              startContent={<IconUsers className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) closeAdd();
               }}

@@ -1,18 +1,15 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { INDUSTRIES } from '@oriole/call-goals';
 import {
   Badge,
   Button,
   Dialog,
   DialogHeader,
-  DropdownMenu,
-  DropdownMenuItem,
-  IconButton,
   Layout,
   LayoutContent,
   LayoutFooter,
-  LayoutHeader,
+  Selector,
   TextInput,
+  useToast,
 } from '@astryxdesign/core';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -21,7 +18,6 @@ import { errorMessage } from '../../lib/errors';
 import {
   defaultIndustryForCategory,
   getTemplateCategoryLabelKey,
-  RECOMMENDED_TEMPLATE_CATEGORIES,
   type Workspace,
 } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -35,109 +31,41 @@ import {
 } from '../components/BusinessInfoForm';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
-import { IconCheck, IconChevronDown, IconEdit, IconPlus, IconSettings, IconTrash, IconX } from '../shell/icons';
+import { IconBuildings, IconEdit, IconPlus, IconTrash } from '../shell/icons';
 import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
 
-/** Pilihan kategori — dipakai form buat & edit bisnis. Industri CALL-E mengikuti kategori otomatis. */
-function CategoryPicker({
-  value,
-  onChange,
-  name,
-}: {
-  value: string;
-  onChange: (categoryId: string) => void;
-  name: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {RECOMMENDED_TEMPLATE_CATEGORIES.map((item) => {
-        const selected = value === item.id;
-        return (
-          <label
-            key={item.id}
-            className={`cursor-pointer rounded-lg border p-3 transition ${
-              selected
-                ? 'border-amber-400 bg-white dark:bg-zinc-900 ring-2 ring-amber-500/10'
-                : 'border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-600'
-            }`}
-          >
-            <input
-              type="radio"
-              name={name}
-              value={item.id}
-              checked={selected}
-              onChange={() => onChange(item.id)}
-              className="sr-only"
-            />
-            <span className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="flex size-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 text-xs">{item.emoji}</span>
-              {t(item.labelKey)}
-              <IconCheck className={`ml-auto size-4 ${selected ? 'text-amber-600' : 'text-transparent'}`} />
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
+const EDITABLE_INDUSTRIES = [
+  'barbershop',
+  'nail-salon',
+  'massage-spa',
+  'pet-grooming',
+  'car-detailing',
+  'yoga-pilates',
+  'personal-trainer',
+  'photography-studio',
+] as const;
 
-/**
- * Dropdown industri bisnis — dipakai dialog edit bisnis. Opsi dari
- * INDUSTRIES (@oriole/call-goals), label terjemahan via industryKey.
- */
-function IndustryDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (industry: string) => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const selected = INDUSTRIES.find((industry) => industry === value);
-  const label = selected ? t(industryKey(selected)) : t(industryKey(value));
-
-  return (
-    <DropdownMenu
-      placement="below"
-      hasChevron={false}
-      menuWidth={260}
-      isMenuOpen={open}
-      onOpenChange={setOpen}
-      button={{
-        label: t('ws.industry'),
-        variant: 'secondary',
-        size: 'sm',
-        children: (
-          <span className="flex w-56 items-center justify-between gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-            <span className="truncate">{label}</span>
-            <IconChevronDown
-              className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''} text-zinc-400`}
-            />
-          </span>
-        ),
-      }}
-    >
-      {INDUSTRIES.map((industry) => {
-        const selected = industry === value;
-        return (
-          <DropdownMenuItem
-            key={industry}
-            label={t(industryKey(industry))}
-            onClick={() => onChange(industry)}
-            endContent={
-              selected ? <IconCheck className="size-3.5 text-amber-500" /> : undefined
-            }
-          />
-        );
-      })}
-    </DropdownMenu>
-  );
-}
+/** Pemetaan industri ke templateCategory default untuk kompatibilitas API */
+const INDUSTRY_TO_CATEGORY: Record<string, string> = {
+  barbershop: 'beauty-wellness',
+  'nail-salon': 'beauty-wellness',
+  'massage-spa': 'beauty-wellness',
+  'pet-grooming': 'pet-care',
+  'car-detailing': 'automotive',
+  'yoga-pilates': 'fitness',
+  'personal-trainer': 'fitness',
+  'photography-studio': 'photography-creative',
+  clinic: 'healthcare-clinics',
+  salon: 'beauty-wellness',
+  fitness: 'fitness',
+  spa: 'beauty-wellness',
+  dental: 'healthcare-clinics',
+  other: 'professional-services',
+};
 
 export function WorkspaceSettingsPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
@@ -159,7 +87,7 @@ export function WorkspaceSettingsPage() {
   // ── Form buat bisnis ─────────────────────────────────────
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+  const [industry, setIndustry] = useState<string>('barbershop');
   const [avatar, setAvatar] = useState<string | null>(null);
   const [createInfo, setCreateInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
   const [error, setError] = useState<string | null>(null);
@@ -168,12 +96,32 @@ export function WorkspaceSettingsPage() {
   // ── Form edit bisnis (Dialog) ────────────────────────────
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [editCategory, setEditCategory] = useState<string>(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
-  const [editIndustry, setEditIndustry] = useState<string>(defaultIndustryForCategory(RECOMMENDED_TEMPLATE_CATEGORIES[0].id));
-  const [editInfo, setEditInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
+  const [editCategory, setEditCategory] = useState<string>('beauty-wellness');
+  const [editIndustry, setEditIndustry] = useState<string>('barbershop');
   const [editAvatar, setEditAvatar] = useState<string | null>(null);
+  const [editInfo, setEditInfo] = useState<BusinessInfoValues>(EMPTY_BUSINESS_INFO);
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const createIndustryOptions = useMemo(
+    () =>
+      EDITABLE_INDUSTRIES.map((ind) => ({
+        value: ind,
+        label: t(industryKey(ind)),
+      })),
+    [t],
+  );
+
+  const editIndustryOptions = useMemo(() => {
+    const list: string[] = [...EDITABLE_INDUSTRIES];
+    if (editIndustry && !list.includes(editIndustry)) {
+      list.push(editIndustry);
+    }
+    return list.map((ind) => ({
+      value: ind,
+      label: t(industryKey(ind)),
+    }));
+  }, [editIndustry, t]);
 
   // ── Hapus bisnis (konfirmasi AlertDialog) ────────────────
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -185,23 +133,38 @@ export function WorkspaceSettingsPage() {
     setError(null);
     setIsCreating(true);
     try {
+      const templateCategory = INDUSTRY_TO_CATEGORY[industry] ?? 'beauty-wellness';
       const response = await apiFetch<{ workspace: Workspace }>('/me/workspaces', {
         method: 'POST',
         body: JSON.stringify({
           name,
-          templateCategory: category,
+          templateCategory,
+          industry,
           ...(avatar !== null ? { avatarUrl: avatar } : {}),
           ...businessInfoToPayload(createInfo),
         }),
       });
       addWorkspace(response.workspace);
       setName('');
-      setCategory(RECOMMENDED_TEMPLATE_CATEGORIES[0].id);
+      setIndustry('barbershop');
       setAvatar(null);
       setCreateInfo(EMPTY_BUSINESS_INFO);
       setIsAdding(false);
+      toast({
+        body: t('ws.businessCreated'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.createBusiness'));
+      const msg = errorMessage(err, t, 'errors.createBusiness');
+      setError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } finally {
       setIsCreating(false);
     }
@@ -254,8 +217,21 @@ export function WorkspaceSettingsPage() {
       });
       updateWorkspace(response.workspace);
       setEditingId(null);
+      toast({
+        body: t('ws.businessUpdated'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
     } catch (err) {
-      setEditError(errorMessage(err, t, 'errors.saveBusiness'));
+      const msg = errorMessage(err, t, 'errors.saveBusiness');
+      setEditError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -268,9 +244,22 @@ export function WorkspaceSettingsPage() {
       await apiFetch<{ ok: boolean }>(`/me/workspaces/${workspaceId}`, { method: 'DELETE' });
       removeWorkspace(workspaceId);
       setConfirmDeleteId(null);
+      toast({
+        body: t('ws.businessDeleted'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
     } catch (err) {
       setConfirmDeleteId(null);
-      setDeleteError(errorMessage(err, t, 'errors.deleteBusiness'));
+      const msg = errorMessage(err, t, 'errors.deleteBusiness');
+      setDeleteError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -286,6 +275,8 @@ export function WorkspaceSettingsPage() {
   };
 
   const openAddForm = () => {
+    setName('');
+    setIndustry('barbershop');
     setEditingId(null);
     setError(null);
     setAvatar(null);
@@ -304,7 +295,7 @@ export function WorkspaceSettingsPage() {
       <PageHeader
         title={t('ws.title')}
         description={t('ws.description')}
-        icon={IconSettings}
+        icon={IconBuildings}
       >
         <button
           type="button"
@@ -320,7 +311,7 @@ export function WorkspaceSettingsPage() {
         isOpen={isAdding}
         onOpenChange={handleDialogClose}
         purpose="info"
-        width={560}
+        width={520}
       >
         {/* Layout (fill) = header tetap, konten scroll di tengah, footer aksi
             selalu terlihat — mencegah tombol submit terpotong di bawah fold. */}
@@ -329,6 +320,7 @@ export function WorkspaceSettingsPage() {
             <DialogHeader
               title={t('ws.createTitle')}
               subtitle={t('ws.createSubtitle')}
+              startContent={<IconBuildings className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={handleDialogClose}
               hasDivider
             />
@@ -344,7 +336,14 @@ export function WorkspaceSettingsPage() {
                   width="100%"
                 />
                 <AvatarPicker key="create-workspace-avatar" value={avatar} onChange={setAvatar} name={name || '?'} />
-                <CategoryPicker value={category} onChange={setCategory} name="workspace-category" />
+                <Selector
+                  label={t('ws.industry')}
+                  description={t('ws.industryDesc')}
+                  options={createIndustryOptions}
+                  value={industry}
+                  onChange={(val) => setIndustry(val ?? 'barbershop')}
+                  width="100%"
+                />
                 <BusinessInfoForm value={createInfo} onChange={setCreateInfo} />
               </form>
             </LayoutContent>
@@ -372,24 +371,17 @@ export function WorkspaceSettingsPage() {
         isOpen={editingId !== null}
         onOpenChange={handleEditDialogClose}
         purpose="info"
-        width={560}
+        width={520}
       >
         <Layout
           header={
-            <LayoutHeader hasDivider>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('ws.editBusiness')}</h2>
-                  <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{t('ws.editBusinessDesc')}</p>
-                </div>
-                <IconButton
-                  label={t('common.close')}
-                  icon={<IconX className="size-4" />}
-                  variant="ghost"
-                  onClick={closeEditForm}
-                />
-              </div>
-            </LayoutHeader>
+            <DialogHeader
+              title={t('ws.editBusiness')}
+              subtitle={t('ws.editBusinessDesc')}
+              startContent={<IconBuildings className="size-5 shrink-0 text-amber-600" />}
+              onOpenChange={handleEditDialogClose}
+              hasDivider
+            />
           }
           content={
             <LayoutContent>
@@ -402,11 +394,14 @@ export function WorkspaceSettingsPage() {
                 />
                 {/* key=editingId → remount per bisnis agar state picker ikut bisnis. */}
                 <AvatarPicker key={`edit-${editingId}`} value={editAvatar} onChange={setEditAvatar} name={editName || '?'} />
-                <div>
-                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('ws.industry')}</p>
-                  <p className="mt-1 mb-2 text-xs text-zinc-500 dark:text-zinc-400">{t('ws.industryDesc')}</p>
-                  <IndustryDropdown value={editIndustry} onChange={setEditIndustry} />
-                </div>
+                <Selector
+                  label={t('ws.industry')}
+                  description={t('ws.industryDesc')}
+                  options={editIndustryOptions}
+                  value={editIndustry}
+                  onChange={(val) => setEditIndustry(val ?? 'barbershop')}
+                  width="100%"
+                />
                 <BusinessInfoForm value={editInfo} onChange={setEditInfo} />
               </form>
             </LayoutContent>

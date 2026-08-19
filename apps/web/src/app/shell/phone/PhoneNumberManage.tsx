@@ -156,6 +156,7 @@ export function PhoneNumberManageDialog({
             <DialogHeader
               title={t('phoneNumber.manageTitle')}
               subtitle={`${displayNumber(number)} · ${provider}`}
+              startContent={<IconPhone className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => {
                 if (!open) onOpenChange(false);
               }}
@@ -360,6 +361,7 @@ export function PhoneNumberManageDialog({
           header={
             <DialogHeader
               title={t('phoneNumber.assistantDialogTitle')}
+              startContent={<IconPhone className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={setAssistantOpen}
               hasDivider
             />

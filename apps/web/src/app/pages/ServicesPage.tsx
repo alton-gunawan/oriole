@@ -31,6 +31,7 @@ import {
   useTablePagination,
   useTableSelection,
   useTableSelectionState,
+  useToast,
   type SearchableItem,
   type SearchSource,
   type TableColumn,
@@ -55,8 +56,10 @@ import {
   IconEdit,
   IconPlus,
   IconSearch,
+  IconServices,
   IconTrash,
   IconUsers,
+  IconX,
 } from '../shell/icons';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
 
@@ -185,6 +188,7 @@ function expandCategoryList(categories: string[] | null | undefined): string[] {
 
 export function ServicesPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const queryClient = useQueryClient();
 
@@ -502,12 +506,29 @@ export function ServicesPage() {
         ),
       ),
     onMutate: () => setBulkError(null),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       resetSelection();
+      toast({
+        body: variables.isActive
+          ? t('services.bulkActivated', { count: variables.ids.length })
+          : t('services.bulkDeactivated', { count: variables.ids.length }),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
       queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
       queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
     },
-    onError: (err) => setBulkError(errorMessage(err, t, 'errors.saveService')),
+    onError: (err) => {
+      const msg = errorMessage(err, t, 'errors.saveService');
+      setBulkError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
+    },
   });
 
   const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
@@ -516,15 +537,28 @@ export function ServicesPage() {
     mutationFn: (ids: string[]) =>
       Promise.all(ids.map((id) => apiFetch(`/services/${id}`, { method: 'DELETE' }))),
     onMutate: () => setBulkError(null),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       setBulkDeleteIds(null);
       resetSelection();
+      toast({
+        body: t('services.bulkDeleted', { count: variables.length }),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
       queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
       queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
     },
     onError: (err) => {
       setBulkDeleteIds(null);
-      setBulkError(errorMessage(err, t, 'errors.deleteService'));
+      const msg = errorMessage(err, t, 'errors.deleteService');
+      setBulkError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     },
   });
 
@@ -633,7 +667,7 @@ export function ServicesPage() {
   ], [t, staffNameById]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader title={t('services.title')} description={t('services.description')} icon={IconUsers}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
         <button
@@ -646,13 +680,14 @@ export function ServicesPage() {
         </button>
       </PageHeader>
 
-      {/* Filter bar — mirror StaffPage: cari layanan + status + kategori. */}
-      {!isPending && !isError && data && servicesList.length > 0 && (
-        <Card className="p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+      <div className="space-y-4">
+        {/* Filter bar — mirror StaffPage: cari layanan + status + kategori. */}
+        {!isPending && !isError && data && servicesList.length > 0 && (
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
               <TextInput
                 label={t('services.colService')}
+                isLabelHidden
                 placeholder={t('services.searchPlaceholder')}
                 value={searchFilter}
                 onChange={(value) => setFilter('q', value)}
@@ -664,6 +699,8 @@ export function ServicesPage() {
             <div className="min-w-0 flex-1">
               <Selector
                 label={t('common.status')}
+                isLabelHidden
+                placeholder={t('services.allStatuses')}
                 options={[
                   {
                     value: '',
@@ -700,6 +737,7 @@ export function ServicesPage() {
             <div className="min-w-0 flex-1">
               <MultiSelector
                 label={t('services.colCategory')}
+                isLabelHidden
                 placeholder={t('services.allCategories')}
                 options={categoryOptions.map((category) => ({ value: category, label: category }))}
                 value={categoryFilter}
@@ -725,8 +763,7 @@ export function ServicesPage() {
               )}
             </div>
           </div>
-        </Card>
-      )}
+        )}
 
       {deleteError && (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400">
@@ -750,14 +787,18 @@ export function ServicesPage() {
       )}
 
       {isPending && (
-        <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center gap-3 p-4">
-              <Skeleton width={40} height={40} radius={4} />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Skeleton width="40%" height={14} />
-                <Skeleton width="66%" height={12} />
-              </div>
+        <Card className="overflow-hidden">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-6 border-b border-zinc-100 dark:border-zinc-800 px-5 py-4 last:border-b-0"
+            >
+              <Skeleton width="24%" height={14} />
+              <Skeleton width="12%" height={12} />
+              <Skeleton width="14%" height={12} />
+              <Skeleton width="18%" height={12} />
+              <Skeleton width="16%" height={12} />
+              <Skeleton className="ml-auto" width={72} height={22} />
             </div>
           ))}
         </Card>
@@ -781,52 +822,67 @@ export function ServicesPage() {
             />
           ) : (
             <>
+              {/* Floating bottom center row selection toolbar */}
               {selectedKeys.size > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                      {t('services.selectedCount', { count: selectedKeys.size })}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        label={t('services.activate')}
-                        variant="secondary"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending}
-                        isLoading={bulkStatusMutation.isPending}
-                        onClick={() =>
-                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: true })
-                        }
-                      />
-                      <Button
-                        label={t('services.deactivate')}
-                        variant="secondary"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending}
-                        isLoading={bulkStatusMutation.isPending}
-                        onClick={() =>
-                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: false })
-                        }
-                      />
-                      <Button
-                        label={t('common.delete')}
-                        variant="destructive"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
-                        onClick={() => setBulkDeleteIds([...selectedKeys])}
-                      />
-                      <Button
-                        label={t('services.clearSelection')}
-                        variant="ghost"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
-                        onClick={resetSelection}
-                      />
-                    </div>
-                  </div>
+                <div
+                  role="region"
+                  aria-label={t('services.selectedCount', { count: selectedKeys.size })}
+                  className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-zinc-200/90 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5 duration-200 dark:border-zinc-700/90 dark:bg-zinc-900/95 max-w-[calc(100vw-2rem)]"
+                >
                   {bulkError && (
-                    <p role="alert" className="mt-3 text-sm text-red-600">{bulkError}</p>
+                    <div
+                      role="alert"
+                      className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 shadow-md dark:border-red-900/60 dark:bg-red-950/90 dark:text-red-400"
+                    >
+                      {bulkError}
+                    </div>
                   )}
+
+                  <div className="flex items-center gap-2 border-r border-zinc-200 pr-3 dark:border-zinc-700">
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                      {t('services.selectedCount', { count: selectedKeys.size })}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      label={t('services.activate')}
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending}
+                      isLoading={bulkStatusMutation.isPending}
+                      onClick={() =>
+                        bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: true })
+                      }
+                    />
+                    <Button
+                      label={t('services.deactivate')}
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending}
+                      isLoading={bulkStatusMutation.isPending}
+                      onClick={() =>
+                        bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: false })
+                      }
+                    />
+                    <Button
+                      label={t('common.delete')}
+                      variant="destructive"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                      onClick={() => setBulkDeleteIds([...selectedKeys])}
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('services.clearSelection')}
+                      title={t('services.clearSelection')}
+                      disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                      onClick={resetSelection}
+                      className="ml-1 inline-flex size-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <IconX className="size-4" />
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -887,6 +943,7 @@ export function ServicesPage() {
           )}
         </>
       )}
+      </div>
 
       {/* Dialog tambah layanan */}
       <Dialog isOpen={isAddOpen} onOpenChange={(open) => { if (!open) closeAdd(); }} purpose="info" width={560}>
@@ -895,6 +952,7 @@ export function ServicesPage() {
             <DialogHeader
               title={t('services.addTitle')}
               subtitle={t('services.addSubtitle')}
+              startContent={<IconServices className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => { if (!open) closeAdd(); }}
               hasDivider
             />
@@ -1007,6 +1065,7 @@ export function ServicesPage() {
             <DialogHeader
               title={t('services.editTitle')}
               subtitle={editing?.name}
+              startContent={<IconServices className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={(open) => { if (!open) setEditing(null); }}
               hasDivider
             />

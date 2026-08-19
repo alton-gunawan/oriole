@@ -9,6 +9,14 @@ import type { TranslationKey } from './index';
  */
 
 const INDUSTRY_KEYS: Record<Industry, TranslationKey> = {
+  barbershop: 'industry.barbershop',
+  'nail-salon': 'industry.nailSalon',
+  'massage-spa': 'industry.massageSpa',
+  'pet-grooming': 'industry.petGrooming',
+  'car-detailing': 'industry.carDetailing',
+  'yoga-pilates': 'industry.yogaPilates',
+  'personal-trainer': 'industry.personalTrainer',
+  'photography-studio': 'industry.photographyStudio',
   clinic: 'industry.clinic',
   salon: 'industry.salon',
   fitness: 'industry.fitness',

@@ -6,20 +6,25 @@ import { useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
-  DateTimeInput,
+  DateInput,
   Dialog,
   DialogHeader,
   DropdownMenu,
   DropdownMenuItem,
   Layout,
   LayoutContent,
+  LayoutFooter,
   Selector,
+  Skeleton,
   TextArea,
   TextInput,
+  TimeInput,
   type BadgeVariant,
-  type ISODateTimeString,
+  type ISODateString,
+  type ISOTimeString,
 } from '@astryxdesign/core';
 import type { GoalCustomization } from '@oriole/call-goals';
+import { dayjs } from '../../lib/dayjs-setup';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
@@ -78,13 +83,6 @@ function statusLabel(status: string | null, t: TFunction): string {
 function callStatusLabel(status: string | null, t: TFunction): string {
   const key = callStatusKey(status);
   return key ? t(key) : (status ?? '');
-}
-
-/** Konversi ISO → value input datetime-local (waktu lokal browser). */
-function toDateTimeLocal(iso: string): string {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** Tampilan hero per outcome AI call — label, kalimat ringkasan, ikon, warna. */
@@ -164,22 +162,22 @@ function DetailSection({
   children: ReactNode;
 }) {
   return (
-    <Card className="p-5">
+    <section className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{title}</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">{title}</h2>
         {action}
       </div>
       <div className="mt-4">{children}</div>
-    </Card>
+    </section>
   );
 }
 
 /** Baris label/nilai — dipakai di kartu Appointment & detail panggilan. */
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 px-4 py-2.5">
-      <dt className="shrink-0 text-sm text-zinc-400 dark:text-zinc-500">{label}</dt>
-      <dd className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{value}</dd>
+    <div className="flex items-center justify-between gap-6 py-3">
+      <dt className="shrink-0 text-sm font-semibold text-zinc-500 dark:text-zinc-400">{label}</dt>
+      <dd className="min-w-0 truncate text-base font-medium text-zinc-900 dark:text-zinc-100">{value}</dd>
     </div>
   );
 }
@@ -195,7 +193,8 @@ export function BookingDetailPage() {
   // Title tidak diedit manual — booking diambil dari layanan katalog.
   const [editCustomerName, setEditCustomerName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editScheduledAt, setEditScheduledAt] = useState('');
+  const [editDate, setEditDate] = useState<ISODateString | undefined>(undefined);
+  const [editTime, setEditTime] = useState<ISOTimeString | undefined>(undefined);
   const [editDescription, setEditDescription] = useState('');
   const [editStaffId, setEditStaffId] = useState('');
   const [editServiceId, setEditServiceId] = useState('');
@@ -212,7 +211,9 @@ export function BookingDetailPage() {
   const startEdit = (booking: BookingRecord) => {
     setEditCustomerName(booking.customerName ?? '');
     setEditPhone(booking.phone ?? '');
-    setEditScheduledAt(toDateTimeLocal(booking.scheduledAt));
+    const dt = dayjs(booking.scheduledAt);
+    setEditDate(dt.format('YYYY-MM-DD') as ISODateString);
+    setEditTime(dt.format('HH:mm') as ISOTimeString);
     setEditDescription(booking.description ?? '');
     setEditStaffId(booking.staffId ?? '');
     setEditServiceId(booking.serviceId ?? '');
@@ -224,7 +225,8 @@ export function BookingDetailPage() {
     event.preventDefault();
     if (!id) return;
     setEditError(null);
-    if (!editScheduledAt) return;
+    if (!editDate || !editTime) return;
+    const scheduledAt = new Date(`${editDate}T${editTime}`).toISOString();
     // serviceId hanya dikirim saat BERUBAH — mengirimnya selalu akan membuat
     // server auto-fill durationMinutes dari layanan, menimpa durasi kustom.
     const fields: {
@@ -237,7 +239,7 @@ export function BookingDetailPage() {
     } = {
       customerName: editCustomerName.trim() || null,
       phone: editPhone.trim() || null,
-      scheduledAt: new Date(editScheduledAt).toISOString(),
+      scheduledAt,
       description: editDescription.trim() || null,
       staffId: editStaffId || null,
     };
@@ -333,7 +335,87 @@ export function BookingDetailPage() {
   const isAuthExpiry = error instanceof ApiError && error.status === 401;
 
   if (isPending) {
-    return <div className="h-40 animate-pulse rounded-2xl bg-zinc-200/70 dark:bg-zinc-700/70" />;
+    // Skeleton seluruh halaman — meniru struktur header + kartu seksi yang
+    // dimuat, jadi tidak ada lompatan layout / area kosong saat data tiba.
+    return (
+      <div className="space-y-6" aria-busy="true">
+        {/* Header skeleton — judul + badge status + tombol aksi */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <Skeleton width={220} height={24} radius={1} />
+              <Skeleton width={76} height={22} radius={2} />
+            </div>
+            <Skeleton className="mt-2.5" width={340} height={14} radius={1} />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Skeleton width={124} height={32} radius={2} />
+            <Skeleton width={36} height={32} radius={2} />
+          </div>
+        </div>
+
+        {/* Bagian Appointment skeleton — 4 baris label/nilai */}
+        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <Skeleton width={112} height={12} radius={1} />
+          <div className="mt-4 space-y-3.5">
+            {[0, 1, 2, 3].map((row) => (
+              <div key={row} className="flex items-center justify-between gap-6">
+                <Skeleton width={84} height={12} radius={1} />
+                <Skeleton width="42%" height={12} radius={1} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bagian Customer skeleton — identitas + tautan */}
+        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <Skeleton width={96} height={12} radius={1} />
+          <div className="mt-4 space-y-3">
+            <Skeleton width={168} height={14} radius={1} />
+            <Skeleton width={124} height={12} radius={1} />
+            <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <Skeleton width={110} height={12} radius={1} />
+              <Skeleton width={16} height={16} radius={1} />
+            </div>
+          </div>
+        </div>
+
+        {/* Bagian AI Confirmation skeleton — hero dengan ikon + ringkasan */}
+        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-2">
+            <Skeleton width={132} height={12} radius={1} />
+            <Skeleton width={96} height={26} radius={2} />
+          </div>
+          <div className="mt-4 flex items-start gap-3">
+            <Skeleton width={36} height={36} radius={3} />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton width="55%" height={14} radius={1} />
+              <Skeleton width="85%" height={12} radius={1} />
+              <Skeleton width="40%" height={12} radius={1} />
+            </div>
+          </div>
+        </div>
+
+        {/* Bagian Call History skeleton — baris panggilan dengan dot status */}
+        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <Skeleton width={120} height={12} radius={1} />
+          <div className="mt-4 space-y-4">
+            {[0, 1].map((row) => (
+              <div key={row} className="flex items-start gap-3">
+                <Skeleton className="mt-1.5" width={8} height={8} radius={4} />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Skeleton width="32%" height={12} radius={1} />
+                    <Skeleton width={64} height={18} radius={2} />
+                  </div>
+                  <Skeleton width="70%" height={12} radius={1} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (isError && !isAuthExpiry && !data) {
@@ -386,6 +468,12 @@ export function BookingDetailPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow={
+          <>
+            <IconCalendar className="size-3.5" aria-hidden="true" />
+            {t('bookingDetail.pageLabel')}
+          </>
+        }
         title={customerName}
         description={t('bookingDetail.headingSubtitle', {
           service: serviceLabel,
@@ -395,45 +483,40 @@ export function BookingDetailPage() {
       >
         <Link
           to="/app/bookings"
-          className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-base font-medium text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
+          className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-base font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 hover:border-zinc-300 dark:hover:border-zinc-600 active:scale-[0.98]"
         >
           <IconChevronLeft className="size-4" />
           {t('bookingDetail.backToBookings')}
         </Link>
-        <DropdownMenu
-          placement="below"
-          hasChevron={false}
-          menuWidth={200}
-          isMenuOpen={moreOpen}
-          onOpenChange={setMoreOpen}
-          button={{
-            label: t('common.moreActions'),
-            variant: 'ghost',
-            size: 'md',
-            isIconOnly: true,
-            icon: <IconDotsHorizontal className="size-4 text-zinc-500 dark:text-zinc-400" />,
-            style: { border: '1px solid var(--color-border-emphasized)' },
-          }}
+        {/* Edit langsung di header — sebelah tombol Back. Pakai markup & kelas
+            yang SAMA PERSIS dengan tombol Back (font-size, weight, line-height,
+            ikon, border) agar kedua tombol benar-benar identik. */}
+        <button
+          type="button"
+          onClick={() => startEdit(booking)}
+          className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-base font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 hover:border-zinc-300 dark:hover:border-zinc-600 active:scale-[0.98]"
         >
-          <DropdownMenuItem
-            icon={<IconEdit className="size-4" />}
-            label={t('common.edit')}
-            onClick={() => {
-              setMoreOpen(false);
-              startEdit(booking);
+          <IconEdit className="size-4" />
+          {t('common.edit')}
+        </button>
+        {/* Menu ⋯ — hanya berisi aksi yang relevan untuk booking aktif; kalau
+            tidak ada (cancelled/completed) tombolnya disembunyikan. */}
+        {isActive && (
+          <DropdownMenu
+            placement="below"
+            hasChevron={false}
+            menuWidth={200}
+            isMenuOpen={moreOpen}
+            onOpenChange={setMoreOpen}
+            button={{
+              label: t('common.moreActions'),
+              variant: 'ghost',
+              size: 'md',
+              isIconOnly: true,
+              icon: <IconDotsHorizontal className="size-4 text-zinc-500 dark:text-zinc-400" />,
+              style: { border: '1px solid var(--color-border-emphasized)' },
             }}
-          />
-          {isActive && (
-            <DropdownMenuItem
-              icon={<IconCalendar className="size-4" />}
-              label={t('bookingDetail.reschedule')}
-              onClick={() => {
-                setMoreOpen(false);
-                startEdit(booking);
-              }}
-            />
-          )}
-          {isActive && (
+          >
             <DropdownMenuItem
               icon={<IconX className="size-4 text-red-500" />}
               label={<span className="font-medium text-red-600">{t('bookingDetail.cancelBooking')}</span>}
@@ -442,8 +525,8 @@ export function BookingDetailPage() {
                 setCancelOpen(true);
               }}
             />
-          )}
-        </DropdownMenu>
+          </DropdownMenu>
+        )}
       </PageHeader>
 
       {headerError && (
@@ -455,9 +538,13 @@ export function BookingDetailPage() {
         </p>
       )}
 
-      {/* ── APPOINTMENT ─────────────────────────────────────── */}
-      <DetailSection title={t('bookingDetail.appointment')}>
-        <dl className="divide-y divide-zinc-100 rounded-xl border border-zinc-100 dark:divide-zinc-800 dark:border-zinc-800">
+      {/* Konten 2 kolom — kiri 7/10 (appointment, AI, call history), kanan 3/10 (customer & notes). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-10">
+        {/* Kolom kiri — 7/10 */}
+        <div className="min-w-0 space-y-6 lg:col-span-7">
+          {/* ── APPOINTMENT ─────────────────────────────────────── */}
+          <DetailSection title={t('bookingDetail.appointment')}>
+        <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
           <InfoRow
             label={t('bookingDetail.service')}
             value={booking.serviceId ? serviceLabel : t('bookingDetail.unknownService')}
@@ -474,31 +561,11 @@ export function BookingDetailPage() {
           {booking.timezone && <InfoRow label={t('bookingDetail.timezone')} value={booking.timezone} />}
         </dl>
         {booking.recurrenceSeriesId && (
-          <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+          <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-amber-600">
             <IconRepeat className="size-3.5" aria-hidden="true" />
             {t('bookingDetail.recurring')}
           </p>
         )}
-      </DetailSection>
-
-      {/* ── CUSTOMER ────────────────────────────────────────── */}
-      <DetailSection title={t('bookingDetail.customer')}>
-        {/* Nama & telepon customer = PII — jangan pernah ter-capture analitik. */}
-        <div className="ph-no-capture">
-          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{customerName}</p>
-          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-            {booking.phone ?? t('bookingDetail.noPhoneYet')}
-          </p>
-        </div>
-        <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-          <Link
-            to={contactHref}
-            className="flex items-center justify-between text-sm font-semibold text-amber-600 transition hover:text-amber-700"
-          >
-            {t('bookingDetail.viewCustomer')}
-            <IconArrowRight className="size-4" aria-hidden="true" />
-          </Link>
-        </div>
       </DetailSection>
 
       {/* ── AI CONFIRMATION (hero) ──────────────────────────── */}
@@ -530,10 +597,10 @@ export function BookingDetailPage() {
               <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">
                 {t(outcomeMeta.labelKey)}
               </p>
-              <p className="mt-0.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+              <p className="mt-0.5 text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
                 {summaryText}
               </p>
-              <p className="mt-2 text-xs text-zinc-400">
+              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
                 {t('bookingDetail.aiCalledBy', { name: customerName })} ·{' '}
                 {formatShortDateTime(latestCall.createdAt)}
               </p>
@@ -541,20 +608,20 @@ export function BookingDetailPage() {
                 <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
                   {callDuration && (
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      <dt className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         {t('bookingDetail.durationLabel')}
                       </dt>
-                      <dd className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                      <dd className="mt-0.5 text-base font-medium text-zinc-800 dark:text-zinc-200">
                         {formatCallDuration(callDuration, t)}
                       </dd>
                     </div>
                   )}
                   {explicitSummary && (
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      <dt className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         {t('bookingDetail.summaryLabel')}
                       </dt>
-                      <dd className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                      <dd className="mt-0.5 text-base font-medium text-zinc-800 dark:text-zinc-200">
                         {explicitSummary}
                       </dd>
                     </div>
@@ -572,7 +639,7 @@ export function BookingDetailPage() {
               <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                 {t('bookingDetail.noCalls')}
               </p>
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
                 {t('bookingDetail.noCallsDesc')}
               </p>
             </div>
@@ -619,7 +686,7 @@ export function BookingDetailPage() {
                         label={callStatusLabel(call.status, t)}
                       />
                     </div>
-                    <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    <p className="mt-0.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
                       {callSummary}
                     </p>
                   </div>
@@ -628,34 +695,59 @@ export function BookingDetailPage() {
             })}
           </ul>
         )}
-        {booking.callAttempts.total > 0 && (
-          <p className="mt-4 border-t border-zinc-100 pt-3 text-xs text-zinc-400 dark:border-zinc-800">
-            {t('bookingDetail.attempts', { count: booking.callAttempts.total })}
-          </p>
-        )}
-      </DetailSection>
+          {booking.callAttempts.total > 0 && (
+            <p className="mt-4 border-t border-zinc-100 pt-3 text-sm text-zinc-500 dark:text-zinc-400 dark:border-zinc-800">
+              {t('bookingDetail.attempts', { count: booking.callAttempts.total })}
+            </p>
+          )}
+        </DetailSection>
+        </div>
 
-      {/* ── NOTES ───────────────────────────────────────────── */}
-      <DetailSection
-        title={t('common.notes')}
-        action={
-          <Button
-            label={t('common.edit')}
-            variant="ghost"
-            size="sm"
-            icon={<IconEdit className="size-3.5" />}
-            onClick={() => startEdit(booking)}
-          />
-        }
-      >
-        {booking.description ? (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            {booking.description}
-          </p>
-        ) : (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">{t('bookingDetail.noNotes')}</p>
-        )}
-      </DetailSection>
+        {/* Kolom kanan — 3/10: Customer & Notes */}
+        <div className="min-w-0 space-y-6 lg:col-span-3">
+          {/* ── CUSTOMER ────────────────────────────────────────── */}
+          <DetailSection title={t('bookingDetail.customer')}>
+            {/* Nama & telepon customer = PII — jangan pernah ter-capture analitik. */}
+            <div className="ph-no-capture">
+              <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{customerName}</p>
+              <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                {booking.phone ?? t('bookingDetail.noPhoneYet')}
+              </p>
+            </div>
+            <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <Link
+                to={contactHref}
+                className="flex items-center justify-between text-sm font-semibold text-amber-600 transition hover:text-amber-700"
+              >
+                {t('bookingDetail.viewCustomer')}
+                <IconArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </DetailSection>
+
+          {/* ── NOTES ───────────────────────────────────────────── */}
+          <DetailSection
+            title={t('common.notes')}
+            action={
+              <Button
+                label={t('common.edit')}
+                variant="ghost"
+                size="sm"
+                icon={<IconEdit className="size-3.5" />}
+                onClick={() => startEdit(booking)}
+              />
+            }
+          >
+            {booking.description ? (
+              <p className="whitespace-pre-wrap text-base leading-relaxed text-zinc-700 dark:text-zinc-300">
+                {booking.description}
+              </p>
+            ) : (
+              <p className="text-base text-zinc-500 dark:text-zinc-400">{t('bookingDetail.noNotes')}</p>
+            )}
+          </DetailSection>
+        </div>
+      </div>
 
       {/* ── Dialog edit booking ─────────────────────────────── */}
       <Dialog
@@ -664,7 +756,7 @@ export function BookingDetailPage() {
           if (!open) setIsEditing(false);
         }}
         purpose="info"
-        width={640}
+        width={520}
         maxHeight="min(85vh, 720px)"
       >
         <Layout
@@ -672,87 +764,108 @@ export function BookingDetailPage() {
             <DialogHeader
               title={t('bookingDetail.editBooking')}
               subtitle={t('bookingDetail.editBookingDesc')}
+              startContent={<IconEdit className="size-5 shrink-0 text-amber-600" />}
               onOpenChange={() => setIsEditing(false)}
               hasDivider
             />
           }
           content={
             <LayoutContent>
-              <form onSubmit={submitEdit} className="space-y-4">
+              <form id="edit-booking-form" onSubmit={submitEdit} className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <TextInput
-                    label={t('bookingNew.customerName')}
-                    value={editCustomerName}
-                    onChange={setEditCustomerName}
-                    width="100%"
-                    // PII customer — jangan pernah ter-capture analitik/replay.
-                    className="ph-no-capture"
-                  />
-
-                  <PhoneInput
-                    label={t('bookingNew.phone')}
-                    value={editPhone}
-                    onChange={setEditPhone}
-                  />
-
-                  <Selector
-                    label={t('bookingDetail.service')}
-                    placeholder={t('bookingNew.servicePlaceholder')}
-                    options={serviceOptions}
-                    value={editServiceId || null}
-                    onChange={(value) => setEditServiceId(value ?? '')}
-                    hasClear
-                    width="100%"
-                  />
-
-                  <Selector
-                    label={t('bookingNew.staff')}
-                    description={t('bookingNew.staffDesc')}
-                    placeholder={t('bookingNew.staffPlaceholder')}
-                    options={staffOptions}
-                    value={editStaffId || null}
-                    onChange={(value) => setEditStaffId(value ?? '')}
-                    hasClear
-                    width="100%"
-                  />
-
-                  <DateTimeInput
-                    label={t('bookingNew.schedule')}
+                  <DateInput
+                    label={t('common.date')}
                     isRequired
-                    value={editScheduledAt ? (editScheduledAt as ISODateTimeString) : undefined}
-                    onChange={(value) => setEditScheduledAt(value ?? '')}
+                    value={editDate}
+                    onChange={setEditDate}
                     width="100%"
                   />
 
-                  <TextArea
-                    className="sm:col-span-2"
-                    label={t('bookingNew.notes')}
-                    rows={3}
-                    value={editDescription}
-                    onChange={setEditDescription}
+                  <TimeInput
+                    label={t('common.time')}
+                    isRequired
+                    value={editTime}
+                    onChange={setEditTime}
+                    hourFormat="24h"
                     width="100%"
                   />
                 </div>
 
-                {editError && <p role="alert" className="text-sm text-red-600">{editError}</p>}
+                <Selector
+                  label={t('bookingDetail.service')}
+                  placeholder={t('bookingNew.servicePlaceholder')}
+                  options={serviceOptions}
+                  value={editServiceId || null}
+                  onChange={(value) => setEditServiceId(value ?? '')}
+                  hasClear
+                  width="100%"
+                />
 
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    label={t('common.cancel')}
-                    variant="ghost"
-                    isDisabled={editBookingMutation.isPending}
-                    onClick={() => setIsEditing(false)}
-                  />
-                  <Button
-                    label={t('common.save')}
-                    variant="primary"
-                    type="submit"
-                    isLoading={editBookingMutation.isPending}
-                    isDisabled={editBookingMutation.isPending || !editScheduledAt}
-                  />
-                </div>
+                <Selector
+                  label={t('bookingNew.staff')}
+                  description={t('bookingNew.staffDesc')}
+                  placeholder={t('bookingNew.staffPlaceholder')}
+                  options={staffOptions}
+                  value={editStaffId || null}
+                  onChange={(value) => setEditStaffId(value ?? '')}
+                  hasClear
+                  width="100%"
+                />
+
+                <TextInput
+                  label={t('bookingNew.customerName')}
+                  value={editCustomerName}
+                  onChange={setEditCustomerName}
+                  width="100%"
+                  // PII customer — jangan pernah ter-capture analitik/replay.
+                  className="ph-no-capture"
+                />
+
+                <PhoneInput
+                  label={t('bookingNew.phone')}
+                  value={editPhone}
+                  onChange={setEditPhone}
+                />
+
+                <TextArea
+                  label={t('bookingNew.notes')}
+                  placeholder={t('bookingNew.notesPlaceholder')}
+                  rows={3}
+                  value={editDescription}
+                  onChange={setEditDescription}
+                  width="100%"
+                />
+
+                {editError && (
+                  <p
+                    role="alert"
+                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+                  >
+                    {editError}
+                  </p>
+                )}
               </form>
             </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  label={t('common.cancel')}
+                  variant="ghost"
+                  isDisabled={editBookingMutation.isPending}
+                  onClick={() => setIsEditing(false)}
+                />
+                <Button
+                  label={t('common.save')}
+                  variant="primary"
+                  type="submit"
+                  form="edit-booking-form"
+                  isLoading={editBookingMutation.isPending}
+                  isDisabled={editBookingMutation.isPending || !editDate || !editTime}
+                />
+              </div>
+            </LayoutFooter>
           }
         />
       </Dialog>

@@ -1,8 +1,10 @@
-import { Switch, TextInput, TimeInput, type ISOTimeString } from '@astryxdesign/core';
+import { useId } from 'react';
+import { Field, Switch, TextInput, TimeInput, type ISOTimeString } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import type { BusinessHoursEntry, Workspace } from '../../lib/workspace';
 import { WEEKDAY_LABEL_KEYS } from '../../lib/staff';
+import { PhoneInput } from './PhoneInput';
 
 /** Nilai form info bisnis — state lokal, dikonversi saat simpan. */
 export interface BusinessInfoValues {
@@ -97,6 +99,8 @@ export function BusinessInfoForm({
   onChange: (next: BusinessInfoValues) => void;
 }) {
   const { t } = useTranslation();
+  const locationId = useId();
+  const hoursId = useId();
   const set = (patch: Partial<BusinessInfoValues>) => onChange({ ...value, ...patch });
 
   const draft = hoursToDraft(value.businessHours);
@@ -108,84 +112,86 @@ export function BusinessInfoForm({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <TextInput
-          label={t('ws.website')}
-          value={value.website}
-          onChange={(website) => set({ website })}
-          placeholder={t('ws.websitePlaceholder')}
-          width="100%"
-        />
-        <TextInput
-          label={t('ws.phone')}
-          value={value.phone}
-          onChange={(phone) => set({ phone })}
-          placeholder={t('ws.phonePlaceholder')}
-          width="100%"
-        />
-      </div>
+      <TextInput
+        label={t('ws.website')}
+        value={value.website}
+        onChange={(website) => set({ website })}
+        placeholder={t('ws.websitePlaceholder')}
+        width="100%"
+      />
+      <PhoneInput
+        label={t('ws.phone')}
+        value={value.phone}
+        onChange={(phone) => set({ phone })}
+        placeholder={t('ws.phonePlaceholder')}
+      />
 
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-          {t('ws.location')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Field label={t('ws.location')} inputID={locationId}>
+        <div className="space-y-3 pt-1">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextInput
+              label={t('ws.country')}
+              value={value.country}
+              onChange={(country) => set({ country })}
+              placeholder={t('ws.countryPlaceholder')}
+              width="100%"
+            />
+            <TextInput
+              label={t('ws.city')}
+              value={value.city}
+              onChange={(city) => set({ city })}
+              placeholder={t('ws.cityPlaceholder')}
+              width="100%"
+            />
+          </div>
           <TextInput
-            label={t('ws.country')}
-            value={value.country}
-            onChange={(country) => set({ country })}
-            placeholder={t('ws.countryPlaceholder')}
-            width="100%"
-          />
-          <TextInput
-            label={t('ws.city')}
-            value={value.city}
-            onChange={(city) => set({ city })}
-            placeholder={t('ws.cityPlaceholder')}
+            label={t('ws.address')}
+            value={value.address}
+            onChange={(address) => set({ address })}
+            placeholder={t('ws.addressPlaceholder')}
             width="100%"
           />
         </div>
-        <TextInput
-          label={t('ws.address')}
-          value={value.address}
-          onChange={(address) => set({ address })}
-          placeholder={t('ws.addressPlaceholder')}
-          width="100%"
-        />
-      </fieldset>
+      </Field>
 
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-          {t('ws.businessHours')}
-        </legend>
-        <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-          {t('ws.businessHoursDesc')}
-        </p>
-        <div className="space-y-1.5">
+      <Field label={t('ws.businessHours')} description={t('ws.businessHoursDesc')} inputID={hoursId}>
+        <div className="mt-2 divide-y divide-zinc-200/80 dark:divide-zinc-800 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 overflow-hidden">
           {draft.map((entry, day) => {
             const open = entry !== null;
             return (
               <div
                 key={day}
-                className="grid grid-cols-[11rem_1fr] items-center gap-3 rounded-lg px-2 py-1.5"
+                className="flex items-center justify-between gap-3 px-4 py-2.5 transition hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40"
               >
-                <Switch
-                  label={t(WEEKDAY_LABEL_KEYS[day])}
-                  value={open}
-                  onChange={(enabled) =>
-                    setDay(
-                      day,
-                      enabled
-                        ? { dayOfWeek: day, startMinutes: 9 * 60, endMinutes: 17 * 60 }
-                        : null,
-                    )
-                  }
-                  labelPosition="start"
-                />
+                {/* Left: Switch toggle + Day Name */}
+                <div className="flex items-center gap-3 min-w-[7.5rem]">
+                  <Switch
+                    label={t(WEEKDAY_LABEL_KEYS[day])}
+                    isLabelHidden
+                    value={open}
+                    onChange={(enabled) =>
+                      setDay(
+                        day,
+                        enabled
+                          ? { dayOfWeek: day, startMinutes: 9 * 60, endMinutes: 17 * 60 }
+                          : null,
+                      )
+                    }
+                  />
+                  <span
+                    className={`text-sm font-medium transition ${
+                      open
+                        ? 'text-zinc-900 dark:text-zinc-100'
+                        : 'text-zinc-600 dark:text-zinc-400'
+                    }`}
+                  >
+                    {t(WEEKDAY_LABEL_KEYS[day])}
+                  </span>
+                </div>
+
+                {/* Right: Time inputs or Closed badge */}
                 {open ? (
-                  /* Dua TimeInput compact (sm, lebar tetap) — tanpa width="100%"
-                     yang membuat baris meluber ke kanan dan input kedua terpotong. */
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex items-center gap-2 pr-1">
                     <TimeInput
                       label={t('ws.openAt')}
                       isLabelHidden
@@ -195,8 +201,9 @@ export function BusinessInfoForm({
                       onChange={(value) =>
                         setDay(day, { ...entry, startMinutes: toMinutes(value) })
                       }
+                      width="7.5rem"
                     />
-                    <span className="shrink-0 text-xs text-zinc-400">—</span>
+                    <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">—</span>
                     <TimeInput
                       label={t('ws.closeAt')}
                       isLabelHidden
@@ -206,16 +213,21 @@ export function BusinessInfoForm({
                       onChange={(value) =>
                         setDay(day, { ...entry, endMinutes: toMinutes(value) })
                       }
+                      width="7.5rem"
                     />
                   </div>
                 ) : (
-                  <span className="text-xs text-zinc-400">{t('ws.hoursClosed')}</span>
+                  <div className="pr-3">
+                    <span className="text-sm font-medium text-red-500 dark:text-red-400">
+                      {t('ws.hoursClosed')}
+                    </span>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
-      </fieldset>
+      </Field>
     </div>
   );
 }
