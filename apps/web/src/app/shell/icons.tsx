@@ -46,6 +46,7 @@ import {
   Shield,
   Signal,
   SlidersVertical,
+  Sparkles,
   Sun,
   SunMoon,
   Trash2,
@@ -58,6 +59,8 @@ import {
   Wifi,
   X,
 } from 'lucide-react';
+
+export const IconSparkles = Sparkles;
 
 /** Prop tipe ikon — tetap SVGProps agar konsumen (ui.tsx, dll.) tidak berubah. */
 export type IconProps = SVGProps<SVGSVGElement>;

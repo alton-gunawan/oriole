@@ -29,8 +29,9 @@ const { dbState } = vi.hoisted(() => ({
 }));
 
 vi.mock('../db/index.ts', async () => {
-  const { profiles, workspaces } = await import('@oriole/database');
+  const { authUser, profiles, workspaces } = await import('@oriole/database');
   const tableNames = new WeakMap<object, string>();
+  tableNames.set(authUser, 'authUser');
   tableNames.set(profiles, 'profiles');
   tableNames.set(workspaces, 'workspaces');
 
@@ -106,18 +107,25 @@ vi.mock('../db/index.ts', async () => {
           }),
         }),
       }),
-      delete: (table: object) => ({
-        where: () => ({
+      delete: (table: object) => {
+        const name = tableNames.get(table) ?? 'unknown';
+        const deleteBuilder = {
+          where: () => deleteBuilder,
           returning: async () => {
-            const name = tableNames.get(table) ?? 'unknown';
             const rows = dbState.tables.get(name) ?? [];
             if (rows.length === 0) return [];
             const id = (rows[0] as { id: string }).id;
             rows.length = 0;
             return [{ id }];
           },
-        }),
-      }),
+          then(resolve: (val: unknown) => unknown) {
+            const rows = dbState.tables.get(name) ?? [];
+            rows.length = 0;
+            return Promise.resolve(resolve([]));
+          },
+        };
+        return deleteBuilder;
+      },
     },
   };
 });
@@ -709,3 +717,123 @@ describe('DELETE /api/me/workspaces/:id — soft delete bisnis', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET & POST /api/me/onboarding', () => {
+  it('GET /api/me/onboarding mengembalikan status default bila belum ada profil', async () => {
+    dbState.tables.set('profiles', []);
+    dbState.tables.set('workspaces', []);
+
+    const res = await app.request('/api/me/onboarding', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { completed: boolean; step: number; workspace: unknown };
+    expect(body.completed).toBe(false);
+    expect(body.step).toBe(1);
+    expect(body.workspace).toBeNull();
+  });
+
+  it('user lama dengan workspace (belum pernah sentuh wizard) dilewati onboarding', async () => {
+    // Simulasi user yang punya workspace SEBELUM fitur onboarding: profil
+    // belum ada / step masih default 1 → dianggap selesai, bukan dipaksa
+    // masuk wizard lagi.
+    dbState.tables.set('profiles', []);
+    dbState.tables.set('workspaces', [
+      { id: '22222222-2222-4222-8222-222222222222', userId: 'test-user-1' },
+    ]);
+
+    const res = await app.request('/api/me/onboarding', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { completed: boolean; step: number };
+    expect(body.completed).toBe(true);
+  });
+
+  it('user baru yang sedang di tengah wizard (step > 1) DILANJUTKAN, bukan dianggap selesai', async () => {
+    // Workspace sudah dibuat di step 1, tapi wizard belum selesai → harus
+    // kembali ke langkah tersimpan, bukan dilempar ke app dengan bisnis kosong.
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', onboardingCompleted: false, onboardingStep: 3 },
+    ]);
+    dbState.tables.set('workspaces', [
+      { id: '22222222-2222-4222-8222-222222222222', userId: 'test-user-1' },
+    ]);
+
+    const res = await app.request('/api/me/onboarding', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { completed: boolean; step: number };
+    expect(body.completed).toBe(false);
+    expect(body.step).toBe(3);
+  });
+
+  it('GET /api/me mengembalikan onboardingCompleted false untuk user di tengah wizard', async () => {
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', onboardingCompleted: false, onboardingStep: 2 },
+    ]);
+    dbState.tables.set('workspaces', [
+      { id: '22222222-2222-4222-8222-222222222222', userId: 'test-user-1' },
+    ]);
+
+    const res = await app.request('/api/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { onboardingCompleted: boolean };
+    expect(body.onboardingCompleted).toBe(false);
+  });
+
+  it('POST /api/me/onboarding menyimpan progres langkah onboarding', async () => {
+    dbState.tables.set('profiles', []);
+
+    const res = await app.request('/api/me/onboarding', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 3, completed: false }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; step: number; completed: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.step).toBe(3);
+    expect(body.completed).toBe(false);
+  });
+
+  it('POST /api/me/onboarding menyelesaikan onboarding', async () => {
+    dbState.tables.set('profiles', []);
+
+    const res = await app.request('/api/me/onboarding', {
+      method: 'POST',
+      headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: true }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; completed: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.completed).toBe(true);
+  });
+});
+
+describe('DELETE /api/me — hapus akun pengguna', () => {
+  it('tanpa auth token → 401', async () => {
+    const res = await app.request('/api/me', { method: 'DELETE' });
+    expect(res.status).toBe(401);
+  });
+
+  it('dengan auth token → berhasil menghapus data profil dan workspace', async () => {
+    dbState.tables.set('profiles', [
+      { id: 'test-user-1', displayName: 'Test User' },
+    ]);
+    dbState.tables.set('workspaces', [
+      { id: 'ws-1', userId: 'test-user-1', name: 'Business 1' },
+      { id: 'ws-2', userId: 'test-user-1', name: 'Business 2' },
+    ]);
+
+    const res = await app.request('/api/me', {
+      method: 'DELETE',
+      headers: AUTH_HEADER,
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+    expect(dbState.tables.get('profiles')).toHaveLength(0);
+    expect(dbState.tables.get('workspaces')).toHaveLength(0);
+  });
+});
+

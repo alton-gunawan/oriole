@@ -250,7 +250,7 @@ const BOOKING_FORM_FIELDS: BookingFormField[] = [
  * diawali kata kunci judul (layanan/service/jenis/perawatan/kelas/paket/…)
  * agar mapping ekstraksi booking tetap bekerja tanpa modifikasi.
  */
-export const INDUSTRY_FORM_PROFILES: Record<Industry, IndustryFormProfile> = {
+export const INDUSTRY_FORM_PROFILES: Partial<Record<Industry, IndustryFormProfile>> & { other: IndustryFormProfile } = {
   clinic: {
     serviceLabel: 'Jenis Pemeriksaan',
     extraFields: [{ label: 'Poli / Dokter', type: 'INPUT_TEXT', required: false }],
@@ -277,9 +277,8 @@ export const INDUSTRY_FORM_PROFILES: Record<Industry, IndustryFormProfile> = {
 /** Field booking untuk sebuah industri — base + profil industri (fallback ke other). */
 function bookingFormFieldsFor(industry?: string | null): BookingFormField[] {
   const profile =
-    industry && industry in INDUSTRY_FORM_PROFILES
-      ? INDUSTRY_FORM_PROFILES[industry as Industry]
-      : INDUSTRY_FORM_PROFILES.other;
+    (industry && INDUSTRY_FORM_PROFILES[industry as Industry]) ||
+    INDUSTRY_FORM_PROFILES.other;
   const [nama, phone, service, date, time, notes] = BOOKING_FORM_FIELDS;
   return [
     nama,

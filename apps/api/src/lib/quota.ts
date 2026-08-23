@@ -4,12 +4,11 @@ import { calleCalls, subscriptions } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { extractCallSeconds } from './calls.ts';
-import { ACTIVE_SUBSCRIPTION_STATUSES, PLANS, planFromPriceId, type PlanId } from './plans.ts';
+import { ACTIVE_SUBSCRIPTION_STATUSES, planFromPriceId, type PlanId } from './plans.ts';
 
 /**
  * Paket dari status subscription + Paddle price ID (pure — mudah diuji):
- * subscription aktif/trialing → paket sesuai price ID (Business bila price
- * ID-nya terdaftar di env, selain itu 'pro'); tanpa subscription → 'free'.
+ * subscription aktif/trialing → 'pro'; tanpa subscription → 'free'.
  */
 export function planFromSubscription(
   status: string | null | undefined,
@@ -59,32 +58,40 @@ export type QuotaCheck =
   | { ok: false; status: ContentfulStatusCode; message: string };
 
 /**
- * Periksa kuota bulanan (jumlah panggilan DAN total menit) user terhadap
- * paketnya — mencegah abuse biaya CALL-E tanpa langganan aktif.
- *
- * Catatan: check-then-act tidak atomik (dua request konkuren bisa lolos
- * bersamaan); pemanggil (auto-call Inngest) serial per booking lewat guard
- * call-in-flight di placeBookingCall. Untuk penegakan atomik perlu tabel
- * counter + transaksi.
+ * Periksa hak panggilan user terhadap paketnya:
+ * - Membutuhkan langganan aktif / masa trial aktif ($19/bulan).
+ * - Selama masa trial 7 hari: pengguna mendapatkan gratis $5 kredit panggilan suara (~2000 detik / ~33 menit).
+ * - Setelah masa aktif berbayar: panggilan suara tanpa batas kuota dengan model bayar sesuai pemakaian (pay as you use).
  */
 export async function checkCallQuota(userId: string): Promise<QuotaCheck> {
-  const plan = await resolvePlanId(userId);
-  const usage = await getMonthlyUsage(userId);
-  const planInfo = PLANS[plan];
+  const [latest] = await db
+    .select({ status: subscriptions.status, planId: subscriptions.planId })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .orderBy(desc(subscriptions.createdAt))
+    .limit(1);
 
-  if (usage.calls >= planInfo.callsPerMonth) {
+  const plan = planFromSubscription(latest?.status, latest?.planId);
+  if (plan === 'free') {
     return {
       ok: false,
-      status: 429,
-      message: `Kuota panggilan bulanan paket ${planInfo.name} (${planInfo.callsPerMonth} panggilan) sudah tercapai. Tingkatkan paket untuk melanjutkan.`,
+      status: 402,
+      message: 'Langganan aktif ($19/bulan) diperlukan untuk melakukan panggilan AI. Silakan mulai trial 7 hari gratis (termasuk gratis $5 kredit suara) untuk melanjutkan.',
     };
   }
-  if (usage.seconds >= planInfo.minutesPerMonth * 60) {
-    return {
-      ok: false,
-      status: 429,
-      message: `Kuota menit bicara bulanan paket ${planInfo.name} (${planInfo.minutesPerMonth} menit) sudah tercapai. Tingkatkan paket untuk melanjutkan.`,
-    };
+
+  // Jika status masih dalam masa trial (trialing), batasi pemakaian sesuai $5 kredit suara (~2000 detik).
+  if (latest?.status === 'trialing') {
+    const usage = await getMonthlyUsage(userId);
+    const maxTrialSeconds = 2000; // $5 kredit @ ~$0.15/menit (~33.3 menit)
+    if (usage.seconds >= maxTrialSeconds) {
+      return {
+        ok: false,
+        status: 402,
+        message: 'Kredit panggilan suara gratis $5 masa trial sudah terpakai. Panggilan berikutnya akan diproses setelah masa trial selesai atau saat langganan aktif.',
+      };
+    }
   }
+
   return { ok: true };
 }

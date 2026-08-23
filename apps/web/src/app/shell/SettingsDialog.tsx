@@ -22,6 +22,7 @@ import { applyAnalyticsConsent, isAnalyticsEnabled } from '../../lib/analytics';
 import { browserTimezone, TIMEZONE_CURATED, timezoneLabel } from '../../lib/timezones';
 import { callLanguageLabel, VOICE_OPTIONS, voiceLabel } from '../../lib/voice';
 import type { Workspace } from '../../lib/workspace';
+import { deleteUserAccount } from '../../lib/session';
 import { useConsentStore } from '../../stores/consent';
 import { useSessionStore } from '../../stores/session';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -318,12 +319,21 @@ export function SettingsDialog({
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // ── Hapus akun pengguna (permanen) ──
+  const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
+
   // Segarkan form setiap dialog dibuka (nama bisa berubah dari luar),
   // bersihkan error lama, dan kembalikan ke bagian Profil.
   useEffect(() => {
     if (isOpen) {
       setName(user?.name ?? '');
       setError(null);
+      setDeleteError(null);
+      setDeleteUserError(null);
+      setConfirmDeleteUserOpen(false);
+      setConfirmDeleteId(null);
       setActiveSection('profile');
       setPrefLanguage((i18n.resolvedLanguage as SupportedLocale) ?? 'en');
       setPrefTimezone(user?.timezone ?? null);
@@ -339,7 +349,21 @@ export function SettingsDialog({
   }, [isOpen, user?.name, user?.timezone, workspaces, activeWorkspaceId]);
 
   const close = () => {
-    if (!isSaving && !isDeleting) onOpenChange(false);
+    if (!isSaving && !isDeleting && !isDeletingUser) onOpenChange(false);
+  };
+
+  const handleDeleteUser = async () => {
+    setDeleteUserError(null);
+    setIsDeletingUser(true);
+    try {
+      await deleteUserAccount();
+      setConfirmDeleteUserOpen(false);
+      onOpenChange(false);
+    } catch (err) {
+      setDeleteUserError(errorMessage(err, t, 'errors.deleteAccount'));
+    } finally {
+      setIsDeletingUser(false);
+    }
   };
 
   const deleteWorkspace = async (workspaceId: string) => {
@@ -496,6 +520,35 @@ export function SettingsDialog({
                       isDisabled
                       width="100%"
                     />
+
+                    {/* Danger zone — Hapus Akun */}
+                    <div>
+                      <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('settings.dangerZone')}
+                      </p>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="mb-1.5 text-base font-medium text-zinc-700 dark:text-zinc-300">
+                              {t('settings.deleteAccountTitle')}
+                            </p>
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                              {t('settings.deleteAccountDesc')}
+                            </p>
+                          </div>
+                          <Button
+                            label={t('settings.deleteAccountCta')}
+                            variant="destructive"
+                            size="sm"
+                            icon={<IconTrash className="size-3.5" />}
+                            onClick={() => {
+                              setDeleteUserError(null);
+                              setConfirmDeleteUserOpen(true);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -820,6 +873,42 @@ export function SettingsDialog({
             : undefined
         }
         width={420}
+      />
+
+      {/* Konfirmasi hapus akun pengguna — memerlukan konfirmasi email / nama akun */}
+      <ConfirmDialog
+        isOpen={confirmDeleteUserOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmDeleteUserOpen(false);
+            setDeleteUserError(null);
+          }
+        }}
+        title={t('settings.deleteAccountConfirmTitle')}
+        description={
+          <div>
+            <p>
+              <Trans
+                i18nKey="settings.deleteAccountConfirmQuestion"
+                components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
+              />
+            </p>
+            {deleteUserError && (
+              <p role="alert" className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
+                {deleteUserError}
+              </p>
+            )}
+          </div>
+        }
+        cancelLabel={t('common.cancel')}
+        actionLabel={t('settings.deleteAccountConfirmAction')}
+        actionVariant="destructive"
+        isActionLoading={isDeletingUser}
+        onAction={() => {
+          void handleDeleteUser();
+        }}
+        confirmText={user?.email || user?.name || undefined}
+        width={440}
       />
     </>
   );

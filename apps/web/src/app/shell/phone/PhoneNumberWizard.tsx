@@ -97,6 +97,7 @@ export function PhoneNumberWizardDialog({
   initialState,
   existingNumbers,
   onComplete,
+  onFinished,
 }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -107,6 +108,9 @@ export function PhoneNumberWizardDialog({
    *  jalur "use existing" tanpa membeli nomor baru. */
   existingNumbers?: VapiPhoneNumberOption[] | null;
   onComplete: () => void;
+  /** Dipanggil setelah nomor berhasil dikonfirmasi aktif (bukan saat
+   *  dibatalkan/ditutup) — dipakai onboarding untuk melanjutkan step. */
+  onFinished?: () => void;
 }) {
   const { t } = useTranslation();
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -327,6 +331,7 @@ export function PhoneNumberWizardDialog({
       // Tutup memicu closeWithRelease — finishedRef mencegah cancel-provision
       // dan onComplete() dipanggil sekali di sana.
       onOpenChange(false);
+      onFinished?.();
     } catch (err) {
       setError(errorMessage(err, t, 'phoneNumber.finishFailed'));
     } finally {

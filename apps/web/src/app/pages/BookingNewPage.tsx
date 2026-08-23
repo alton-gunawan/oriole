@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,6 +14,7 @@ import {
   Switch,
   TextArea,
   TextInput,
+  useToast,
   type ISODateTimeString,
 } from '@astryxdesign/core';
 
@@ -21,9 +22,9 @@ import { ApiError, apiFetch } from '../../lib/api';
 import { errorMessage } from '../../lib/errors';
 import type {
   BookingCreateResponse,
-  BookingsListResponse,
   RecurrenceRule,
 } from '../../lib/bookings';
+import type { ContactsListResponse } from '../../lib/contacts';
 import type { StaffListResponse } from '../../lib/staff';
 import type { ServiceRecord, ServicesListResponse } from '../../lib/services';
 import { useSessionStore } from '../../stores/session';
@@ -40,6 +41,8 @@ interface ContactSuggestion {
 
 export function BookingNewPage() {
   const { t } = useTranslation();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
@@ -99,30 +102,27 @@ export function BookingNewPage() {
   const [isPickerOpen, setPickerOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
 
-  // Data kontak dimuat malas (lazy) — hanya saat dialog dibuka.
+  // Data kontak diprefetch di background & dicache agar dialog Choose from customers terbuka instan (0ms).
   const {
     data: contactsPage,
     isPending: isContactsLoading,
     error: contactsError,
   } = useQuery({
-    queryKey: ['bookings-contacts', activeWorkspaceId],
-    queryFn: () => apiFetch<BookingsListResponse>('/bookings?limit=200'),
-    enabled: isPickerOpen,
+    queryKey: ['contacts', activeWorkspaceId],
+    queryFn: () => apiFetch<ContactsListResponse>('/contacts?limit=200'),
+    enabled: Boolean(activeWorkspaceId),
+    staleTime: 60_000,
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
 
-  /** Kontak unik per nomor — urutan terbaru (API sorted desc(scheduledAt)) menang. */
+  /** Kontak unik dari direktori kontak workspace. */
   const contacts = useMemo<ContactSuggestion[]>(() => {
-    const seen = new Set<string>();
-    const list: ContactSuggestion[] = [];
-    for (const booking of contactsPage?.bookings ?? []) {
-      if (!booking.phone) continue;
-      const key = booking.phone.replace(/\D/g, '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      list.push({ name: booking.customerName, phone: booking.phone });
-    }
-    return list;
+    return (
+      contactsPage?.contacts.map((contact) => ({
+        name: contact.name,
+        phone: contact.phone,
+      })) ?? []
+    );
   }, [contactsPage]);
 
   const filteredContacts = useMemo(() => {
@@ -178,9 +178,29 @@ export function BookingNewPage() {
             isRecurring && (recurrence.count ?? 1) > 0 ? recurrence : undefined,
         }),
       });
+      toast({
+        body: t('bookingNew.bookingCreated'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
+      // Invalidasi cache agar daftar booking, kalender, dan kontak langsung terupdate tanpa perlu refresh browser.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['bookings-calendar', activeWorkspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['contacts', activeWorkspaceId] }),
+      ]);
+      queryClient.setQueryData(['booking', activeWorkspaceId, response.booking.id], response);
       navigate(`/app/bookings/${response.booking.id}`, { replace: true });
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.createBooking'));
+      const msg = errorMessage(err, t, 'errors.createBooking');
+      setError(msg);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -248,30 +268,40 @@ export function BookingNewPage() {
               )}
             </div>
 
-            <TextInput
-              label={t('bookingNew.customerName')}
-              value={customerName}
-              onChange={setCustomerName}
-              placeholder={t('bookingNew.customerPlaceholder')}
-              width="100%"
-            />
-
             <div>
-              <PhoneInput
-                label={t('bookingNew.phone')}
-                description={t('bookingNew.phoneDesc')}
-                value={phone}
-                onChange={setPhone}
+              <div className="mb-1.5 flex items-center justify-between">
+                <label
+                  htmlFor="booking-customer-name"
+                  className="text-base font-semibold text-blue-600 dark:text-blue-400"
+                >
+                  {t('bookingNew.customerName')}
+                </label>
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium !text-amber-700 transition hover:bg-amber-50 hover:!text-amber-800 dark:!text-amber-400 dark:hover:bg-amber-950/40 dark:hover:!text-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 cursor-pointer"
+                >
+                  <IconUsers className="size-3.5" />
+                  {t('bookingNew.pickContact')}
+                </button>
+              </div>
+              <TextInput
+                id="booking-customer-name"
+                label={t('bookingNew.customerName')}
+                isLabelHidden
+                value={customerName}
+                onChange={setCustomerName}
+                placeholder={t('bookingNew.customerPlaceholder')}
+                width="100%"
               />
-              <button
-                type="button"
-                onClick={openPicker}
-                className="mt-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-50 hover:text-amber-800 dark:hover:bg-amber-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-              >
-                <IconUsers className="size-3.5" />
-                {t('bookingNew.pickContact')}
-              </button>
             </div>
+
+            <PhoneInput
+              label={t('bookingNew.phone')}
+              description={t('bookingNew.phoneDesc')}
+              value={phone}
+              onChange={setPhone}
+            />
 
             <DateTimeInput
               className="sm:col-span-2"

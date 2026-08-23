@@ -9,7 +9,6 @@ import {
   DateRangeInput,
   DropdownMenu,
   DropdownMenuItem,
-  EmptyState,
   Pagination,
   Selector,
   SelectorOption,
@@ -59,7 +58,7 @@ import {
   IconUsers,
   IconX,
 } from '../shell/icons';
-import { Card, PageHeader, ReloadMenuButton } from '../shell/ui';
+import { Card, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
 
 /** Warna status → variant Badge Astryx (theme-neutral). */
 const STATUS_BADGE: Record<BookingRecord['status'], BadgeVariant> = {
@@ -648,7 +647,7 @@ export function BookingsPage() {
             target="_blank"
             rel="noreferrer"
             title={t('bookings.openStaffDetail')}
-            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-zinc-600 transition hover:text-amber-700 hover:underline dark:text-zinc-400 dark:hover:text-amber-400"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-base text-zinc-600 transition hover:text-amber-700 hover:underline dark:text-zinc-400 dark:hover:text-amber-400"
           >
             <IconUsers className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 truncate">{staffName}</span>
@@ -685,7 +684,7 @@ export function BookingsPage() {
             target="_blank"
             rel="noreferrer"
             title={t('bookings.openContactDetail')}
-            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-blue-600 transition hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-base text-blue-600 transition hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
           >
             <span className="truncate">
               {booking.customerName ?? t('common.noName')} · {booking.phone ?? t('common.noPhone')}
@@ -743,7 +742,7 @@ export function BookingsPage() {
 
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
       <PageHeader
         title={t('bookings.title')}
         description={t('bookings.description')}
@@ -770,7 +769,7 @@ export function BookingsPage() {
         </Link>
       </PageHeader>
 
-      <div className="space-y-4">
+      <div className="flex flex-1 flex-col space-y-4">
         {/* Filter bar — komponen Astryx (TextInput + Typeahead + Selector + DateInput) */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
@@ -865,9 +864,9 @@ export function BookingsPage() {
 
       {/* Konten tabel — daftar booking dengan filter. Kalender kini berada di
           halaman Calendar (/app/calendar). */}
-      <>
+      <div className="flex flex-1 flex-col">
           {showError && (
-            <Card className="flex flex-col items-center gap-4 p-10 text-center">
+            <Card className="flex flex-1 min-h-[460px] flex-col items-center justify-center gap-4 p-10 text-center">
               <span className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-500 dark:bg-red-950/50 dark:text-red-400">
                 <IconAlertTriangle className="size-6" />
               </span>
@@ -912,11 +911,12 @@ export function BookingsPage() {
             <>
               {data.bookings.length === 0 ? (
                 <EmptyState
-                  icon={<IconCalendar className="size-6" />}
+                  icon={IconCalendar}
                   title={hasFilters ? t('bookings.emptyFilteredTitle') : t('bookings.emptyTitle')}
                   description={
                     hasFilters ? t('bookings.emptyFilteredDesc') : t('bookings.emptyDesc')
                   }
+                  className="flex-1 min-h-[500px]"
                   actions={
                     hasFilters ? undefined : (
                       <Link
@@ -1066,7 +1066,7 @@ export function BookingsPage() {
               )}
             </>
           )}
-        </>
+        </div>
       </div>
     </div>
   );

@@ -17,6 +17,8 @@ import {
   TextInput,
   pixel,
   proportional,
+  useTableSelection,
+  useTableSelectionState,
   type TableColumn,
 } from '@astryxdesign/core';
 
@@ -38,6 +40,7 @@ import {
   IconSearch,
   IconTrash,
   IconUsers,
+  IconX,
 } from '../shell/icons';
 import { PhoneInput } from '../components/PhoneInput';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
@@ -294,6 +297,7 @@ export function ContactsPage() {
       setDeleteTarget(null);
       setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ['contacts', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
     },
     onError: (err) => {
       setDeleteTarget(null);
@@ -301,8 +305,56 @@ export function ContactsPage() {
     },
   });
 
+  // ── Seleksi baris (useTableSelection) — untuk aksi bulk (mis. hapus masal) ──
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const resetSelection = () => setSelectedKeys(new Set());
+
+  // Reset seleksi saat filter berubah
+  useEffect(() => {
+    resetSelection();
+  }, [debouncedFilters]);
+
+  // Baris di halaman aktif — select-all bekerja atas array ini (mirror BookingsPage).
+  const visibleRows = useMemo<ContactTableRow[]>(
+    () => (contacts as ContactTableRow[]),
+    [contacts],
+  );
+
+  const { selectionConfig } = useTableSelectionState({
+    data: visibleRows,
+    idKey: 'id',
+    selectedKeys,
+    setSelectedKeys,
+  });
+
+  // getRowLabel ada di config plugin (bukan state) — label checkbox per baris.
+  const selectionPlugin = useTableSelection({
+    ...selectionConfig,
+    getRowLabel: (contact) => contact.name,
+  });
+
+  // ── Aksi bulk (seleksi baris) — DELETE per id (mirror BookingsPage / StaffPage) ──
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      Promise.all(ids.map((id) => apiFetch(`/contacts/${id}`, { method: 'DELETE' }))),
+    onMutate: () => setBulkError(null),
+    onSuccess: () => {
+      setBulkDeleteIds(null);
+      resetSelection();
+      queryClient.invalidateQueries({ queryKey: ['contacts', activeWorkspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['bookings', activeWorkspaceId] });
+    },
+    onError: (err) => {
+      setBulkDeleteIds(null);
+      setBulkError(errorMessage(err, t, 'errors.deleteContact'));
+    },
+  });
+
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
       <PageHeader
         title={t('contacts.title')}
         description={t('contacts.description')}
@@ -320,7 +372,7 @@ export function ContactsPage() {
         </button>
       </PageHeader>
 
-      <div className="space-y-4">
+      <div className="flex flex-1 flex-col space-y-4">
         {/* Filter bar — mengikuti pola Bookings: tiap filter di kolomnya sendiri (flex-1). */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
@@ -412,7 +464,7 @@ export function ContactsPage() {
       )}
 
       {!isPending && !isError && data && (
-        <>
+        <div className="flex flex-1 flex-col">
           {contacts.length === 0 ? (
             <EmptyState
               icon={IconUsers}
@@ -420,6 +472,7 @@ export function ContactsPage() {
               description={
                 hasFilters ? t('contacts.emptySearchDesc') : t('contacts.emptyDesc')
               }
+              className="flex-1 min-h-[500px]"
               action={
                 hasFilters
                   ? { label: t('contacts.resetFilter'), onClick: resetFilters }
@@ -428,6 +481,51 @@ export function ContactsPage() {
             />
           ) : (
             <>
+              {/* Floating bottom center row selection toolbar (mirror BookingsPage) */}
+              {selectedKeys.size > 0 && (
+                <div
+                  role="region"
+                  aria-label={t('contacts.selectedCount', { count: selectedKeys.size })}
+                  className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-zinc-200/90 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5 duration-200 dark:border-zinc-700/90 dark:bg-zinc-900/95 max-w-[calc(100vw-2rem)]"
+                >
+                  {bulkError && (
+                    <div
+                      role="alert"
+                      className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 shadow-md dark:border-red-900/60 dark:bg-red-950/90 dark:text-red-400"
+                    >
+                      {bulkError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 border-r border-zinc-200 pr-3 dark:border-zinc-700">
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                      {t('contacts.selectedCount', { count: selectedKeys.size })}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      label={t('common.delete')}
+                      variant="destructive"
+                      size="sm"
+                      isDisabled={bulkDeleteMutation.isPending}
+                      isLoading={bulkDeleteMutation.isPending}
+                      onClick={() => setBulkDeleteIds([...selectedKeys])}
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('contacts.clearSelection')}
+                      title={t('contacts.clearSelection')}
+                      disabled={bulkDeleteMutation.isPending}
+                      onClick={resetSelection}
+                      className="ml-1 inline-flex size-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <IconX className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Transparan: tabel tanpa border/background pembungkus; radius 0.
                   Border horizontal atas & bawah membingkai tabel. Footer (jumlah
                   & Load more) dirender manual DI LUAR blok berbordernya — pola
@@ -449,13 +547,16 @@ export function ContactsPage() {
                   }`}
                 >
                   <Table
-                    data={contacts as ContactTableRow[]}
+                    data={visibleRows}
                     columns={contactColumns}
                     idKey="id"
                     density="balanced"
                     dividers="none"
                     hasHover
                     textOverflow="truncate"
+                    plugins={{
+                      selection: selectionPlugin,
+                    }}
                   />
                 </div>
               </Card>
@@ -484,7 +585,7 @@ export function ContactsPage() {
               </div>
             </>
           )}
-        </>
+        </div>
       )}
       </div>
 
@@ -588,6 +689,24 @@ export function ContactsPage() {
         isActionLoading={deleteMutation.isPending}
         onAction={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
+        width={420}
+      />
+
+      {/* Konfirmasi hapus bulk (seleksi baris) */}
+      <ConfirmDialog
+        isOpen={bulkDeleteIds !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkDeleteIds(null);
+        }}
+        title={t('contacts.bulkDeleteTitle', { count: bulkDeleteIds?.length ?? 0 })}
+        description={t('contacts.bulkDeleteDesc', { count: bulkDeleteIds?.length ?? 0 })}
+        cancelLabel={t('common.cancel')}
+        actionLabel={t('common.delete')}
+        actionVariant="destructive"
+        isActionLoading={bulkDeleteMutation.isPending}
+        onAction={() => {
+          if (bulkDeleteIds) bulkDeleteMutation.mutate(bulkDeleteIds);
         }}
         width={420}
       />

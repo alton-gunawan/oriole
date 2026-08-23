@@ -54,7 +54,7 @@ export function DashboardPage() {
   // Semua angka dashboard kini data riil per workspace (X-Workspace-Id header
   // dikirim apiFetch dari store). Query key memuat workspace → saat pindah
   // bisnis, data refetch otomatis dan semua kartu ikut berubah.
-  const { data: overview } = useQuery({
+  const { data: overview, isLoading: isOverviewLoading } = useQuery({
     queryKey: ['analytics-overview', activeWorkspaceId],
     queryFn: () => apiFetch<AnalyticsOverview>('/analytics/overview'),
     enabled: Boolean(activeWorkspaceId),
@@ -62,7 +62,7 @@ export function DashboardPage() {
   });
 
   // Booking terbaru — daftar riil (bukan EmptyState statis).
-  const { data: recentData, isPending: isRecentPending } = useQuery({
+  const { data: recentData, isLoading: isRecentLoading } = useQuery({
     queryKey: ['dashboard-recent-bookings', activeWorkspaceId],
     queryFn: () => {
       const params = new URLSearchParams({ page: '1', pageSize: '5' });
@@ -73,12 +73,13 @@ export function DashboardPage() {
   });
   const recentBookings = recentData?.bookings ?? [];
   const hasRealBookings = recentData !== undefined && recentBookings.length > 0;
+  const isRecentPending = Boolean(activeWorkspaceId) && isRecentLoading;
 
   const summary = overview?.summary;
-  const bookingsValue = summary === undefined ? '…' : String(summary.bookingsTotal);
-  const contactsValue = summary === undefined ? '…' : String(summary.contactsTotal);
-  const callsValue = summary === undefined ? '…' : String(summary.callsThisMonth);
-  const attentionValue = summary === undefined ? '…' : String(summary.needsAttention);
+  const bookingsValue = isOverviewLoading ? '…' : String(summary?.bookingsTotal ?? 0);
+  const contactsValue = isOverviewLoading ? '…' : String(summary?.contactsTotal ?? 0);
+  const callsValue = isOverviewLoading ? '…' : String(summary?.callsThisMonth ?? 0);
+  const attentionValue = isOverviewLoading ? '…' : String(summary?.needsAttention ?? 0);
 
     return (
     <div className="space-y-8">

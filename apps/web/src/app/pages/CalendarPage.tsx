@@ -279,9 +279,9 @@ export function CalendarPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header halaman — padding horizontal dan max-width sama persis dengan
-          halaman Bookings & Customers (max-w-6xl mx-auto px-4 sm:px-6 lg:px-8). */}
-      <div className="w-full max-w-6xl mx-auto px-4 pb-4 pt-8 sm:px-6 lg:px-8 space-y-4">
+      {/* Header halaman — padding horizontal dan spacing selaras dengan
+          halaman Bookings, Customers, Services, dan Staff (w-full px-4 pb-4 pt-8 sm:px-6 lg:px-8 space-y-6). */}
+      <div className="w-full px-4 pb-4 pt-8 sm:px-6 lg:px-8 space-y-6">
         <PageHeader
           title={t('calendar.title')}
           status={

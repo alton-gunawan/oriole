@@ -360,9 +360,10 @@ describe('buildTallyBookingFormBlocks', () => {
   });
 
   it('setiap industri di INDUSTRY_FORM_PROFILES punya profil valid', () => {
-    for (const industry of Object.keys(INDUSTRY_FORM_PROFILES)) {
-      const profile = INDUSTRY_FORM_PROFILES[industry as keyof typeof INDUSTRY_FORM_PROFILES];
-      expect(profile.serviceLabel.length).toBeGreaterThan(0);
+    for (const profile of Object.values(INDUSTRY_FORM_PROFILES)) {
+      if (profile) {
+        expect(profile.serviceLabel.length).toBeGreaterThan(0);
+      }
     }
   });
 });

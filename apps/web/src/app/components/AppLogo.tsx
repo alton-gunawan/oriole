@@ -18,3 +18,31 @@ export function AppLogo({ className = '', alt = 'Oriole' }: { className?: string
     />
   );
 }
+
+/**
+ * Brandmark lengkap (Logo icon badge + teks judul nama brand).
+ */
+export function AppBrand({
+  className = '',
+  iconSize = 'size-11',
+  textSize = 'text-2xl',
+  title = 'Oriole',
+}: {
+  className?: string;
+  iconSize?: string;
+  textSize?: string;
+  title?: string;
+}) {
+  return (
+    <div className={`inline-flex items-center gap-3.5 ${className}`}>
+      <span
+        className={`flex ${iconSize} shrink-0 items-center justify-center overflow-hidden rounded-xl bg-amber-500 shadow-md shadow-amber-500/20 ring-1 ring-white/10`}
+      >
+        <AppLogo />
+      </span>
+      <span className={`${textSize} font-bold tracking-tight text-white`}>
+        {title}
+      </span>
+    </div>
+  );
+}

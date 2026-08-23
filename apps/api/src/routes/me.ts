@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { WORKSPACE_TEMPLATE_CATEGORY_IDS, industryForTemplateCategory } from '@oriole/config';
 import { INDUSTRIES } from '@oriole/call-goals';
-import { bookings, conversations, profiles, workspaces } from '@oriole/database';
+import { authUser, bookings, conversations, profiles, workspaces } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { emitVapiAssistantSync } from '../lib/vapi-assistant-sync.ts';
@@ -109,6 +109,26 @@ const workspacePatchSchema = workspaceSchema.partial();
 
 const workspaceIdParamSchema = z.object({ id: z.string().uuid() });
 
+/**
+ * Status selesai onboarding:
+ * - Flag eksplisit `onboardingCompleted` = true → selesai.
+ * - User lama yang sudah punya workspace SEBELUM fitur onboarding (belum
+ *   pernah menyentuh wizard: profil belum ada / step masih 1) → dilewati
+ *   wizard, dianggap selesai.
+ * - User baru yang sedang di tengah wizard (step > 1) → BELUM selesai;
+ *   dilanjutkan dari langkah tersimpan, bukan dilempar ke app dengan bisnis
+ *   kosong (belum ada layanan/staf/nomor/trial).
+ */
+function isOnboardingCompleted(opts: {
+  onboardingCompleted: boolean;
+  onboardingStep: number;
+  hasWorkspace: boolean;
+}): boolean {
+  if (opts.onboardingCompleted) return true;
+  if (opts.hasWorkspace && opts.onboardingStep <= 1) return true;
+  return false;
+}
+
 /** Profil user (tabel `profiles`) — nama tampilan + preferensi bahasa/zona waktu. */
 const profilePatchSchema = z.object({
   name: z.string().trim().min(1, 'Nama tidak boleh kosong').max(80, 'Nama maksimal 80 karakter'),
@@ -128,7 +148,13 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
     const userId = c.get('userId');
     const [profile] = await db
-      .select({ displayName: profiles.displayName, language: profiles.language, timezone: profiles.timezone })
+      .select({
+        displayName: profiles.displayName,
+        language: profiles.language,
+        timezone: profiles.timezone,
+        onboardingCompleted: profiles.onboardingCompleted,
+        onboardingStep: profiles.onboardingStep,
+      })
       .from(profiles)
       .where(eq(profiles.id, userId))
       .limit(1);
@@ -149,9 +175,86 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       // sebagai default bahasa/zona waktu saat sesi dipulihkan).
       language: profile?.language ?? null,
       timezone: profile?.timezone ?? null,
+      onboardingCompleted: isOnboardingCompleted({
+        onboardingCompleted: profile?.onboardingCompleted ?? false,
+        onboardingStep: profile?.onboardingStep ?? 1,
+        hasWorkspace: userWorkspaces.length > 0,
+      }),
+      onboardingStep: profile?.onboardingStep ?? 1,
       workspaces: userWorkspaces,
     });
   })
+  /* ── Status & progres onboarding pengguna ── */
+  .get('/onboarding', requireAuth, async (c) => {
+    const userId = c.get('userId');
+    const [profile] = await db
+      .select({
+        onboardingCompleted: profiles.onboardingCompleted,
+        onboardingStep: profiles.onboardingStep,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, userId))
+      .limit(1);
+
+    const userWorkspaces = await db
+      .select()
+      .from(workspaces)
+      .where(and(eq(workspaces.userId, userId), isNull(workspaces.deletedAt)))
+      .orderBy(asc(workspaces.createdAt));
+
+    return c.json({
+      completed: isOnboardingCompleted({
+        onboardingCompleted: profile?.onboardingCompleted ?? false,
+        onboardingStep: profile?.onboardingStep ?? 1,
+        hasWorkspace: userWorkspaces.length > 0,
+      }),
+      step: profile?.onboardingStep ?? 1,
+      workspace: userWorkspaces[0] ?? null,
+      workspaces: userWorkspaces,
+    });
+  })
+  .post(
+    '/onboarding',
+    requireAuth,
+    zValidator(
+      'json',
+      z.object({
+        step: z.number().int().min(1).max(7).optional(),
+        completed: z.boolean().optional(),
+      }),
+    ),
+    async (c) => {
+      const userId = c.get('userId');
+      const body = c.req.valid('json');
+
+      const set: {
+        updatedAt: Date;
+        onboardingStep?: number;
+        onboardingCompleted?: boolean;
+      } = { updatedAt: new Date() };
+
+      if (body.step !== undefined) set.onboardingStep = body.step;
+      if (body.completed !== undefined) set.onboardingCompleted = body.completed;
+
+      await db
+        .insert(profiles)
+        .values({
+          id: userId,
+          onboardingStep: body.step ?? 1,
+          onboardingCompleted: body.completed ?? false,
+        })
+        .onConflictDoUpdate({
+          target: profiles.id,
+          set,
+        });
+
+      return c.json({
+        ok: true,
+        step: body.step,
+        completed: body.completed,
+      });
+    },
+  )
   /* ── Profil — simpan nama tampilan (upsert ke tabel profiles) ── */
   /* ── Ringkasan unread per bisnis — badge di switcher bisnis sidebar ──
    * Total unreadCount percakapan inbox per workspace, hanya untuk bisnis
@@ -454,4 +557,24 @@ export const meRoutes = new Hono<{ Variables: AuthVariables }>()
       }
       return c.json({ ok: true, id: deleted.id, deletedAt: deleted.deletedAt });
     },
-  );
+  )
+  /* ── Hapus akun pengguna — DELETE USER ────────────────────────
+   * Menghapus seluruh data profil & workspace milik akun ini.
+   * Relasi cascade di database akan membersihkan data turunan
+   * (bookings, contacts, staff, services, conversations, dll).
+   * ─────────────────────────────────────────────────────────── */
+  .delete('/', requireAuth, async (c) => {
+    const userId = c.get('userId');
+
+    // Hapus data profil & workspace milik pengguna
+    await db.delete(profiles).where(eq(profiles.id, userId));
+    await db.delete(workspaces).where(eq(workspaces.userId, userId));
+    try {
+      await db.delete(authUser).where(eq(authUser.id, userId));
+    } catch {
+      // Skema neon_auth dikelola oleh Neon Auth — jika tidak diizinkan direct delete, abaikan
+    }
+
+    return c.json({ ok: true });
+  });
+

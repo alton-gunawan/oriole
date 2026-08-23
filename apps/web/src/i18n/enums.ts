@@ -31,6 +31,29 @@ export function industryKey(industry?: string | null): TranslationKey {
     : INDUSTRY_KEYS.other;
 }
 
+const INDUSTRY_EMOJIS: Record<Industry, string> = {
+  barbershop: '💈',
+  'nail-salon': '💅',
+  'massage-spa': '💆',
+  'pet-grooming': '🐕',
+  'car-detailing': '🚗',
+  'yoga-pilates': '🧘',
+  'personal-trainer': '🏋️',
+  'photography-studio': '📸',
+  clinic: '🩺',
+  salon: '💇',
+  fitness: '💪',
+  spa: '🧖',
+  dental: '🦷',
+  other: '🏢',
+};
+
+export function industryEmoji(industry?: string | null): string {
+  return industry && industry in INDUSTRY_EMOJIS
+    ? INDUSTRY_EMOJIS[industry as Industry]
+    : '🏢';
+}
+
 const GOAL_TYPE_KEYS: Record<GoalType, TranslationKey> = {
   'confirm-attendance': 'goalType.confirmAttendance',
   'reminder-reconfirm': 'goalType.reminderReconfirm',

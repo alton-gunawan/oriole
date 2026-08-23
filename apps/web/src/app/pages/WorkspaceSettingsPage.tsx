@@ -21,7 +21,7 @@ import {
   type Workspace,
 } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
-import { industryKey } from '../../i18n/enums';
+import { industryEmoji, industryKey } from '../../i18n/enums';
 import {
   BusinessInfoForm,
   businessInfoFromWorkspace,
@@ -107,7 +107,7 @@ export function WorkspaceSettingsPage() {
     () =>
       EDITABLE_INDUSTRIES.map((ind) => ({
         value: ind,
-        label: t(industryKey(ind)),
+        label: `${industryEmoji(ind)} ${t(industryKey(ind))}`,
       })),
     [t],
   );
@@ -119,7 +119,7 @@ export function WorkspaceSettingsPage() {
     }
     return list.map((ind) => ({
       value: ind,
-      label: t(industryKey(ind)),
+      label: `${industryEmoji(ind)} ${t(industryKey(ind))}`,
     }));
   }, [editIndustry, t]);
 
@@ -445,7 +445,7 @@ export function WorkspaceSettingsPage() {
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</h2>
                   <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{categoryLabel(workspace.templateCategory)}</p>
-                  <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {t(industryKey(workspace.industry))}</p>
+                  <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {industryEmoji(workspace.industry)} {t(industryKey(workspace.industry))}</p>
                 </div>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1.5">

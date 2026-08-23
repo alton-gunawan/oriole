@@ -39,7 +39,7 @@ function extractErrorMessage(body: string, fallback: string): string {
   return body.length > 200 ? `${body.slice(0, 200)}…` : body;
 }
 
-/** Init fetch aplikasi — tambahan `timeoutMs` (default 10s) per-call. */
+/** Init fetch aplikasi — tambahan `timeoutMs` (default 15s) per-call. */
 export type ApiFetchInit = RequestInit & { timeoutMs?: number };
 
 /**
@@ -49,7 +49,7 @@ export type ApiFetchInit = RequestInit & { timeoutMs?: number };
  */
 async function doFetch(path: string, init: ApiFetchInit, token: string | null): Promise<Response> {
   const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId;
-  const { timeoutMs = 10_000, ...fetchInit } = init;
+  const { timeoutMs = 15_000, ...fetchInit } = init;
 
   // Timeout: abort fetch bila backend tidak merespons. `signal` pemanggil
   // (bila ada) tetap dihormati dengan menggabungkannya.

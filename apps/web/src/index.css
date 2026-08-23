@@ -986,10 +986,10 @@ html[data-theme='dark'] #booking-new-form label {
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 100%);
 }
 
-/* ── Landing Page Typography (Geist primary, Maple Mono for technical accents) ── */
+/* ── Landing Page Typography (Manrope) ── */
 .landing-page,
-.landing-page * {
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+.landing-page *:not(.font-mono):not([class*="font-mono"]):not(.font-mono *) {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
 }
 
 .landing-page .font-mono,

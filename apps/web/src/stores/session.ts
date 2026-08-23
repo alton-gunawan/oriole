@@ -19,6 +19,8 @@ export interface SessionUser {
   language?: string | null;
   /** Preferensi zona waktu (IANA) dari profil server — null = ikuti browser. */
   timezone?: string | null;
+  onboardingCompleted?: boolean;
+  onboardingStep?: number;
 }
 
 interface SessionState {

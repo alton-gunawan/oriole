@@ -13,6 +13,7 @@ import { initI18n } from './i18n';
 import { env } from './config/env';
 import { router } from './router';
 import { ErrorScreen } from './app/shell/RouteErrorElement';
+import { IconRefreshCw } from './app/shell/icons';
 import { ConsentBanner } from './app/components/ConsentBanner';
 import { useTranslation } from 'react-i18next';
 import { analyticsInitOptions, applyAnalyticsConsent } from './lib/analytics';
@@ -23,8 +24,7 @@ import { readStoredConsent } from './stores/consent';
 // Inisialisasi SEBELUM render pertama: token publik `phc_...` aman di
 // bundle browser. `analyticsInitOptions` (lib/analytics.ts) mencakup SPA
 // pageviews otomatis, autocapture error, masking replay, dan replay yang
-// MATI sampai consent diberikan. Tanpa token → PostHog tidak di-init
-// (no-op).
+// menghormati izin analitik pengguna.
 if (env.POSTHOG_PROJECT_TOKEN) {
   posthog.init(env.POSTHOG_PROJECT_TOKEN, analyticsInitOptions);
   // Terapkan pilihan consent tersimpan: granted → mulai replay + survei;
@@ -33,9 +33,8 @@ if (env.POSTHOG_PROJECT_TOKEN) {
 }
 
 /**
- * Jaring pengaman terakhir: error yang dilempar DI LUAR router (mis. dari
- * Theme/QueryClientProvider, kode inisialisasi) tidak tertangkap errorElement
- * React Router — boundary kelas ini mencegah blank screen + pesan mentah.
+ * Root Error Boundary — menangkap error rendering unhandled di luar route
+ * tree (mis. AuthProvider, QueryClientProvider, atau inisialisasi).
  */
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -62,14 +61,17 @@ function RootErrorFallback({ error }: { error: Error }) {
   const { t } = useTranslation();
   return (
     <ErrorScreen
+      variant="error"
       title={t('errors.routeErrorTitle')}
       description={t('errors.routeErrorDesc')}
       technicalDetails={`${error.message}\n${error.stack ?? ''}`}
       actions={
         <button
+          type="button"
           onClick={() => window.location.reload()}
-          className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
+          className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black shadow-sm transition hover:bg-zinc-200"
         >
+          <IconRefreshCw className="size-4" />
           {t('errors.reloadPage')}
         </button>
       }
@@ -78,6 +80,29 @@ function RootErrorFallback({ error }: { error: Error }) {
 }
 
 import './index.css';
+
+// Jika redirect OAuth dari Neon Auth mendarat di root (atau halaman non-callback)
+// dengan query `neon_auth_session_verifier`, arahkan segera ke /auth/callback
+// agar token diekstraksi dan sesi disinkronkan.
+if (
+  typeof window !== 'undefined' &&
+  window.location.pathname !== '/auth/callback' &&
+  (window.location.search.includes('neon_auth_session_verifier') || window.location.search.includes('neon_auth_'))
+) {
+  const target = `/auth/callback${window.location.search}${window.location.hash}`;
+  window.location.replace(target);
+}
+
+// Jika redirect pembayaran Paddle (_ptxn / session=success) mendarat di root,
+// arahkan ke /app/onboarding agar langkah penyelesaian ditampilkan.
+if (
+  typeof window !== 'undefined' &&
+  window.location.pathname === '/' &&
+  (window.location.search.includes('_ptxn') || window.location.search.includes('session=success'))
+) {
+  const target = `/app/onboarding${window.location.search}${window.location.hash}`;
+  window.location.replace(target);
+}
 
 // Terapkan tema tersimpan sebelum render pertama (menghindari flash &
 // membuat halaman di luar AppShell — mis. auth — ikut bertema).

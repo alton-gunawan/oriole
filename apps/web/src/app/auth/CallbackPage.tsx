@@ -23,6 +23,7 @@ export function CallbackPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const status = useSessionStore((s) => s.status);
+  const user = useSessionStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const attempt = useRef(0);
 
@@ -70,7 +71,14 @@ export function CallbackPage() {
         // BELUM terinisialisasi: RequireAuth tidak akan me-redirect ke
         // onboarding (mencegah pembuatan bisnis duplikat), shell menampilkan
         // state kosong, dan reload berikutnya memulihkan daftar bisnis.
-        let me: { workspaces: Workspace[]; name?: string | null; language?: string | null; timezone?: string | null } | null = null;
+        let me: {
+          workspaces: Workspace[];
+          name?: string | null;
+          language?: string | null;
+          timezone?: string | null;
+          onboardingCompleted?: boolean;
+          onboardingStep?: number;
+        } | null = null;
         for (let attempt = 0; attempt < 3 && !me; attempt += 1) {
           if (attempt > 0) {
             await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
@@ -81,6 +89,8 @@ export function CallbackPage() {
               name?: string | null;
               language?: string | null;
               timezone?: string | null;
+              onboardingCompleted?: boolean;
+              onboardingStep?: number;
             }>('/me');
           } catch {
             me = null;
@@ -88,21 +98,24 @@ export function CallbackPage() {
         }
         if (me) {
           useWorkspaceStore.getState().setWorkspaces(me.workspaces);
-          // Nama tampilan profil (diubah via PATCH /me) lebih baru daripada
-          // nama OAuth dari sesi Neon — pakai itu bila sudah di-set.
-          if (me.name && store.user) {
-            store.setUser({
-              ...store.user,
-              name: me.name,
-              language: me.language ?? null,
-              timezone: me.timezone ?? null,
-            });
-          }
+          store.setUser({
+            id: user?.id ?? store.user?.id ?? '',
+            email: user?.email ?? store.user?.email,
+            name: me.name ?? user?.name ?? store.user?.name,
+            language: me.language ?? null,
+            timezone: me.timezone ?? null,
+            onboardingCompleted: Boolean(me.onboardingCompleted || me.workspaces.length > 0),
+            onboardingStep: me.onboardingStep ?? 1,
+          });
         }
         // Hardening: hand-off JWT ke cookie HttpOnly (best-effort —
         // gagal berarti Bearer token tetap dipakai).
         await handoffSessionCookie();
-        navigate(from, { replace: true });
+        // New users (belum onboarding) → wajib ke onboarding, bukan dashboard.
+        const latestUser = useSessionStore.getState().user;
+        const onboardingCompleted = latestUser?.onboardingCompleted ?? false;
+        const dest = !onboardingCompleted ? '/app/onboarding' : from;
+        navigate(dest, { replace: true });
         return;
       }
 
@@ -121,7 +134,8 @@ export function CallbackPage() {
   }, [navigate, t]);
 
   if (status === 'authenticated') {
-    return <Navigate to="/app/dashboard" replace />;
+    const dest = user?.onboardingCompleted ? '/app/dashboard' : '/app/onboarding';
+    return <Navigate to={dest} replace />;
   }
 
   return (

@@ -30,8 +30,26 @@ async function hydrateWorkspaces(token: string) {
     response.status,
     'errors.hydrationFailed' as TranslationKey,
   );
-  const me = (await response.json()) as { workspaces: Workspace[] };
+  const me = (await response.json()) as {
+    userId: string;
+    email?: string;
+    name?: string | null;
+    language?: string | null;
+    timezone?: string | null;
+    onboardingCompleted?: boolean;
+    onboardingStep?: number;
+    workspaces: Workspace[];
+  };
   useWorkspaceStore.getState().setWorkspaces(me.workspaces);
+  useSessionStore.getState().setUser({
+    id: me.userId,
+    email: me.email,
+    name: me.name ?? undefined,
+    language: me.language ?? null,
+    timezone: me.timezone ?? null,
+    onboardingCompleted: Boolean(me.onboardingCompleted),
+    onboardingStep: me.onboardingStep ?? 1,
+  });
 }
 
 /**
@@ -123,15 +141,37 @@ export async function resetPasswordWithOtp(input: { email: string; otp: string; 
 }
 
 /** Redirect ke OAuth Google — kembali via /auth/callback?from=<tujuan>. */
-export function signInWithGoogle(destination?: string) {
+export async function signInWithGoogle(destination?: string) {
   const client = ensureClient();
   const callbackURL = `${window.location.origin}/auth/callback?from=${encodeURIComponent(destination ?? '/app/dashboard')}`;
-  void client.signIn.social({ provider: 'google', callbackURL });
+  const newUserCallbackURL = `${window.location.origin}/auth/callback?from=${encodeURIComponent('/app/onboarding')}`;
+  const res = await client.signIn.social({
+    provider: 'google',
+    callbackURL,
+    newUserCallbackURL,
+  });
+  if (res.error) {
+    throw new AuthActionError(res.error.message || 'Google sign-in failed', res.error.status, 'errors.signInStart');
+  }
+  if (res.data?.url) {
+    window.location.assign(res.data.url);
+  }
 }
 
 /** Redirect ke OAuth GitHub — kembali via /auth/callback?from=<tujuan>. */
-export function signInWithGithub(destination?: string) {
+export async function signInWithGithub(destination?: string) {
   const client = ensureClient();
   const callbackURL = `${window.location.origin}/auth/callback?from=${encodeURIComponent(destination ?? '/app/dashboard')}`;
-  void client.signIn.social({ provider: 'github', callbackURL });
+  const newUserCallbackURL = `${window.location.origin}/auth/callback?from=${encodeURIComponent('/app/onboarding')}`;
+  const res = await client.signIn.social({
+    provider: 'github',
+    callbackURL,
+    newUserCallbackURL,
+  });
+  if (res.error) {
+    throw new AuthActionError(res.error.message || 'GitHub sign-in failed', res.error.status, 'errors.signInStart');
+  }
+  if (res.data?.url) {
+    window.location.assign(res.data.url);
+  }
 }

@@ -99,11 +99,15 @@ const timeOffIdParamSchema = z.object({ id: z.string().uuid(), timeOffId: z.stri
 type StaffRow = typeof staffMembers.$inferSelect;
 
 function serializeStaff(staff: StaffRow) {
+  const phoneIsEmail = Boolean(staff.phone && staff.phone.includes('@'));
+  const email = staff.email ?? (phoneIsEmail ? staff.phone : null);
+  const phone = phoneIsEmail ? null : (staff.phone ?? null);
+
   return {
     id: staff.id,
     name: staff.name,
-    email: staff.email ?? null,
-    phone: staff.phone ?? null,
+    email,
+    phone,
     color: staff.color,
     timezone: staff.timezone,
     isActive: staff.isActive,

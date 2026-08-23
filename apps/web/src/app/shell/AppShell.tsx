@@ -1,6 +1,7 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import LoadingBar from 'react-top-loading-bar';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
@@ -21,7 +22,6 @@ import {
   IconCalendar,
   IconCalendarCheck,
   IconCheck,
-  IconChat,
   IconChevronDown,
   IconCreditCard,
   IconDashboard,
@@ -33,8 +33,6 @@ import {
   IconMoon,
   IconPanelLeftClose,
   IconPanelLeftOpen,
-  IconPhone,
-  IconPlug,
   IconServices,
   IconSettings,
   IconStaff,
@@ -59,11 +57,6 @@ const NAV: NavItem[] = [
   { to: '/app/contacts', labelKey: 'nav.contacts', icon: IconUsers },
   { to: '/app/services', labelKey: 'nav.services', icon: IconServices },
   { to: '/app/staff', labelKey: 'nav.staff', icon: IconStaff },
-  { to: '/app/inbox', labelKey: 'nav.inbox', icon: IconChat },
-  { to: '/app/calls', labelKey: 'nav.calls', icon: IconPhone },
-  { to: '/app/integrations', labelKey: 'nav.integrations', icon: IconPlug },
-  // Settings dibuka dari dropdown akun di footer sidebar — bukan item nav lagi.
-  // Help dipindah ke footer sidebar (ikon kecil) — bukan item nav lagi.
 ];
 
 function Logo({ collapsed = false }: { collapsed?: boolean }) {
@@ -185,6 +178,19 @@ export function AppShell() {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, [sidebarTheme]);
+
+  const [progress, setProgress] = useState(0);
+
+  // Progress saat navigasi rute di dalam /app
+  useEffect(() => {
+    setProgress(35);
+    const t1 = setTimeout(() => setProgress(75), 100);
+    const t2 = setTimeout(() => setProgress(100), 250);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [location.pathname, location.search]);
 
   const changeSidebarTheme = (theme: AppTheme) => {
     setSidebarTheme(theme);
@@ -564,7 +570,16 @@ export function AppShell() {
   };
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="flex min-h-screen flex-col bg-surface">
+      <LoadingBar
+        color="#f59e0b"
+        progress={progress}
+        onLoaderFinished={() => setProgress(0)}
+        height={3}
+        shadow={true}
+        containerStyle={{ zIndex: 9999 }}
+      />
+
       {/* Sidebar — desktop. Hanya di-mount saat viewport ≥ lg supaya tidak
           ada dua salinan sidebar (desktop + drawer) yang popover switchernya
           saling menutup di layar kecil. */}
@@ -615,7 +630,7 @@ export function AppShell() {
       )}
 
       <div
-        className={`transition-[padding] duration-200 ease-out ${
+        className={`flex flex-1 flex-col transition-[padding] duration-200 ease-out ${
           isSidebarCollapsed ? 'lg:pl-16' : 'lg:pl-60'
         }`}
       >
@@ -630,10 +645,10 @@ export function AppShell() {
         />
 
         <main
-          className={`mx-auto w-full ${
+          className={`w-full flex-1 ${
             isCalendarFullBleed
               ? 'flex h-dvh max-w-none flex-col overflow-hidden px-0 py-0'
-              : 'max-w-6xl px-4 py-8 sm:px-6 lg:px-8'
+              : 'flex flex-col px-4 py-8 sm:px-6 lg:px-8'
           }`}
         >
           <Outlet />

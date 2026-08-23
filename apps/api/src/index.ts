@@ -85,9 +85,16 @@ app.use('/api/webhooks/*', bodyLimit({ maxSize: 10 * 1024 * 1024, onError: bodyT
 // Best-effort: kegagalan analitik tidak menggagalkan request.
 app.use('/api/*', analyticsFlushMiddleware);
 
-app.get('/', (c) =>
-  c.json({ name: 'Oriole API', version: '0.1.0', endpoints: ['/api/health', '/api/inngest'] }),
-);
+app.get('/', (c) => {
+  const ptxn = c.req.query('_ptxn');
+  if (ptxn) {
+    return c.redirect(
+      `${env.APP_URL}/app/onboarding?session=success&_ptxn=${encodeURIComponent(ptxn)}`,
+      302,
+    );
+  }
+  return c.json({ name: 'Oriole API', version: '0.1.0', endpoints: ['/api/health', '/api/inngest'] });
+});
 
 // ── Error handler: log detail, respons generik (tanpa stack trace / detail internal). ──
 app.onError((err, c) => {

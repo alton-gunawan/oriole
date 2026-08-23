@@ -73,6 +73,9 @@ export const profiles = pgTable(
     /** Preferensi zona waktu user (IANA, mis. 'Asia/Jakarta') — null = ikuti browser. */
     timezone: text('timezone'),
     plan: text('plan').default('free').notNull(),
+    /** Status onboarding wizard pengguna baru. */
+    onboardingCompleted: boolean('onboarding_completed').default(false).notNull(),
+    onboardingStep: integer('onboarding_step').default(1).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

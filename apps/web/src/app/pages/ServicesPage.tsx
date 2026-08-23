@@ -598,7 +598,7 @@ export function ServicesPage() {
         const price = formatServicePrice(service.priceMinor, service.currency);
         return (
           <span className="block min-w-0 text-base text-zinc-600 dark:text-zinc-400">
-            {price ?? <span className="text-zinc-300">—</span>}
+            {price ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
           </span>
         );
       },
@@ -610,7 +610,7 @@ export function ServicesPage() {
       renderCell: (service) => {
         const categories = expandCategoryList(service.category);
         if (categories.length === 0) {
-          return <span className="text-sm text-zinc-300">—</span>;
+          return <span className="text-base text-zinc-300 dark:text-zinc-600">—</span>;
         }
         // Hanya tampilkan kategori pertama + badge "+N" untuk sisanya (mirip
         // text-ellipsis) — tidak memenuhi kolom dengan semua kategori.
@@ -632,7 +632,7 @@ export function ServicesPage() {
       width: proportional(2),
       renderCell: (service) => {
         if (service.staffIds.length === 0) {
-          return <span className="text-sm text-zinc-400">{t('services.noStaffHint')}</span>;
+          return <span className="text-base text-zinc-400 dark:text-zinc-500">{t('services.noStaffHint')}</span>;
         }
         // Sama seperti kategori: staf pertama sebagai Badge berwarna (deterministik
         // dari nama, agar staf yang sama selalu berwarna sama) + badge "+N" sisanya.
@@ -667,7 +667,7 @@ export function ServicesPage() {
   ], [t, staffNameById]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
       <PageHeader title={t('services.title')} description={t('services.description')} icon={IconUsers}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
         <button
@@ -680,7 +680,7 @@ export function ServicesPage() {
         </button>
       </PageHeader>
 
-      <div className="space-y-4">
+      <div className="flex flex-1 flex-col space-y-4">
         {/* Filter bar — mirror StaffPage: cari layanan + status + kategori. */}
         {!isPending && !isError && data && servicesList.length > 0 && (
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -805,12 +805,13 @@ export function ServicesPage() {
       )}
 
       {!isPending && !isError && data && (
-        <>
+        <div className="flex flex-1 flex-col">
           {servicesList.length === 0 ? (
             <EmptyState
               icon={IconUsers}
               title={t('services.emptyTitle')}
               description={t('services.emptyDesc')}
+              className="flex-1 min-h-[500px]"
               action={{ label: t('services.add'), onClick: openAdd }}
             />
           ) : filteredList.length === 0 ? (
@@ -818,6 +819,7 @@ export function ServicesPage() {
               icon={IconUsers}
               title={t('services.emptyFilteredTitle')}
               description={t('services.emptyFilteredDesc')}
+              className="flex-1 min-h-[500px]"
               action={{ label: t('services.resetFilter'), onClick: resetFilters }}
             />
           ) : (
@@ -941,7 +943,7 @@ export function ServicesPage() {
               </div>
             </>
           )}
-        </>
+        </div>
       )}
       </div>
 
@@ -1073,13 +1075,25 @@ export function ServicesPage() {
           content={
             <LayoutContent>
               <form id="edit-service-form" onSubmit={submitEdit} className="space-y-5">
-                <TextInput
-                  label={t('common.name')}
-                  placeholder={t('services.namePlaceholder')}
-                  value={editName}
-                  onChange={setEditName}
-                  isRequired
-                />
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <TextInput
+                      label={t('common.name')}
+                      placeholder={t('services.namePlaceholder')}
+                      value={editName}
+                      onChange={setEditName}
+                      isRequired
+                      width="100%"
+                    />
+                  </div>
+                  <div className="shrink-0 pt-7">
+                    <Switch
+                      label={t('services.active')}
+                      value={editIsActive}
+                      onChange={setEditIsActive}
+                    />
+                  </div>
+                </div>
                 <TextArea
                   label={t('services.descriptionLabel')}
                   placeholder={t('services.descriptionPlaceholder')}
@@ -1149,12 +1163,6 @@ export function ServicesPage() {
                   maxBadges={3}
                   hasClear
                   width="100%"
-                />
-                <Switch
-                  label={t('services.active')}
-                  description={t('services.activeDesc')}
-                  value={editIsActive}
-                  onChange={setEditIsActive}
                 />
               </form>
             </LayoutContent>

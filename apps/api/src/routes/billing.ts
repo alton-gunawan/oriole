@@ -99,17 +99,13 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'Paddle belum dikonfigurasi', configured: false }, 503);
     }
 
-    // Paket yang dibeli: 'pro' | 'business' dari body; selain itu (atau tanpa
-    // body) → 'pro' (perilaku lama dipertahankan).
-    const body = (await c.req.json().catch(() => ({}))) as { plan?: unknown };
-    const requested: PlanId = body.plan === 'business' ? 'business' : 'pro';
-
-    const priceId = priceIdForPlan(requested);
+    // Single subscription plan ('pro' - $19/month).
+    const priceId = priceIdForPlan('pro');
     if (!priceId) {
       return c.json(
         {
-          error: `PADDLE_${requested.toUpperCase()}_PRICE_ID belum diatur di environment`,
-          plan: requested,
+          error: 'PADDLE_PRO_PRICE_ID belum diatur di environment',
+          plan: 'pro',
         },
         400,
       );

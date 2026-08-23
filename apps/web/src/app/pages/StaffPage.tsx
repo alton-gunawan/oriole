@@ -57,6 +57,7 @@ import {
   IconStaff,
   IconTrash,
   IconUsers,
+  IconX,
 } from '../shell/icons';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
 
@@ -676,6 +677,13 @@ export function StaffPage() {
     },
   });
 
+  const selectedStaff = useMemo(
+    () => filteredList.filter((staff) => selectedKeys.has(staff.id)),
+    [filteredList, selectedKeys],
+  );
+  const canBulkActivate = selectedStaff.some((staff) => !staff.isActive);
+  const canBulkDeactivate = selectedStaff.some((staff) => staff.isActive);
+
   // Snap ke halaman terakhir bila hasil filter/dataset menyusut dan halaman
   // aktif kini melebihi jumlah halaman — hindari tabel kosong.
   const lastPage = filteredList.length ? Math.max(1, Math.ceil(filteredList.length / pageSize)) : 1;
@@ -690,42 +698,48 @@ export function StaffPage() {
       key: 'member',
       header: t('staff.colMember'),
       width: proportional(3),
-      renderCell: (staff) => (
-        <span className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
-            style={{ backgroundColor: staff.color }}
-          >
-            {staff.name.slice(0, 2).toUpperCase()}
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{staff.name}</span>
-              {!staff.isActive && <Badge variant="neutral" label={t('staff.inactive')} />}
+      renderCell: (staff) => {
+        const displayEmail = staff.email ?? (staff.phone?.includes('@') ? staff.phone : null);
+        return (
+          <span className="flex min-w-0 items-center gap-3">
+            <span
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
+              style={{ backgroundColor: staff.color }}
+            >
+              {staff.name.slice(0, 2).toUpperCase()}
             </span>
-            <span className="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">
-              {staff.email ?? '—'}
+            <span className="min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{staff.name}</span>
+                {!staff.isActive && <Badge variant="neutral" label={t('staff.inactive')} />}
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {displayEmail ?? '—'}
+              </span>
             </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
     {
       key: 'phone',
       header: t('common.phone'),
       width: pixel(150),
-      renderCell: (staff) => (
-        <span className="block truncate text-sm text-zinc-600 dark:text-zinc-400">
-          {staff.phone ?? <span className="text-zinc-300">—</span>}
-        </span>
-      ),
+      renderCell: (staff) => {
+        const displayPhone = staff.phone && !staff.phone.includes('@') ? staff.phone : null;
+        return (
+          <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
+            {displayPhone ?? <span className="text-base text-zinc-300 dark:text-zinc-600">—</span>}
+          </span>
+        );
+      },
     },
     {
       key: 'timezone',
       header: t('staff.timezone'),
       width: proportional(2),
       renderCell: (staff) => (
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-1.5 text-base text-zinc-600 dark:text-zinc-400">
           <IconClock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
           <span className="block truncate">{staff.timezone}</span>
         </span>
@@ -737,11 +751,11 @@ export function StaffPage() {
       width: pixel(140),
       renderCell: (staff) =>
         staff.bufferMinutes > 0 ? (
-          <span className="block truncate text-sm text-zinc-600 dark:text-zinc-400">
+          <span className="block truncate text-base text-zinc-600 dark:text-zinc-400">
             {t('staff.bufferShort', { minutes: staff.bufferMinutes })}
           </span>
         ) : (
-          <span className="text-sm text-zinc-300">—</span>
+          <span className="text-base text-zinc-300 dark:text-zinc-600">—</span>
         ),
     },
     {
@@ -750,7 +764,7 @@ export function StaffPage() {
       width: proportional(2),
       renderCell: (staff) =>
         staff.schedules.length === 0 ? (
-          <span className="text-sm text-zinc-400">{t('staff.noScheduleHint')}</span>
+          <span className="text-base text-zinc-400 dark:text-zinc-500">{t('staff.noScheduleHint')}</span>
         ) : (
           // Token badge hari (warna deterministik per hari) — tampilkan
           // sebanyak yang muat selebar kolom + badge "+N" untuk sisanya.
@@ -777,7 +791,7 @@ export function StaffPage() {
   ], [t]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
       <PageHeader title={t('staff.title')} description={t('staff.description')} icon={IconStaff}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
         <button
@@ -790,7 +804,7 @@ export function StaffPage() {
         </button>
       </PageHeader>
 
-      <div className="space-y-4">
+      <div className="flex flex-1 flex-col space-y-4">
         {/* Filter bar — mirror BookingsPage: cari staf + status + zona waktu.
             Hanya muncul saat sudah ada staf (daftar kosong = empty state tambah). */}
         {!isPending && !isError && data && staffList.length > 0 && (
@@ -909,12 +923,13 @@ export function StaffPage() {
       )}
 
       {!isPending && !isError && data && (
-        <>
+        <div className="flex flex-1 flex-col">
           {staffList.length === 0 ? (
             <EmptyState
               icon={IconUsers}
               title={t('staff.emptyTitle')}
               description={t('staff.emptyDesc')}
+              className="flex-1 min-h-[500px]"
               action={{ label: t('staff.add'), onClick: openAdd }}
             />
           ) : filteredList.length === 0 ? (
@@ -922,60 +937,73 @@ export function StaffPage() {
               icon={IconUsers}
               title={t('staff.emptyFilteredTitle')}
               description={t('staff.emptyFilteredDesc')}
+              className="flex-1 min-h-[500px]"
               action={{ label: t('staff.resetFilter'), onClick: resetFilters }}
             />
           ) : (
             <>
+              {/* Floating bottom center row selection toolbar */}
               {selectedKeys.size > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                      {t('staff.selectedCount', { count: selectedKeys.size })}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        label={t('staff.activate')}
-                        variant="secondary"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending}
-                        isLoading={bulkStatusMutation.isPending}
-                        onClick={() =>
-                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: true })
-                        }
-                      />
-                      <Button
-                        label={t('staff.deactivate')}
-                        variant="secondary"
-                        size="sm"
-                        isDisabled={bulkStatusMutation.isPending}
-                        isLoading={bulkStatusMutation.isPending}
-                        onClick={() =>
-                          bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: false })
-                        }
-                      />
-                      <Button
-                        label={t('common.delete')}
-                        variant="destructive"
-                        size="sm"
-                        isDisabled={
-                          bulkStatusMutation.isPending || bulkDeleteMutation.isPending
-                        }
-                        onClick={() => setBulkDeleteIds([...selectedKeys])}
-                      />
-                      <Button
-                        label={t('staff.clearSelection')}
-                        variant="ghost"
-                        size="sm"
-                        isDisabled={
-                          bulkStatusMutation.isPending || bulkDeleteMutation.isPending
-                        }
-                        onClick={resetSelection}
-                      />
-                    </div>
-                  </div>
+                <div
+                  role="region"
+                  aria-label={t('staff.selectedCount', { count: selectedKeys.size })}
+                  className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-zinc-200/90 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur-md transition-all animate-in fade-in slide-in-from-bottom-5 duration-200 dark:border-zinc-700/90 dark:bg-zinc-900/95 max-w-[calc(100vw-2rem)]"
+                >
                   {bulkError && (
-                    <p role="alert" className="mt-3 text-sm text-red-600">{bulkError}</p>
+                    <div
+                      role="alert"
+                      className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 shadow-md dark:border-red-900/60 dark:bg-red-950/90 dark:text-red-400"
+                    >
+                      {bulkError}
+                    </div>
                   )}
+
+                  <div className="flex items-center gap-2 border-r border-zinc-200 pr-3 dark:border-zinc-700">
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                      {t('staff.selectedCount', { count: selectedKeys.size })}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      label={t('staff.activate')}
+                      variant="primary"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending || !canBulkActivate}
+                      isLoading={bulkStatusMutation.isPending && bulkStatusMutation.variables?.isActive === true}
+                      onClick={() =>
+                        bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: true })
+                      }
+                    />
+                    <Button
+                      label={t('staff.deactivate')}
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending || !canBulkDeactivate}
+                      isLoading={bulkStatusMutation.isPending && bulkStatusMutation.variables?.isActive === false}
+                      onClick={() =>
+                        bulkStatusMutation.mutate({ ids: [...selectedKeys], isActive: false })
+                      }
+                    />
+                    <Button
+                      label={t('common.delete')}
+                      variant="destructive"
+                      size="sm"
+                      isDisabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                      isLoading={bulkDeleteMutation.isPending}
+                      onClick={() => setBulkDeleteIds([...selectedKeys])}
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('staff.clearSelection')}
+                      title={t('staff.clearSelection')}
+                      disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                      onClick={resetSelection}
+                      className="ml-1 inline-flex size-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <IconX className="size-4" />
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1038,7 +1066,7 @@ export function StaffPage() {
               </div>
             </>
           )}
-        </>
+        </div>
       )}
       </div>
 

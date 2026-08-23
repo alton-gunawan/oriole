@@ -18,6 +18,7 @@ export function SignInPage() {
   const location = useLocation();
   const { t } = useTranslation();
   const status = useSessionStore((s) => s.status);
+  const user = useSessionStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
 
@@ -36,7 +37,11 @@ export function SignInPage() {
   // redirect `Navigate` di bawah menanganinya. Ini mencegah spinner abadi
   // saat /api/me lambat atau API sedang down.
   if (status === 'authenticated') {
-    return <Navigate to="/app/dashboard" replace />;
+    const dest = user?.onboardingCompleted ? '/app/dashboard' : '/app/onboarding';
+    // Belum onboarding → langsung ke wizard; sudah onboarding → dashboard.
+    // RequireAuth juga punya guard yang sama, tapi redirect di sini menghindari
+    // kedipan dashboard sebelum bounce.
+    return <Navigate to={dest} replace />;
   }
 
   if (!isAuthConfigured) {
@@ -59,6 +64,11 @@ export function SignInPage() {
     void trackEvent('signin_started', { method: 'email' });
     try {
       await signInWithEmail(values);
+      const onboardingDone = useSessionStore.getState().user?.onboardingCompleted ?? false;
+      if (!onboardingDone) {
+        navigate('/app/onboarding', { replace: true });
+        return;
+      }
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from ?? '/app/dashboard', { replace: true });
     } catch (err) {
@@ -66,16 +76,14 @@ export function SignInPage() {
     }
   };
 
-  const onSocial = (provider: SocialProvider) => {
+  const onSocial = async (provider: SocialProvider) => {
     setError(null);
     void trackEvent('signin_started', { method: provider });
     setSocialBusy(provider);
     try {
       const from = (location.state as { from?: string } | null)?.from;
-      if (provider === 'github') signInWithGithub(from);
-      else signInWithGoogle(from);
-      // halaman akan redirect; jika gagal, kembalikan state tombol
-      setTimeout(() => setSocialBusy(null), 10_000);
+      if (provider === 'github') await signInWithGithub(from);
+      else await signInWithGoogle(from);
     } catch (err) {
       setSocialBusy(null);
       setError(errorMessage(err, t, 'errors.signInStart'));

@@ -321,19 +321,23 @@ export function EmptyState({
   title,
   description,
   action,
+  actions,
+  className = '',
 }: {
-  icon: ComponentType<IconProps>;
+  icon: ComponentType<IconProps> | ReactNode;
   title: string;
   description: string;
   action?: { label: string; onClick?: () => void; disabled?: boolean };
+  actions?: ReactNode;
+  className?: string;
 }) {
   return (
-    <Card className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <span className="flex size-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
-        <Icon className="size-7" />
+    <Card className={`flex flex-1 min-h-[460px] flex-col items-center justify-center px-6 py-16 text-center ${className}`}>
+      <span className="flex size-16 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
+        {typeof Icon === 'function' ? <Icon className="size-8" /> : Icon}
       </span>
-      <h3 className="mt-5 text-base font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
-      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>
+      <h3 className="mt-5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</p>
       {action && (
         <Button
           className="mt-6"
@@ -344,6 +348,7 @@ export function EmptyState({
           onClick={action.onClick}
         />
       )}
+      {actions && <div className="mt-6 flex items-center justify-center">{actions}</div>}
     </Card>
   );
 }

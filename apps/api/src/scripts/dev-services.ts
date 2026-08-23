@@ -18,6 +18,9 @@ import { telegramSetWebhook } from '../lib/telegram.ts';
  *
  *   1. Cloudflare quick tunnel → URL HTTPS publik untuk webhook Telegram
  *      (Telegram menolak http/localhost).
+ *   1b. Named tunnel dari `~/.cloudflared/config.yml` (conductor.my.id →
+ *      localhost:5173, api.conductor.my.id → localhost:3000) — landing page
+ *      & API bisa diakses publik. Dilewati bila cloudflared tidak ada.
  *   2. Sinkronkan `WEBHOOK_BASE_URL` di root `.env` — URL quick tunnel
  *      BERUBAH setiap restart, jadi harus di-update + webhook didaftarkan
  *      ulang agar bot tetap menerima update.
@@ -53,6 +56,9 @@ const TUNNEL_TARGET = process.env.TUNNEL_TARGET ?? 'http://localhost:3000';
 const API_INNGEST_URL = 'http://localhost:3000/api/inngest';
 const INNGEST_DEV_PORT = 8288;
 const MAX_TUNNEL_GENERATIONS = 3;
+const NAMED_TUNNEL_ID = 'e28977ac-73e8-430e-85fa-1ff1ff1485d7';
+const NAMED_TUNNEL_STATE_FILE = join(CACHE_DIR, 'named-tunnel.json');
+const NAMED_TUNNEL_LOG = join(CACHE_DIR, 'named-tunnel.log');
 
 interface TunnelState {
   pid: number | null;
@@ -80,10 +86,12 @@ function isPortOpen(port: number, host = '127.0.0.1', timeoutMs = 700): Promise<
   });
 }
 
-function isPidAlive(pid: number): boolean {
+function isPidAlive(pid: number, expectedName?: string): boolean {
   try {
     process.kill(pid, 0);
-    return true;
+    if (!expectedName) return true;
+    const comm = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return comm.toLowerCase().includes(expectedName.toLowerCase());
   } catch {
     return false;
   }
@@ -305,7 +313,7 @@ async function ensureTunnel(): Promise<string | null> {
   // Proses lama dicoba dimatikan (best-effort; bisa gagal bila root-owned),
   // lalu state dibuang dan tunnel baru dibuat dengan log + URL baru.
   const state = readTunnelState();
-  if (state && state.port === 3000 && state.pid != null && isPidAlive(state.pid)) {
+  if (state && state.port === 3000 && state.pid != null && isPidAlive(state.pid, 'cloudflared')) {
     if (isTunnelLogHealthy(state.log)) {
       syncEnvWebhookBaseUrl(state.url);
       console.log(`[dev-services] Tunnel masih hidup (reuse): ${state.url}`);
@@ -432,6 +440,79 @@ async function registerTelegramWebhooks(baseUrl: string): Promise<boolean> {
   }
 }
 
+/**
+ * Named tunnel produksi-dev: `cloudflared tunnel run` untuk
+ * `~/.cloudflared/config.yml` (conductor.my.id + api.conductor.my.id).
+ *
+ * Dipisah dari quick tunnel: URL-nya permanen, tidak perlu sync .env atau
+ * webhook — hanya perlu proses cloudflared-nya hidup. State pid disimpan
+ * agar `pnpm dev` berikutnya me-reuse proses yang masih hidup.
+ */
+async function ensureNamedTunnel(): Promise<void> {
+  if (!hasBinary('cloudflared')) {
+    console.warn('[dev-services] cloudflared tidak ditemukan — tunnel conductor.my.id tidak dijalankan. Install dengan `brew install cloudflared`.');
+    return;
+  }
+
+  // Proses yang masih hidup → reuse (log dibiarkan, append di spawn baru).
+  const state = readNamedTunnelState();
+  if (state?.pid != null && isPidAlive(state.pid, 'cloudflared')) {
+    console.log('[dev-services] Tunnel conductor.my.id sudah berjalan — dilewati.');
+    return;
+  }
+  try {
+    if (existsSync(NAMED_TUNNEL_STATE_FILE)) unlinkSync(NAMED_TUNNEL_STATE_FILE);
+  } catch {
+    // Abaikan — state baru akan ditimpa.
+  }
+
+  mkdirSync(CACHE_DIR, { recursive: true });
+  const outFd = openSync(NAMED_TUNNEL_LOG, 'w'); // 'w': log per-spawn, jangan baca baris generasi lama.
+  const child = spawn('cloudflared', ['tunnel', 'run', NAMED_TUNNEL_ID], {
+    detached: true,
+    stdio: ['ignore', outFd, outFd],
+    cwd: ROOT,
+  });
+  child.unref();
+  writeNamedTunnelState({ pid: child.pid ?? null });
+
+  // Proses hidup ≠ koneksi edge terdaftar; tunggu signature di log.
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(child.pid ?? -1, 'cloudflared')) break; // gagal cepat (mis. kredensial hilang) → langsung warn.
+    const log = existsSync(NAMED_TUNNEL_LOG) ? readFileSync(NAMED_TUNNEL_LOG, 'utf8') : '';
+    if (/Registered tunnel connection/i.test(log)) {
+      console.log('[dev-services] Tunnel conductor.my.id siap (landing → localhost:5173, api → localhost:3000).');
+      return;
+    }
+    await sleep(500);
+  }
+  console.warn(`[dev-services] Tunnel conductor.my.id belum connect setelah 30s — cek ${NAMED_TUNNEL_LOG}`);
+}
+
+interface NamedTunnelState {
+  pid: number | null;
+}
+
+function readNamedTunnelState(): NamedTunnelState | null {
+  try {
+    if (!existsSync(NAMED_TUNNEL_STATE_FILE)) return null;
+    const parsed = JSON.parse(readFileSync(NAMED_TUNNEL_STATE_FILE, 'utf8')) as Partial<NamedTunnelState>;
+    return typeof parsed.pid === 'number' ? { pid: parsed.pid } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeNamedTunnelState(state: NamedTunnelState): void {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(NAMED_TUNNEL_STATE_FILE, JSON.stringify(state));
+  } catch {
+    // State hanya optimasi reuse — gagal menulis bukan masalah fatal.
+  }
+}
+
 /** Pastikan Inngest Dev Server (localhost:8288) hidup. */
 async function ensureInngestDev(): Promise<void> {
   if (await isPortOpen(INNGEST_DEV_PORT)) {
@@ -487,6 +568,7 @@ async function main(): Promise<void> {
     baseUrl = await rotateTunnel();
   }
 
+  await ensureNamedTunnel();
   await ensureInngestDev();
   console.log('\n[dev-services] Selesai.');
 }

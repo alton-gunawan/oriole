@@ -18,6 +18,7 @@ export function SignUpPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const status = useSessionStore((s) => s.status);
+  const user = useSessionStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
 
@@ -45,7 +46,8 @@ export function SignUpPage() {
   // berjalan) — langsung dirender; redirect `Navigate` di bawah menangani
   // sesi yang ternyata valid. Mencegah spinner abadi saat /me lambat/down.
   if (status === 'authenticated') {
-    return <Navigate to="/app/dashboard" replace />;
+    const dest = user?.onboardingCompleted ? '/app/dashboard' : '/app/onboarding';
+    return <Navigate to={dest} replace />;
   }
 
   if (!isAuthConfigured) {
@@ -68,21 +70,19 @@ export function SignUpPage() {
     void trackEvent('signup_started', { method: 'email' });
     try {
       await signUpWithEmail(values);
-      navigate('/app/dashboard', { replace: true });
+      navigate('/app/onboarding', { replace: true });
     } catch (err) {
       setError(errorMessage(err, t, 'errors.generic'));
     }
   };
 
-  const onSocial = (provider: SocialProvider) => {
+  const onSocial = async (provider: SocialProvider) => {
     setError(null);
     void trackEvent('signup_started', { method: provider });
     setSocialBusy(provider);
     try {
-      if (provider === 'github') signInWithGithub();
-      else signInWithGoogle();
-      // halaman akan redirect; jika gagal, kembalikan state tombol
-      setTimeout(() => setSocialBusy(null), 10_000);
+      if (provider === 'github') await signInWithGithub();
+      else await signInWithGoogle();
     } catch (err) {
       setSocialBusy(null);
       setError(errorMessage(err, t, 'errors.signInStart'));

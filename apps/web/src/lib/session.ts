@@ -52,6 +52,8 @@ export async function restoreSession(): Promise<void> {
         /** Preferensi UI dari tabel profiles — null = ikuti browser. */
         language?: string | null;
         timezone?: string | null;
+        onboardingCompleted?: boolean;
+        onboardingStep?: number;
         workspaces: Workspace[];
       }>('/me');
       useWorkspaceStore.getState().setWorkspaces(me.workspaces);
@@ -62,6 +64,8 @@ export async function restoreSession(): Promise<void> {
         name: me.name ?? undefined,
         language: me.language ?? null,
         timezone: me.timezone ?? null,
+        onboardingCompleted: me.onboardingCompleted,
+        onboardingStep: me.onboardingStep ?? 1,
       });
       // Analitik: tautkan event anonim → user dikenal + group workspace aktif.
       void identifyAnalyticsUser({
@@ -110,3 +114,24 @@ export async function signOut(): Promise<void> {
   // mewarisi identitas/group yang lama.
   void resetAnalytics();
 }
+
+export async function deleteUserAccount(): Promise<void> {
+  // Panggil API penghapusan akun di backend
+  await apiFetch<{ ok: boolean }>('/me', { method: 'DELETE' });
+
+  // Panggil deleteUser pada SDK Better Auth / Neon Auth jika tersedia
+  try {
+    const { authClient } = await import('./auth');
+    await authClient?.deleteUser?.();
+  } catch {
+    // Abaikan jika tidak didukung SDK atau gagal di sisi provider
+  }
+
+  // Bersihkan cookie sesi, token, session store, workspace store, dan analitik
+  await clearSessionCookie();
+  clearAccessToken();
+  useSessionStore.getState().clear();
+  useWorkspaceStore.getState().clear();
+  void resetAnalytics();
+}
+

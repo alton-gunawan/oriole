@@ -3,13 +3,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 let planFromSubscription: (
   status: string | null | undefined,
   priceId?: string | null | undefined,
-) => 'free' | 'pro' | 'business';
+) => 'free' | 'pro';
 
-let planFromPriceId: (priceId: string | null | undefined) => 'free' | 'pro' | 'business' | null;
+let planFromPriceId: (priceId: string | null | undefined) => 'free' | 'pro' | null;
 
 beforeAll(async () => {
-  // env.ts (via db/index.ts) divalidasi saat import pertama — set variabel
-  // dummy dulu, sama seperti test file lain di package ini.
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/oriole_test';
   process.env.NEON_AUTH_URL = 'https://ep-test.neon.tech/neondb/auth';
@@ -33,11 +31,6 @@ describe('planFromSubscription', () => {
     expect(planFromSubscription('active', null)).toBe('pro');
   });
 
-  it('active + price ID Business → business', () => {
-    expect(planFromSubscription('active', 'price_biz_test')).toBe('business');
-    expect(planFromSubscription('trialing', 'price_biz_test')).toBe('business');
-  });
-
   it('active + price ID Pro → pro', () => {
     expect(planFromSubscription('active', 'price_pro_test')).toBe('pro');
   });
@@ -51,16 +44,16 @@ describe('planFromSubscription', () => {
     expect(planFromSubscription('past_due')).toBe('free');
     expect(planFromSubscription('unpaid')).toBe('free');
     expect(planFromSubscription('paused')).toBe('free');
-    expect(planFromSubscription('canceled', 'price_biz_test')).toBe('free');
+    expect(planFromSubscription('canceled', 'price_pro_test')).toBe('free');
     expect(planFromSubscription(undefined)).toBe('free');
     expect(planFromSubscription(null)).toBe('free');
   });
 });
 
 describe('planFromPriceId', () => {
-  it('price ID terdaftar → paket sesuai env', () => {
+  it('price ID terdaftar → paket pro', () => {
     expect(planFromPriceId('price_pro_test')).toBe('pro');
-    expect(planFromPriceId('price_biz_test')).toBe('business');
+    expect(planFromPriceId('price_biz_test')).toBe('pro');
   });
 
   it('price ID tak dikenal / kosong → null', () => {

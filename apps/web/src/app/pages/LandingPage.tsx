@@ -5,7 +5,6 @@ import { Link } from 'react-router';
 
 import { AppLogo } from '../components/AppLogo';
 import {
-  IconAlertTriangle,
   IconBattery,
   IconCalendarCheck,
   IconCheck,
@@ -14,9 +13,7 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconExternalLink,
-  IconEyeOff,
   IconHelp,
-  IconHourglass,
   IconMail,
   IconMenu,
   IconMicOff,
@@ -25,7 +22,6 @@ import {
   IconPlug,
   IconRefreshCw,
   IconRepeat,
-  IconSearchX,
   IconShield,
   IconSignal,
   IconSquaresFour,
@@ -50,18 +46,12 @@ type FooterLink = {
   href: string;
 };
 
-/** Menu navigasi header landing — tautan ke seksi-seksi halaman. */
-const landingNavLinks: FooterLink[] = [
-  { labelKey: 'landing.footerHowItWorks', href: '#how-it-works' },
-  { labelKey: 'landing.footerIntegrations', href: '#integrations' },
-  { labelKey: 'landing.footerFaq', href: '#faq' },
-];
-
 const footerColumns: { titleKey: TranslationKey; links: FooterLink[] }[] = [
   {
     titleKey: 'landing.footerProduct',
     links: [
       { labelKey: 'landing.footerHowItWorks', href: '#how-it-works' },
+      { labelKey: 'landing.footerSolutions', href: '#solutions' },
       { labelKey: 'landing.footerIntegrations', href: '#integrations' },
       { labelKey: 'landing.footerFaq', href: '#faq' },
     ],
@@ -74,6 +64,22 @@ const footerColumns: { titleKey: TranslationKey; links: FooterLink[] }[] = [
     ],
   },
 ];
+
+/**
+ * Industri dari Edit Business dialog (EDITABLE_INDUSTRIES):
+ * Barbershop, Nail salon, Massage/spa, Pet grooming, Car detailing,
+ * Yoga/Pilates, Personal trainer, Photography Studio.
+ */
+const industrySolutions = [
+  { key: 'barbershop', emoji: '💈', labelKey: 'industry.barbershop', descKey: 'landing.solBarbershopDesc' },
+  { key: 'nail-salon', emoji: '💅', labelKey: 'industry.nailSalon', descKey: 'landing.solNailSalonDesc' },
+  { key: 'massage-spa', emoji: '💆', labelKey: 'industry.massageSpa', descKey: 'landing.solMassageSpaDesc' },
+  { key: 'pet-grooming', emoji: '🐕', labelKey: 'industry.petGrooming', descKey: 'landing.solPetGroomingDesc' },
+  { key: 'car-detailing', emoji: '🚗', labelKey: 'industry.carDetailing', descKey: 'landing.solCarDetailingDesc' },
+  { key: 'yoga-pilates', emoji: '🧘', labelKey: 'industry.yogaPilates', descKey: 'landing.solYogaPilatesDesc' },
+  { key: 'personal-trainer', emoji: '🏋️', labelKey: 'industry.personalTrainer', descKey: 'landing.solPersonalTrainerDesc' },
+  { key: 'photography-studio', emoji: '📸', labelKey: 'industry.photographyStudio', descKey: 'landing.solPhotographyStudioDesc' },
+] as const;
 
 function FooterColumn({ column }: { column: (typeof footerColumns)[number] }) {
   const { t } = useTranslation();
@@ -242,14 +248,6 @@ const callTranscript = [
   { speaker: 'ai', time: '09:42', textKey: 'landing.demoCallAi2' },
 ] as const;
 
-/** Kartu "Who it's for" — emoji statis, judul/deskripsi dari katalog i18n. */
-const whoForCards = [
-  { emoji: '💅', titleKey: 'landing.whoBeautyTitle', descKey: 'landing.whoBeautyDesc' },
-  { emoji: '🩺', titleKey: 'landing.whoHealthTitle', descKey: 'landing.whoHealthDesc' },
-  { emoji: '💼', titleKey: 'landing.whoProTitle', descKey: 'landing.whoProDesc' },
-  { emoji: '🚗', titleKey: 'landing.whoLocalTitle', descKey: 'landing.whoLocalDesc' },
-] as const;
-
 const trustCards = [
   {
     icon: IconClock,
@@ -279,29 +277,6 @@ const landingFaqs = [
   { questionKey: 'landing.faq3Q', answerKey: 'landing.faq3A' },
   { questionKey: 'landing.faq4Q', answerKey: 'landing.faq4A' },
   { questionKey: 'landing.faq5Q', answerKey: 'landing.faq5A' },
-] as const;
-
-const painPoints = [
-  {
-    icon: IconClock,
-    titleKey: 'landing.painSupportTitle',
-    descKey: 'landing.painSupportDesc',
-  },
-  {
-    icon: IconSearchX,
-    titleKey: 'landing.painAnswersTitle',
-    descKey: 'landing.painAnswersDesc',
-  },
-  {
-    icon: IconHourglass,
-    titleKey: 'landing.painResponseTitle',
-    descKey: 'landing.painResponseDesc',
-  },
-  {
-    icon: IconEyeOff,
-    titleKey: 'landing.painVisibilityTitle',
-    descKey: 'landing.painVisibilityDesc',
-  },
 ] as const;
 
 /** Indikator suara (equalizer kecil) — muncul saat pembicara sedang berbicara,
@@ -650,6 +625,20 @@ export function LandingPage() {
     return () => clearTimeout(timer);
   }, [callConnected, callSeconds, reducedMotion]);
 
+  const [solutionsMenuOpen, setSolutionsMenuOpen] = useState(false);
+  const [mobileSolutionsOpen, setMobileSolutionsOpen] = useState(false);
+
+  useEffect(() => {
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('.solutions-dropdown-container')) {
+        setSolutionsMenuOpen(false);
+      }
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
   const activeSpeaker =
     reducedMotion || callVisibleCount > callTranscript.length || callVisibleCount === 0
       ? 'ai'
@@ -664,25 +653,82 @@ export function LandingPage() {
           aria-hidden="true"
           className="landing-header-blur pointer-events-none absolute inset-x-0 top-0 h-48 -z-10"
         />
-        <div className="mx-auto flex h-[72px] w-full max-w-5xl items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5" aria-label={t('landing.ariaHome')}>
-            <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white text-zinc-950 shadow-sm">
-              <AppLogo />
-            </span>
-            <span className="text-[17px] font-semibold tracking-[-0.03em] text-white sm:text-lg">oriole</span>
-          </Link>
+        <div className="flex h-[72px] w-full items-center justify-between px-6 sm:px-8 lg:px-10">
+          <div className="flex items-center gap-12 lg:gap-16">
+            <Link to="/" className="flex items-center gap-3" aria-label={t('landing.ariaHome')}>
+              <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white text-zinc-950 shadow-sm">
+                <AppLogo />
+              </span>
+              <span className="text-[17px] font-semibold text-white sm:text-lg">oriole</span>
+            </Link>
 
-          <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-8 md:flex">
-            {landingNavLinks.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="text-lg font-medium text-white transition-opacity hover:opacity-80"
+            <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-10 lg:gap-12 md:flex">
+            <a
+              href="#how-it-works"
+              className="text-lg font-medium text-white transition-opacity hover:opacity-80"
+            >
+              {t('landing.footerHowItWorks')}
+            </a>
+
+            {/* Solutions Dropdown Menu */}
+            <div
+              className="solutions-dropdown-container relative"
+              onMouseEnter={() => setSolutionsMenuOpen(true)}
+              onMouseLeave={() => setSolutionsMenuOpen(false)}
+            >
+              <button
+                type="button"
+                aria-expanded={solutionsMenuOpen}
+                onClick={() => setSolutionsMenuOpen((open) => !open)}
+                className="inline-flex items-center gap-1.5 text-lg font-medium text-white transition-opacity hover:opacity-80 focus-visible:outline-none"
               >
-                {t(link.labelKey)}
-              </a>
-            ))}
+                <span>{t('landing.footerSolutions')}</span>
+                <IconChevronDown
+                  className={`size-4 text-zinc-400 transition-transform duration-200 ${
+                    solutionsMenuOpen ? 'rotate-180 text-white' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {solutionsMenuOpen && (
+                <div className="absolute left-1/2 top-full -translate-x-1/2 pt-3 z-50">
+                  <div className="w-72 overflow-hidden rounded-2xl border border-white/10 bg-[#0c1218]/95 p-2 shadow-2xl backdrop-blur-xl">
+                    <div className="grid grid-cols-1 gap-1">
+                      {industrySolutions.map((item) => (
+                        <a
+                          key={item.key}
+                          href={`#solution-${item.key}`}
+                          onClick={() => setSolutionsMenuOpen(false)}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white"
+                        >
+                          <span className="text-base" aria-hidden="true">{item.emoji}</span>
+                          <span className="font-medium">
+                            {t('landing.forIndustry', { industry: t(item.labelKey) })}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <a
+              href="#integrations"
+              className="text-lg font-medium text-white transition-opacity hover:opacity-80"
+            >
+              {t('landing.footerIntegrations')}
+            </a>
+
+            <a
+              href="#faq"
+              className="text-lg font-medium text-white transition-opacity hover:opacity-80"
+            >
+              {t('landing.footerFaq')}
+            </a>
           </nav>
+          </div>
 
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
@@ -729,18 +775,66 @@ export function LandingPage() {
         </div>
 
         {mobileMenuOpen && (
-          <nav aria-label={t('landing.navLabel')} className="border-t border-white/10 bg-[#090d10] pb-5 pt-2 md:hidden">
+          <nav aria-label={t('landing.navLabel')} className="border-t border-white/10 bg-[#090d10] px-6 sm:px-8 pb-5 pt-2 md:hidden">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-1">
-              {landingNavLinks.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
+              <a
+                href="#how-it-works"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
+              >
+                {t('landing.footerHowItWorks')}
+              </a>
+
+              {/* Mobile Solutions Accordion */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setMobileSolutionsOpen((o) => !o)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
                 >
-                  {t(link.labelKey)}
-                </a>
-              ))}
+                  <span>{t('landing.footerSolutions')}</span>
+                  <IconChevronDown
+                    className={`size-4 text-zinc-400 transition-transform duration-200 ${
+                      mobileSolutionsOpen ? 'rotate-180 text-white' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {mobileSolutionsOpen && (
+                  <div className="ml-3 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
+                    {industrySolutions.map((item) => (
+                      <a
+                        key={item.key}
+                        href={`#solution-${item.key}`}
+                        onClick={() => {
+                          setMobileSolutionsOpen(false);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-base text-zinc-300 transition hover:text-white"
+                      >
+                        <span className="text-sm" aria-hidden="true">{item.emoji}</span>
+                        <span>{t('landing.forIndustry', { industry: t(item.labelKey) })}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <a
+                href="#integrations"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
+              >
+                {t('landing.footerIntegrations')}
+              </a>
+
+              <a
+                href="#faq"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-lg font-medium text-white transition-opacity hover:opacity-80 hover:bg-white/5"
+              >
+                {t('landing.footerFaq')}
+              </a>
             </div>
           </nav>
         )}
@@ -751,7 +845,7 @@ export function LandingPage() {
         <div className="pointer-events-none absolute left-1/2 top-1/3 size-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/15 blur-3xl" aria-hidden="true" />
         <div className="relative mx-auto flex w-full max-w-5xl flex-col items-start text-left">
           <SectionTopic icon={IconRepeat} word={t('landing.heroEyebrow')} />
-          <h1 className="text-4xl font-bold leading-[1.08] tracking-[-0.05em] text-white sm:text-6xl lg:text-[64px]">
+          <h1 className="text-4xl font-bold leading-[1.08] text-white sm:text-6xl lg:text-[64px]">
             {t('landing.heroHeadline')}
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300 sm:text-xl sm:leading-9">
@@ -795,7 +889,7 @@ export function LandingPage() {
       <section id="demo" className="scroll-mt-6 border-y border-white/10 bg-[#06090c] px-5 py-24 sm:px-8 sm:py-28">
         <div className="mx-auto w-full max-w-5xl">
           <SectionTopic icon={IconVideo} word={t('landing.topicDemo')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] text-white sm:text-4xl">
             {t('landing.demoTitle')}
           </h2>
           <p className="mt-5 text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
@@ -897,7 +991,7 @@ export function LandingPage() {
                 <div className="relative flex items-center justify-center px-4 pt-2">
                   <IconChevronLeft className="absolute left-4 size-5 text-white/90" />
                   <div className="text-center">
-                    <p className="text-[15px] font-semibold tracking-[-0.02em] text-white">
+                    <p className="text-[15px] font-semibold text-white">
                       {t('landing.demoCallContact')}
                     </p>
                     <p className="mt-0.5 font-mono text-xs text-white/60">
@@ -1229,40 +1323,15 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 03 — Pain Points */}
-      <section className="relative overflow-hidden border-y border-[#232850] bg-[#0d1130] px-5 py-20 text-white sm:px-8 sm:py-24">
-        <div className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/15 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto w-full max-w-5xl">
-          <SectionTopic icon={IconAlertTriangle} word={t('landing.topicPain')} tone="dark" />
-          <h2 className="max-w-3xl whitespace-pre-line text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
-            <Trans
-              i18nKey="landing.painTitle"
-              components={{ strong: <strong className="text-amber-300" /> }}
-            />
-          </h2>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-[#adb3c7] sm:text-lg sm:leading-8">
-            <Trans
-              i18nKey="landing.painDesc"
-              components={{ strong: <strong className="font-semibold text-amber-300" /> }}
-            />
+      {/* 03 — The Problem (Text-Only Editorial Statement) */}
+      <section className="relative border-y border-white/10 bg-[#090d10] px-5 py-24 sm:px-8 sm:py-32">
+        <div className="mx-auto w-full max-w-5xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 sm:text-sm">
+            {t('landing.problemEyebrow')}
           </p>
-
-          <div className="mt-14 grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-10 lg:gap-y-0">
-            {painPoints.map((point) => {
-              const PointIcon = point.icon;
-              return (
-                <article key={point.titleKey}>
-                  <PointIcon className="size-8 text-[#969caf]" strokeWidth={1.8} aria-hidden="true" />
-                  <h3 className="mt-9 text-base font-semibold leading-tight tracking-[-0.02em] text-white sm:text-lg lg:min-h-[3rem]">
-                    {t(point.titleKey)}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-[#adb3c7]">
-                    {t(point.descKey)}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
+          <h2 className="mt-8 max-w-5xl text-2xl font-medium leading-[1.3] text-white sm:text-4xl sm:leading-[1.28] md:text-5xl md:leading-[1.24]">
+            {t('landing.problemStatement')}
+          </h2>
         </div>
       </section>
 
@@ -1270,7 +1339,7 @@ export function LandingPage() {
       <section id="how-it-works" className="scroll-mt-6 border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
         <div className="mx-auto w-full max-w-5xl">
           <SectionTopic icon={IconRepeat} word={t('landing.topicHow')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] text-white sm:text-4xl">
             {t('landing.howTitle')}
           </h2>
 
@@ -1287,7 +1356,7 @@ export function LandingPage() {
                     />
                   </div>
                   <div className="mt-5 text-sm leading-6 sm:text-base sm:leading-7">
-                    <h3 className="inline font-semibold tracking-[-0.02em] text-white">
+                    <h3 className="inline font-semibold text-white">
                       {t(step.titleKey)}
                     </h3>{' '}
                     <p className="inline text-zinc-400">{t(step.descKey)}</p>
@@ -1304,7 +1373,7 @@ export function LandingPage() {
         <div className="pointer-events-none absolute left-1/2 top-24 size-[28rem] -translate-x-1/2 rounded-full bg-[#1017e8]/15 opacity-60 blur-3xl" aria-hidden="true" />
         <div className="relative mx-auto w-full max-w-5xl text-center">
           <SectionTopic icon={IconPlug} word={t('landing.topicIntegrations')} />
-          <h2 className="mx-auto max-w-4xl text-2xl font-semibold leading-[1.1] tracking-[-0.05em] text-white sm:text-4xl lg:text-5xl">
+          <h2 className="mx-auto max-w-4xl text-2xl font-semibold leading-[1.1] text-white sm:text-4xl lg:text-5xl">
             {t('landing.integrationTitle')}
           </h2>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
@@ -1332,11 +1401,11 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 06 — Who It's For */}
-      <section className="border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
+      {/* 06 — Solutions for Appointment-Based Businesses */}
+      <section id="solutions" className="scroll-mt-6 border-y border-white/10 bg-[#090d10] px-5 py-20 sm:px-8">
         <div className="mx-auto w-full max-w-5xl">
-          <SectionTopic icon={IconUsers} word={t('landing.topicWho')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+          <SectionTopic icon={IconUsers} word={t('landing.topicSolutions')} />
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] text-white sm:text-4xl">
             {t('landing.whoTitle')}
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
@@ -1344,14 +1413,18 @@ export function LandingPage() {
           </p>
 
           <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {whoForCards.map((card) => (
-              <div key={card.titleKey} className="rounded-2xl border border-white/10 bg-zinc-900 p-6">
-                <span className="text-2xl" aria-hidden="true">{card.emoji}</span>
-                <h3 className="mt-3 text-base font-semibold tracking-[-0.02em] text-white">
-                  {t(card.titleKey)}
+            {industrySolutions.map((item) => (
+              <div
+                id={`solution-${item.key}`}
+                key={item.key}
+                className="scroll-mt-24 rounded-2xl border border-white/10 bg-zinc-900/90 p-6 transition hover:border-white/20 hover:bg-zinc-900"
+              >
+                <span className="text-3xl" aria-hidden="true">{item.emoji}</span>
+                <h3 className="mt-3 text-base font-semibold text-white">
+                  {t('landing.forIndustry', { industry: t(item.labelKey) })}
                 </h3>
-                <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                  {t(card.descKey)}
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  {t(item.descKey)}
                 </p>
               </div>
             ))}
@@ -1363,7 +1436,7 @@ export function LandingPage() {
       <section className="border-y border-white/10 bg-[#06090c] px-5 py-20 sm:px-8">
         <div className="mx-auto w-full max-w-5xl">
           <SectionTopic icon={IconShield} word={t('landing.topicTrust')} />
-          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+          <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] text-white sm:text-4xl">
             {t('landing.trustTitle')}
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
@@ -1378,7 +1451,7 @@ export function LandingPage() {
                   <span className="flex size-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
                     <TrustIcon className="size-5" />
                   </span>
-                  <h3 className="mt-4 text-base font-semibold tracking-[-0.02em] text-white">
+                  <h3 className="mt-4 text-base font-semibold text-white">
                     {t(card.titleKey)}
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-zinc-400">
@@ -1396,7 +1469,7 @@ export function LandingPage() {
         <div className="mx-auto grid w-full max-w-5xl gap-y-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-x-16 lg:gap-y-0">
           <div>
             <SectionTopic icon={IconHelp} word={t('landing.topicFaq')} />
-            <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] tracking-[-0.04em] text-white sm:text-4xl">
+            <h2 className="max-w-3xl text-2xl font-semibold leading-[1.15] text-white sm:text-4xl">
               {t('landing.faqTitle')}
             </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg sm:leading-8">
@@ -1442,7 +1515,7 @@ export function LandingPage() {
       <section className="relative overflow-hidden border-y border-[#232850] bg-gradient-to-b from-[#0d1130] to-[#090d10] px-5 py-24 text-center text-white sm:px-8 sm:py-28">
         <div className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1017e8]/20 blur-3xl" aria-hidden="true" />
         <div className="relative mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+          <h2 className="text-3xl font-bold text-white sm:text-5xl">
             {t('landing.finalCtaTitle')}
           </h2>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#adb3c7] sm:text-lg sm:leading-8">
@@ -1488,7 +1561,7 @@ export function LandingPage() {
                 <span className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white text-zinc-950 shadow-sm">
                   <AppLogo />
                 </span>
-                <span className="text-[15px] font-semibold tracking-[-0.03em] text-white">oriole</span>
+                <span className="text-[15px] font-semibold text-white">oriole</span>
               </Link>
               <p className="max-w-sm text-[15px] leading-6 text-zinc-400">{t('landing.footerDescription')}</p>
               <p className="text-sm font-medium text-blue-400">{t('landing.footerTagline')}</p>

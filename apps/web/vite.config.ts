@@ -8,6 +8,7 @@ export default defineConfig({
   envDir: '../..',
   server: {
     port: 5173,
+    allowedHosts: true,
     proxy: {
       // Dev: kirim request API ke backend Hono tanpa CORS.
       '/api': {

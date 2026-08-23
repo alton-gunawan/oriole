@@ -651,27 +651,40 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
 
     // Reminder + auto-call + kalender per instance; webhook keluar hanya
     // untuk instance utama (hindari spam N event untuk satu seri).
+    // Jalankan semua emit secara paralel agar tidak menimbulkan latensi serial Inngest.
+    const emitTasks: Promise<unknown>[] = [];
     for (const row of inserted) {
-      await emitBookingCreated({
-        workspaceId,
-        bookingId: row.id,
-        scheduledAt: row.scheduledAt,
-        timezone: row.timezone,
-      });
-      if (row.phone) {
-        await emitAutoCallScheduled({
+      emitTasks.push(
+        emitBookingCreated({
           workspaceId,
           bookingId: row.id,
           scheduledAt: row.scheduledAt,
           timezone: row.timezone,
-        });
+        }),
+      );
+      if (row.phone) {
+        emitTasks.push(
+          emitAutoCallScheduled({
+            workspaceId,
+            bookingId: row.id,
+            scheduledAt: row.scheduledAt,
+            timezone: row.timezone,
+          }),
+        );
       }
-      await emitCalendarBookingEvent(workspaceId, row.id, 'upsert');
+      emitTasks.push(emitCalendarBookingEvent(workspaceId, row.id, 'upsert'));
     }
-    await emitOutgoingWebhookEvent(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
-    await emitSlackBookingEvent(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
-    await emitTelegramBookingAlert(workspaceId, 'booking.created', bookingWebhookPayload(primary, defaults.serviceName));
-    await emitVideoLinkEvent(workspaceId, primary.id);
+    const webhookPayload = bookingWebhookPayload(primary, defaults.serviceName);
+    emitTasks.push(emitOutgoingWebhookEvent(workspaceId, 'booking.created', webhookPayload));
+    emitTasks.push(emitSlackBookingEvent(workspaceId, 'booking.created', webhookPayload));
+    emitTasks.push(emitTelegramBookingAlert(workspaceId, 'booking.created', webhookPayload));
+    emitTasks.push(emitVideoLinkEvent(workspaceId, primary.id));
+
+    // Tunggu emit selesai secara paralel dengan batas waktu agar tidak memicu timeout pada client
+    await Promise.race([
+      Promise.allSettled(emitTasks),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
 
     // Analitik: hanya instance utama (satu event per seri, mirror webhook).
     captureBookingEvent('booking.created', {
@@ -871,13 +884,14 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       const newStatus = (values.status as string | undefined) ?? prevStatus;
       const prevAt = existing.scheduledAt;
       const newAt = values.scheduledAt instanceof Date ? values.scheduledAt : prevAt;
+      const emitTasks: Promise<unknown>[] = [];
 
       if (newStatus === 'completed' && prevStatus !== 'completed') {
-        await emitBookingCompleted(workspaceId, updated.id);
-        await emitAutoCallCancelled(workspaceId, updated.id);
+        emitTasks.push(emitBookingCompleted(workspaceId, updated.id));
+        emitTasks.push(emitAutoCallCancelled(workspaceId, updated.id));
       } else if (newStatus === 'cancelled' && prevStatus !== 'cancelled') {
-        await emitBookingCancelled(workspaceId, updated.id);
-        await emitAutoCallCancelled(workspaceId, updated.id);
+        emitTasks.push(emitBookingCancelled(workspaceId, updated.id));
+        emitTasks.push(emitAutoCallCancelled(workspaceId, updated.id));
       } else if (newStatus !== 'completed') {
         // Dijadwal ulang / diaktifkan kembali dari terminal / nomor baru ditambahkan
         // → reminder & auto-call baru. HANYA emit create (tanpa cancel dulu): run
@@ -890,27 +904,32 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           newAt.getTime() !== prevAt.getTime() ||
           phoneAdded
         ) {
-          await emitBookingCreated({
-            workspaceId,
-            bookingId: updated.id,
-            scheduledAt: newAt,
-            timezone: updated.timezone,
-          });
-          if (updated.phone) {
-            await emitAutoCallScheduled({
+          emitTasks.push(
+            emitBookingCreated({
               workspaceId,
               bookingId: updated.id,
               scheduledAt: newAt,
               timezone: updated.timezone,
-            });
+            }),
+          );
+          if (updated.phone) {
+            emitTasks.push(
+              emitAutoCallScheduled({
+                workspaceId,
+                bookingId: updated.id,
+                scheduledAt: newAt,
+                timezone: updated.timezone,
+              }),
+            );
           }
         }
       }
 
       // Integrasi eksternal: webhook + kalender mengikuti status baru.
+      const payload = bookingWebhookPayload(updated, serviceName);
       if (newStatus === 'completed' && prevStatus !== 'completed') {
-        await emitOutgoingWebhookEvent(workspaceId, 'booking.completed', bookingWebhookPayload(updated, serviceName));
-        await emitSlackBookingEvent(workspaceId, 'booking.completed', bookingWebhookPayload(updated, serviceName));
+        emitTasks.push(emitOutgoingWebhookEvent(workspaceId, 'booking.completed', payload));
+        emitTasks.push(emitSlackBookingEvent(workspaceId, 'booking.completed', payload));
         captureBookingEvent('booking.completed', {
           workspaceId,
           bookingId: updated.id,
@@ -919,10 +938,10 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           status: updated.status,
         });
       } else if (newStatus === 'cancelled' && prevStatus !== 'cancelled') {
-        await emitOutgoingWebhookEvent(workspaceId, 'booking.cancelled', bookingWebhookPayload(updated, serviceName));
-        await emitSlackBookingEvent(workspaceId, 'booking.cancelled', bookingWebhookPayload(updated, serviceName));
+        emitTasks.push(emitOutgoingWebhookEvent(workspaceId, 'booking.cancelled', payload));
+        emitTasks.push(emitSlackBookingEvent(workspaceId, 'booking.cancelled', payload));
         // Booking dibatalkan → hapus event kalender.
-        await emitCalendarBookingEvent(workspaceId, updated.id, 'delete');
+        emitTasks.push(emitCalendarBookingEvent(workspaceId, updated.id, 'delete'));
         captureBookingEvent('booking.cancelled', {
           workspaceId,
           bookingId: updated.id,
@@ -930,9 +949,9 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           status: updated.status,
         });
       } else {
-        await emitOutgoingWebhookEvent(workspaceId, 'booking.updated', bookingWebhookPayload(updated, serviceName));
-        await emitSlackBookingEvent(workspaceId, 'booking.updated', bookingWebhookPayload(updated, serviceName));
-        await emitCalendarBookingEvent(workspaceId, updated.id, 'upsert');
+        emitTasks.push(emitOutgoingWebhookEvent(workspaceId, 'booking.updated', payload));
+        emitTasks.push(emitSlackBookingEvent(workspaceId, 'booking.updated', payload));
+        emitTasks.push(emitCalendarBookingEvent(workspaceId, updated.id, 'upsert'));
         captureBookingEvent('booking.updated', {
           workspaceId,
           bookingId: updated.id,
@@ -941,6 +960,11 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
           status: updated.status,
         });
       }
+
+      await Promise.race([
+        Promise.allSettled(emitTasks),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
 
       // Batalkan seluruh seri pengulangan bila diminta (status → cancelled).
       let seriesCancelled = 0;
@@ -1010,21 +1034,26 @@ export const bookingsRoutes = new Hono<{ Variables: WorkspaceVariables }>()
       if (!deleted) {
         return c.json({ error: 'Booking tidak ditemukan' }, 404);
       }
-      // Batalkan reminder & auto-call terjadwal bila ada.
-      await emitBookingCancelled(c.get('workspaceId'), deleted.id);
-      await emitAutoCallCancelled(c.get('workspaceId'), deleted.id);
-      // Integrasi eksternal: webhook booking.deleted + hapus event kalender.
-      await emitOutgoingWebhookEvent(c.get('workspaceId'), 'booking.deleted', {
-        id: deleted.id,
-        workspaceId: c.get('workspaceId'),
-      });
-      await emitSlackBookingEvent(c.get('workspaceId'), 'booking.deleted', {
-        id: deleted.id,
-        workspaceId: c.get('workspaceId'),
-      });
-      await emitCalendarBookingEvent(c.get('workspaceId'), deleted.id, 'delete');
+      const workspaceId = c.get('workspaceId');
+      const emitTasks: Promise<unknown>[] = [
+        emitBookingCancelled(workspaceId, deleted.id),
+        emitAutoCallCancelled(workspaceId, deleted.id),
+        emitOutgoingWebhookEvent(workspaceId, 'booking.deleted', {
+          id: deleted.id,
+          workspaceId,
+        }),
+        emitSlackBookingEvent(workspaceId, 'booking.deleted', {
+          id: deleted.id,
+          workspaceId,
+        }),
+        emitCalendarBookingEvent(workspaceId, deleted.id, 'delete'),
+      ];
+      await Promise.race([
+        Promise.allSettled(emitTasks),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
       captureBookingEvent('booking.deleted', {
-        workspaceId: c.get('workspaceId'),
+        workspaceId,
         bookingId: deleted.id,
         userId: c.get('userId'),
       });
