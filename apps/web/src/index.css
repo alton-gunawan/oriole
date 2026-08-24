@@ -20,6 +20,38 @@
  */
 @source "../node_modules/@ilamy/calendar/dist";
 
+/* ── Focus Outline Reset ─────────────────────────────────────
+ * Menghilangkan outline border putih bawaan browser saat elemen
+ * menerima fokus programatik (mis. setelah modal/dialog ditutup),
+ * autofocus, ataupun klik mouse.
+ */
+*,
+*::before,
+*::after {
+  outline-color: transparent;
+}
+
+*:focus,
+*:focus-visible,
+button:focus,
+button:focus-visible,
+[role="button"]:focus,
+[role="button"]:focus-visible,
+a:focus,
+a:focus-visible,
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-width: 0 !important;
+  outline-style: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Variant `dark:` Tailwind mengikuti atribut data-theme di <html> (dari
    AppShell) — bukan prefers-color-scheme — sehingga toggle tema app
    menguasai semuanya, termasuk mode 'system' yang di-resolve ke light/dark. */

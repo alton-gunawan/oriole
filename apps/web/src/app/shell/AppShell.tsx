@@ -35,6 +35,7 @@ import {
   IconPanelLeftOpen,
   IconServices,
   IconSettings,
+  IconSparkles,
   IconStaff,
   IconSun,
   IconSunMoon,
@@ -81,6 +82,7 @@ const userMenuTriggerStyle = {
   padding: 6,
   justifyContent: 'space-between',
   gap: 8,
+  outline: 'none',
   '--color-overlay-hover': 'rgba(0,0,0,0.08)',
 };
 
@@ -91,6 +93,7 @@ const businessTriggerStyle = {
   padding: 5,
   justifyContent: 'space-between',
   gap: 8,
+  outline: 'none',
   '--color-overlay-hover': 'rgba(0,0,0,0.08)',
 };
 
@@ -267,6 +270,25 @@ export function AppShell() {
     ? (unreadSummary?.unreadByWorkspace[activeWorkspaceId] ?? 0)
     : 0;
 
+  // Status langganan & trial untuk sidebar upgrade card
+  const { data: billingData } = useQuery({
+    queryKey: ['billing'],
+    queryFn: () =>
+      apiFetch<{
+        plan: 'free' | 'pro';
+        subscription: {
+          status: string;
+          currentPeriodEnd: string | null;
+        } | null;
+      }>('/me/billing'),
+    staleTime: 60_000,
+  });
+
+  const isProActive = billingData?.plan === 'pro' && billingData?.subscription?.status === 'active';
+  const trialDaysLeft = billingData?.subscription?.currentPeriodEnd
+    ? Math.max(0, Math.ceil((new Date(billingData.subscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 12;
+
   const onLogout = async () => {
     await signOut();
     navigate('/auth/sign-in', { replace: true });
@@ -427,6 +449,55 @@ export function AppShell() {
         ))}
       </nav>
 
+      {/* Upgrade Pro Card (GitBook style) */}
+      {!isProActive && (
+        <div className="px-2.5 pb-2 pt-1">
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+                setIsBillingOpen(true);
+              }}
+              title={t('nav.upgradeToPro')}
+              aria-label={t('nav.upgradeToPro')}
+              className="flex size-11 w-full items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition cursor-pointer"
+            >
+              <IconSparkles className="size-4" />
+            </button>
+          ) : (
+            <div className="rounded border border-zinc-200/90 bg-white p-3.5 shadow-sm dark:border-zinc-800/90 dark:bg-[#161922]">
+              <p className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                {trialDaysLeft > 1
+                  ? t('nav.trialEndsInDays', { days: trialDaysLeft })
+                  : trialDaysLeft === 1
+                    ? t('nav.trialEndsInDays', { days: 1 })
+                    : trialDaysLeft === 0
+                      ? t('nav.trialEndsToday')
+                      : t('nav.trialEnded')}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                {t('nav.upgradeCardDesc')}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                  setIsBillingOpen(true);
+                }}
+                className="mt-3 flex w-full items-center justify-center rounded bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-amber-400 active:scale-[0.99] cursor-pointer"
+              >
+                <span>{t('nav.upgrade')}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tema diterapkan app-wide via data-theme di <html> (applyTheme). */}
       <div className="border-t border-zinc-200/80 dark:border-zinc-700/80 p-2.5">
         <DropdownMenu
@@ -468,13 +539,25 @@ export function AppShell() {
           <DropdownMenuItem
             label={t('nav.settings')}
             icon={<IconSettings className="size-4" />}
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+              setUserMenuOpen(false);
+              setIsSettingsOpen(true);
+            }}
           />
           {/* Billing — dialog langganan & kuota (dipindah dari halaman /app/billing) */}
           <DropdownMenuItem
             label={t('nav.billing')}
             icon={<IconCreditCard className="size-4" />}
-            onClick={() => setIsBillingOpen(true)}
+            onClick={() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+              setUserMenuOpen(false);
+              setIsBillingOpen(true);
+            }}
           />
           {/* Pemilihan bahasa — submenu flyout berisi pilihan EN/ID. */}
           <LanguageSubMenu />
@@ -657,9 +740,43 @@ export function AppShell() {
 
       {/* Dialog settings — satu instance untuk seluruh shell (sidebar desktop
           & drawer mobile sama-sama memakai state isSettingsOpen). */}
-      <SettingsDialog isOpen={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        onOpenChange={(open) => {
+          setIsSettingsOpen(open);
+          if (!open) {
+            requestAnimationFrame(() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            });
+            setTimeout(() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            }, 50);
+          }
+        }}
+      />
       {/* Dialog billing — dibuka dari dropdown akun di footer sidebar. */}
-      <BillingDialog isOpen={isBillingOpen} onOpenChange={setIsBillingOpen} />
+      <BillingDialog
+        isOpen={isBillingOpen}
+        onOpenChange={(open) => {
+          setIsBillingOpen(open);
+          if (!open) {
+            requestAnimationFrame(() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            });
+            setTimeout(() => {
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
+            }, 50);
+          }
+        }}
+      />
     </div>
   );
 }

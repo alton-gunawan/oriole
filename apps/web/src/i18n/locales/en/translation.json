@@ -68,7 +68,13 @@
     "expandSidebar": "Expand sidebar",
     "logout": "Logout",
     "user": "User",
-    "services": "Services"
+    "services": "Services",
+    "trialEndsInDays": "Your trial ends in {{days}} days",
+    "trialEndsToday": "Your trial ends today",
+    "trialEnded": "Your trial has ended",
+    "upgradeCardDesc": "Upgrade at any time to continue accessing paid features.",
+    "upgrade": "Upgrade",
+    "upgradeToPro": "Upgrade to Pro"
   },
   "auth": {
     "offlineTitle": "Can't reach the server",

@@ -350,7 +350,17 @@ export function SettingsDialog({
   }, [isOpen, user?.name, user?.timezone, workspaces, activeWorkspaceId]);
 
   const close = () => {
-    if (!isSaving && !isDeleting && !isDeletingUser) onOpenChange(false);
+    if (!isSaving && !isDeleting && !isDeletingUser) {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      onOpenChange(false);
+      requestAnimationFrame(() => {
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      });
+    }
   };
 
   const handleDeleteUser = async () => {

@@ -68,7 +68,13 @@
     "expandSidebar": "Perluas sidebar",
     "logout": "Logout",
     "user": "User",
-    "services": "Layanan"
+    "services": "Layanan",
+    "trialEndsInDays": "Masa uji coba berakhir dalam {{days}} hari",
+    "trialEndsToday": "Masa uji coba berakhir hari ini",
+    "trialEnded": "Masa uji coba telah berakhir",
+    "upgradeCardDesc": "Upgrade kapan saja untuk terus mengakses fitur berbayar.",
+    "upgrade": "Upgrade",
+    "upgradeToPro": "Upgrade ke Pro"
   },
   "auth": {
     "offlineTitle": "Server tidak dapat dijangkau",

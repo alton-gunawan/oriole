@@ -173,7 +173,12 @@ export function BillingDialog({
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={onOpenChange}
+      onOpenChange={(open) => {
+        if (!open && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        onOpenChange(open);
+      }}
       purpose="info"
       width={760}
       maxHeight="min(85vh, 720px)"
