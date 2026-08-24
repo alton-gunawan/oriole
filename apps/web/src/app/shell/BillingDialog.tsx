@@ -347,7 +347,7 @@ export function BillingDialog({
 
                         <div className="mt-4 flex items-baseline gap-1.5">
                           <span className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-                            $15
+                            ${data?.planInfo?.pricePerMonth || 19}
                           </span>
                           <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                             {t('common.perMonth')}

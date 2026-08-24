@@ -112,7 +112,7 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'Paddle belum dikonfigurasi', configured: false }, 503);
     }
 
-    // Single subscription plan ('pro' - $15/month).
+    // Single subscription plan ('pro' - $19/month).
     const priceId = priceIdForPlan('pro');
     if (!priceId) {
       return c.json(

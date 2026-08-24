@@ -3,8 +3,8 @@
  * status langganan dan untuk UI.
  *
  * Model langganan: 1 subscription plan ($19/bulan)
- * - 7-day free trial, cancel anytime
- * - Pay only for the voice calls you use
+ * - 14-day free trial, cancel anytime
+ * - Voice PAYG (pay only for the voice calls you use)
  * - Unlimited bookings, no setup fee, semua fitur otomatisasi booking & staf.
  */
 import { env } from './env.ts';
@@ -44,18 +44,18 @@ export const PLANS: Record<PlanId, PlanInfo> = {
   pro: {
     id: 'pro',
     name: 'Pro',
-    pricePerMonth: 15,
-    trialDays: 7,
+    pricePerMonth: 19,
+    trialDays: 14,
     trialCreditUsd: 5,
     creditCardRequired: true,
-    usagePricing: '+ pay only for the voice calls you use',
+    usagePricing: '+ Voice PAYG',
     cancelAnytime: true,
     features: [
       'WhatsApp / multi-channel inbox',
       'Auto reminders',
-      'Voice AI inbound/outbound (PAYG)',
+      'Voice AI inbound/outbound (Voice PAYG)',
       'Test call + call history',
-      'Gratis $5 credit untuk call',
+      '14-day free trial + $5 voice credit',
     ],
   },
 };

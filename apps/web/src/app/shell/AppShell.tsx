@@ -287,7 +287,7 @@ export function AppShell() {
   const isProActive = billingData?.plan === 'pro' && billingData?.subscription?.status === 'active';
   const trialDaysLeft = billingData?.subscription?.currentPeriodEnd
     ? Math.max(0, Math.ceil((new Date(billingData.subscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 12;
+    : 14;
 
   const onLogout = async () => {
     await signOut();

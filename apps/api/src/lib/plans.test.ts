@@ -34,19 +34,19 @@ describe('PLANS', () => {
     expect(free.features).toContain('Tanpa voice AI volume');
   });
 
-  it('Pro: $15/bulan, 7-day free trial, $5 voice credit, whatsapp inbox, auto reminders, voice AI, test call', () => {
+  it('Pro: $19/bulan, 14-day free trial, $5 voice credit, whatsapp inbox, auto reminders, voice AI, test call', () => {
     const pro = PLANS['pro'];
-    expect(pro.pricePerMonth).toBe(15);
-    expect(pro.trialDays).toBe(7);
+    expect(pro.pricePerMonth).toBe(19);
+    expect(pro.trialDays).toBe(14);
     expect(pro.trialCreditUsd).toBe(5);
     expect(pro.creditCardRequired).toBe(true);
     expect(pro.cancelAnytime).toBe(true);
-    expect(pro.usagePricing).toBe('+ pay only for the voice calls you use');
+    expect(pro.usagePricing).toBe('+ Voice PAYG');
     expect(pro.features).toContain('WhatsApp / multi-channel inbox');
     expect(pro.features).toContain('Auto reminders');
-    expect(pro.features).toContain('Voice AI inbound/outbound (PAYG)');
+    expect(pro.features).toContain('Voice AI inbound/outbound (Voice PAYG)');
     expect(pro.features).toContain('Test call + call history');
-    expect(pro.features).toContain('Gratis $5 credit untuk call');
+    expect(pro.features).toContain('14-day free trial + $5 voice credit');
   });
 
   it('urutan tampilan: free, pro', () => {
