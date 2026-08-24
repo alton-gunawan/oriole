@@ -54,16 +54,22 @@ Dibangun dengan arsitektur monorepo TypeScript end-to-end yang tangguh, cepat, d
 ### 📇 8. Customer Relationship Management (CRM Contacts)
 - **Direktori Pelanggan Terpusat (`/app/contacts`)**: Detail profil pelanggan, riwayat booking, catatan preferensi, nomor telepon terverifikasi, dan kanal komunikasi aktif.
 
-### 💳 9. Billing & Global Payments (Paddle MoR)
+### 🏢 9. Multi-Workspace & Streamlined Onboarding
+- **Quick 3-Step Onboarding**: Alur pendaftaran awal yang cepat dan mudah (Informasi Bisnis ➔ Katalog Layanan ➔ Penugasan Staf).
+- **Multi-Workspace Switcher**: Beralih antar-bisnis secara instan dengan indikator unread badge per bisnis.
+- **Graceful Workspace Lifecycle**: Penghapusan bisnis dengan sistem *soft-delete* (3-day grace period).
+
+### 💳 10. Billing, Trial & Global Payments (Paddle MoR)
+- **GitBook-Style Sidebar Trial Card**: Countdown masa uji coba (*trial*) interaktif di bagian bawah sidebar dengan pemicu upgrade instan.
 - **Manajemen Langganan SaaS**: Integrasi Merchant of Record (MoR) Paddle untuk paket *Free*, *Pro*, dan *Business*.
 - **Tautan Pembayaran Sekali Bayar (Payment Links)**: Buat tautan pembayaran untuk deposit atau pelunasan reservasi dengan dukungan berbagai mata uang dunia.
 - **Idempotent Webhook Processing**: Verifikasi tanda tangan HMAC dan pencatatan event transaksi yang aman dari duplikasi.
 
-### 📊 10. Analitik & Telemetri Terintegrasi
+### 📊 11. Analitik & Telemetri Terintegrasi
 - **PostHog Event Tracking**: Pelacakan analitik penggunaan aplikasi secara aman di sisi klien maupun server.
 - **Server-side Error Tracking**: Monitoring dan pelaporan error secara terpusat untuk keandalan sistem.
 
-### 🌐 11. Internasionalisasi (i18n)
+### 🌐 12. Internasionalisasi (i18n)
 - **Dukungan Dwibahasa Penuh**: Bahasa Indonesia (`id`) & English (`en`).
 - **Validasi Build Otomatis (`check:i18n`)**: Menjamin konsistensi dan kelengkapan seluruh kunci terjemahan di frontend.
 
@@ -171,6 +177,29 @@ Akses antarmuka web di `http://localhost:5173`.
 Untuk menjalankan Inngest Dev Server lokal:
 ```bash
 pnpm --filter @oriole/api dev:inngest
+```
+
+---
+
+## 📦 Data Seeding & Development Utilities
+
+Tersedia sejumlah helper CLI script di `@oriole/api` untuk mengisi data dummy pengujian secara instan:
+
+```bash
+# Populate data dummy lengkap untuk business studio (layanan, staf, booking, kontak, chat)
+pnpm --filter @oriole/api tsx src/scripts/seed-northsick.ts
+
+# Populate data dummy bookings
+pnpm --filter @oriole/api seed:bookings
+
+# Populate data staf & jam kerja
+pnpm --filter @oriole/api seed:staff
+
+# Populate basis pengetahuan (Knowledge Base) AI
+pnpm --filter @oriole/api seed:ai-kb
+
+# Uji coba bot respon AI via CLI
+pnpm --filter @oriole/api test:ai-bot
 ```
 
 ---
