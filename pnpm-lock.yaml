@@ -48,8 +48,8 @@ importers:
         specifier: ^4.12.34
         version: 4.12.34
       inngest:
-        specifier: ^4.14.0
-        version: 4.14.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(hono@4.12.34)(react@19.2.8)(typescript@7.0.2)(zod@4.4.3)
+        specifier: ^4.18.0
+        version: 4.18.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(hono@4.12.34)(react@19.2.8)(typescript@7.0.2)(zod@4.4.3)
       jose:
         specifier: ^6.2.7
         version: 6.2.7
@@ -316,8 +316,8 @@ packages:
   '@better-fetch/fetch@1.1.21':
     resolution: {integrity: sha512-/ImESw0sskqlVR94jB+5+Pxjf+xBwDZF/N5+y2/q4EqD7IARUTSpPfIo8uf39SYpCxyOCtbyYpUrZ3F/k0zT4A==}
 
-  '@bufbuild/protobuf@2.13.0':
-    resolution: {integrity: sha512-acq7c49vxfm1ggJ95P70TX7ABDM0vxr1SYD3BB0o0jnBLB4OAqeHyKuN+cD3w80gXEDQ2zxHpR6CUeA+O/aU9g==}
+  '@bufbuild/protobuf@2.14.0':
+    resolution: {integrity: sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==}
 
   '@captchafox/react@1.13.0':
     resolution: {integrity: sha512-ApU8zeUQm2tLcxR5Mm6IPwZUnaoSIy5sF0R0kUwgKHYvnxeIZ+E4uaLro/5f25JBvqM4XW1jJh03EkWjoOIhfA==}
@@ -2927,8 +2927,8 @@ packages:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
     engines: {node: '>=8'}
 
-  ansi-regex@6.2.2:
-    resolution: {integrity: sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg==}
+  ansi-regex@6.3.0:
+    resolution: {integrity: sha512-WpDfL7NO6j7tH88IDBNVdUJxDh9nmCteAVW9dsep846XdwF4naCBK+/tGLX3KJgcpgMRXCFlTM2hKGoK9FsdrQ==}
     engines: {node: '>=12'}
 
   ansi-styles@4.3.0:
@@ -3093,6 +3093,9 @@ packages:
 
   core-js@3.49.0:
     resolution: {integrity: sha512-es1U2+YTtzpwkxVLwAFdSpaIMyQaq0PBgm3YD1W3Qpsn1NAmO3KSgZfu+oGSWVu6NvLHoHCV/aYcsE5wiB7ALg==}
+
+  core-js@3.50.0:
+    resolution: {integrity: sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw==}
 
   country-flag-icons@1.6.20:
     resolution: {integrity: sha512-py8JiEKzjhYw6HPJ0L7SxLgCYim36UPRTZX43/kqGueUCZLSvnrqAiwW8HtQibur7mdkFQUkjOgdK+o/9FBtaw==}
@@ -3360,12 +3363,12 @@ packages:
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
-  eventsource-parser@3.1.0:
-    resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
+  eventsource-parser@3.1.1:
+    resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
     engines: {node: '>=18.0.0'}
 
-  eventsource@4.1.0:
-    resolution: {integrity: sha512-2GuF51iuHX6A9xdTccMTsNb7VO0lHZihApxhvQzJB5A03DvHDd2FQepodbMaztPBmBcE/ox7o2gqaxGhYB9LhQ==}
+  eventsource@4.1.1:
+    resolution: {integrity: sha512-D6bTRWh6KahHTK/m4WnjPQyEinNPf9eFLEZSEoj7d6fTibspnAVYfzHvirL7u/aoX5d9YYfIkBVAhmigUELk9w==}
     engines: {node: '>=20.0.0'}
 
   expect-type@1.4.0:
@@ -3515,8 +3518,8 @@ packages:
     resolution: {integrity: sha512-Xx76dnuxuTyrrFbluCahtM+RP0Xt4hyrH7Q/OzN0DIJ5HKau4lDXXkSTLO36s3C6X4aR2ZjucryQ5/qkxUZkOQ==}
     hasBin: true
 
-  inngest@4.14.0:
-    resolution: {integrity: sha512-N/sIiHQ5NL/1YPuxq+3HiaNcZ4Sl0fwKNYdat+du83E3qNGDTWeGZ5Bz1JFe+BmSBxTy3R/4k9Lzacx7K1CM5w==}
+  inngest@4.18.0:
+    resolution: {integrity: sha512-eTWfjl8F83JxD9RiJHdMDG8ihsaCLn2JRK10/rfymvWlVn5Kmae2DKcPaEU+3uxTfSS3l2Uugyne9H6/JAntvA==}
     engines: {node: '>=20'}
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
@@ -3915,8 +3918,8 @@ packages:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
 
-  pg-protocol@1.15.0:
-    resolution: {integrity: sha512-cq9sECI5s0+uPUXjbz8ioyPJni6RzsRib0US67i5IoTZKw8fNeYlVE7u8F4dG7vEJJtc5wdD1K189lCCUwqWTQ==}
+  pg-protocol@1.16.0:
+    resolution: {integrity: sha512-sILXutLVjCLjcDuOmvhX5e2Z4cS5qG/6Bu3VkpFwdf/633ElGLpEh9bgmuI5I4sqKqkifQiGyiCcx1HdtrK7tg==}
 
   pg-types@2.2.0:
     resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
@@ -4203,10 +4206,6 @@ packages:
 
   selderee@0.11.0:
     resolution: {integrity: sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA==}
-
-  serialize-error-cjs@0.1.4:
-    resolution: {integrity: sha512-6a6dNqipzbCPlTFgztfNP2oG+IGcflMe/01zSzGrQcxGMKbIjOemBBD85pH92klWaJavAUWxAh9Z0aU28zxW6A==}
-    deprecated: Rolling release, please update to 0.2.0
 
   set-cookie-parser@2.7.2:
     resolution: {integrity: sha512-oeM1lpU/UvhTxw+g3cIfxXHyJRc/uidd3yK1P242gzHds0udQBYzs3y8j4gCCW+ZJ7ad0yctld8RYO+bdurlvw==}
@@ -4656,7 +4655,7 @@ snapshots:
 
   '@better-fetch/fetch@1.1.21': {}
 
-  '@bufbuild/protobuf@2.13.0': {}
+  '@bufbuild/protobuf@2.14.0': {}
 
   '@captchafox/react@1.13.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
@@ -5128,7 +5127,7 @@ snapshots:
       '@instantdb/core': 1.0.57
       '@instantdb/react-common': 1.0.57(react@19.2.8)
       '@instantdb/version': 1.0.57
-      eventsource: 4.1.0
+      eventsource: 4.1.1
       react: 19.2.8
 
   '@instantdb/version@1.0.57': {}
@@ -7001,7 +7000,7 @@ snapshots:
   '@triplit/db@1.1.10(typescript@7.0.2)':
     dependencies:
       '@triplit/logger': 0.0.3(typescript@7.0.2)
-      core-js: 3.49.0
+      core-js: 3.50.0
       elen: 1.0.10
       nanoid: 5.1.16
       sorted-btree: 1.8.1
@@ -7118,7 +7117,7 @@ snapshots:
   '@types/pg@8.15.6':
     dependencies:
       '@types/node': 24.13.3
-      pg-protocol: 1.15.0
+      pg-protocol: 1.16.0
       pg-types: 2.2.0
 
   '@types/react-dom@19.2.4(@types/react@19.2.18)':
@@ -7264,7 +7263,7 @@ snapshots:
 
   ansi-regex@5.0.1: {}
 
-  ansi-regex@6.2.2: {}
+  ansi-regex@6.3.0: {}
 
   ansi-styles@4.3.0:
     dependencies:
@@ -7370,6 +7369,8 @@ snapshots:
       is-what: 5.5.0
 
   core-js@3.49.0: {}
+
+  core-js@3.50.0: {}
 
   country-flag-icons@1.6.20: {}
 
@@ -7600,11 +7601,11 @@ snapshots:
 
   eventemitter3@4.0.7: {}
 
-  eventsource-parser@3.1.0: {}
+  eventsource-parser@3.1.1: {}
 
-  eventsource@4.1.0:
+  eventsource@4.1.1:
     dependencies:
-      eventsource-parser: 3.1.0
+      eventsource-parser: 3.1.1
 
   expect-type@1.4.0: {}
 
@@ -7764,9 +7765,9 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@4.14.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(hono@4.12.34)(react@19.2.8)(typescript@7.0.2)(zod@4.4.3):
+  inngest@4.18.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(hono@4.12.34)(react@19.2.8)(typescript@7.0.2)(zod@4.4.3):
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
+      '@bufbuild/protobuf': 2.14.0
       '@inngest/ai': 0.1.7
       '@jpwilliams/waitgroup': 2.1.1
       '@opentelemetry/api': 1.9.1
@@ -7786,7 +7787,6 @@ snapshots:
       hash.js: 1.1.7
       json-stringify-safe: 5.0.1
       ms: 2.1.3
-      serialize-error-cjs: 0.1.4
       temporal-polyfill: 0.2.5
       ulid: 2.4.0
       zod: 4.4.3
@@ -8061,7 +8061,7 @@ snapshots:
 
   pg-int8@1.0.1: {}
 
-  pg-protocol@1.15.0: {}
+  pg-protocol@1.16.0: {}
 
   pg-types@2.2.0:
     dependencies:
@@ -8380,8 +8380,6 @@ snapshots:
     dependencies:
       parseley: 0.12.1
 
-  serialize-error-cjs@0.1.4: {}
-
   set-cookie-parser@2.7.2: {}
 
   shebang-command@2.0.0:
@@ -8437,7 +8435,7 @@ snapshots:
 
   strip-ansi@7.2.0:
     dependencies:
-      ansi-regex: 6.2.2
+      ansi-regex: 6.3.0
 
   styleq@0.2.1: {}
 
