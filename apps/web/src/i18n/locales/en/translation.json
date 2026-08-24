@@ -70,6 +70,7 @@
     "user": "User",
     "services": "Services",
     "trialEndsInDays": "Your trial ends in {{days}} days",
+    "trialEndsTomorrow": "Your trial ends tomorrow",
     "trialEndsToday": "Your trial ends today",
     "trialEnded": "Your trial has ended",
     "upgradeCardDesc": "Upgrade at any time to continue accessing paid features.",

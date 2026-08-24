@@ -2,7 +2,7 @@ import { zValidator } from '@hono/zod-validator';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { calleCalls, subscriptions } from '@oriole/database';
+import { authUser, calleCalls, subscriptions } from '@oriole/database';
 
 import { db } from '../db/index.ts';
 import { extractCallSeconds } from '../lib/calls.ts';
@@ -95,15 +95,33 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
     const trialCreditUsedUsd = Number(Math.min(trialCreditTotalUsd, (monthSeconds / 60) * 0.15).toFixed(2));
     const trialCreditRemainingUsd = Number(Math.max(0, trialCreditTotalUsd - trialCreditUsedUsd).toFixed(2));
 
-    const daysRemaining = latestSubscription?.currentPeriodEnd
-      ? Math.max(0, Math.ceil((new Date(latestSubscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-      : 14;
+    let daysRemaining = 14;
+    if (latestSubscription?.currentPeriodEnd) {
+      daysRemaining = Math.max(
+        0,
+        Math.ceil((new Date(latestSubscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      );
+    } else {
+      const [u] = await db
+        .select({ createdAt: authUser.createdAt })
+        .from(authUser)
+        .where(eq(authUser.id, userId))
+        .limit(1);
+      if (u?.createdAt) {
+        const trialEnd = new Date(new Date(u.createdAt).getTime() + 14 * 24 * 60 * 60 * 1000);
+        daysRemaining = Math.max(
+          0,
+          Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+        );
+      }
+    }
 
     return c.json({
       paddleConfigured,
       currency: 'USD',
       plan,
       planInfo: PLANS[plan] ?? PLANS.pro,
+      trialDaysLeft: daysRemaining,
       usage: {
         totalCalls: calls.length,
         monthCalls: monthCalls.length,

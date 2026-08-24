@@ -276,18 +276,22 @@ export function AppShell() {
     queryFn: () =>
       apiFetch<{
         plan: 'free' | 'pro';
+        trialDaysLeft?: number;
         subscription: {
           status: string;
           currentPeriodEnd: string | null;
+          daysRemaining?: number;
         } | null;
-      }>('/me/billing'),
+      }>('/billing'),
     staleTime: 60_000,
   });
 
   const isProActive = billingData?.plan === 'pro' && billingData?.subscription?.status === 'active';
-  const trialDaysLeft = billingData?.subscription?.currentPeriodEnd
-    ? Math.max(0, Math.ceil((new Date(billingData.subscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 14;
+  const trialDaysLeft =
+    billingData?.trialDaysLeft ??
+    (billingData?.subscription?.currentPeriodEnd
+      ? Math.max(0, Math.ceil((new Date(billingData.subscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : 14);
 
   const onLogout = async () => {
     await signOut();
@@ -473,7 +477,7 @@ export function AppShell() {
                 {trialDaysLeft > 1
                   ? t('nav.trialEndsInDays', { days: trialDaysLeft })
                   : trialDaysLeft === 1
-                    ? t('nav.trialEndsInDays', { days: 1 })
+                    ? t('nav.trialEndsTomorrow')
                     : trialDaysLeft === 0
                       ? t('nav.trialEndsToday')
                       : t('nav.trialEnded')}

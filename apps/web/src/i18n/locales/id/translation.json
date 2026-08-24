@@ -70,6 +70,7 @@
     "user": "User",
     "services": "Layanan",
     "trialEndsInDays": "Masa uji coba berakhir dalam {{days}} hari",
+    "trialEndsTomorrow": "Masa uji coba berakhir besok",
     "trialEndsToday": "Masa uji coba berakhir hari ini",
     "trialEnded": "Masa uji coba telah berakhir",
     "upgradeCardDesc": "Upgrade kapan saja untuk terus mengakses fitur berbayar.",
