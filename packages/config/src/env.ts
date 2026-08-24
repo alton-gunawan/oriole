@@ -164,6 +164,10 @@ export const apiEnvSchema = z.object({
   META_WHATSAPP_SYSTEM_USER_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   META_GRAPH_API_VERSION: z.string().default('v21.0'),
 
+  // Cloudflare Turnstile — bot detection / captcha
+  // Opsional: tanpa secret key, verifikasi di backend selalu lolos (kompatibel untuk dev).
+  TURNSTILE_SECRET_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+
   // PostHog analytics — server-side event capture (product analytics).
   // Opsional: tanpa POSTHOG_PUBLIC_KEY semua capture di-skip dan API tetap
   // berjalan normal (no-op sink). Nilainya = project API key (`phc_...`,
@@ -184,6 +188,7 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 export const webEnvSchema = z.object({
   VITE_API_URL: z.string().default('/api'),
   VITE_NEON_AUTH_URL: z.string().url().optional(),
+  VITE_TURNSTILE_SITE_KEY: z.string().optional(),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

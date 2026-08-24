@@ -343,8 +343,17 @@ async function ensureTunnel(): Promise<string | null> {
   // via TCP selalu tersedia dan lebih tahan terhadap NAT/firewall.
   const child = spawn(
     'cloudflared',
-    ['tunnel', '--url', TUNNEL_TARGET, '--no-autoupdate', '--protocol', 'http2', '--edge-ip-version', '4'],
-    { detached: true, stdio: ['ignore', outFd, outFd], cwd: ROOT },
+    ['--edge-ip-version', '4', 'tunnel', '--url', TUNNEL_TARGET, '--no-autoupdate'],
+    {
+      detached: true,
+      stdio: ['ignore', outFd, outFd],
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        TUNNEL_TRANSPORT_PROTOCOL: 'http2',
+        TUNNEL_EDGE_IP_VERSION: '4',
+      },
+    },
   );
   child.unref();
 
@@ -440,6 +449,15 @@ async function registerTelegramWebhooks(baseUrl: string): Promise<boolean> {
   }
 }
 
+/** Hentikan semua proses cloudflared named tunnel milik dev-services. */
+function killNamedTunnelProcesses(): void {
+  try {
+    execSync(`pkill -f "cloudflared.*run.*${NAMED_TUNNEL_ID}"`, { stdio: 'ignore' });
+  } catch {
+    // Tidak ada proses — lanjut.
+  }
+}
+
 /**
  * Named tunnel produksi-dev: `cloudflared tunnel run` untuk
  * `~/.cloudflared/config.yml` (conductor.my.id + api.conductor.my.id).
@@ -460,6 +478,10 @@ async function ensureNamedTunnel(): Promise<void> {
     console.log('[dev-services] Tunnel conductor.my.id sudah berjalan — dilewati.');
     return;
   }
+
+  // Bersihkan proses lama yang tertinggal sebelum spawn baru agar tidak terjadi konflik koneksi
+  killNamedTunnelProcesses();
+
   try {
     if (existsSync(NAMED_TUNNEL_STATE_FILE)) unlinkSync(NAMED_TUNNEL_STATE_FILE);
   } catch {
@@ -468,16 +490,25 @@ async function ensureNamedTunnel(): Promise<void> {
 
   mkdirSync(CACHE_DIR, { recursive: true });
   const outFd = openSync(NAMED_TUNNEL_LOG, 'w'); // 'w': log per-spawn, jangan baca baris generasi lama.
-  const child = spawn('cloudflared', ['tunnel', 'run', NAMED_TUNNEL_ID], {
-    detached: true,
-    stdio: ['ignore', outFd, outFd],
-    cwd: ROOT,
-  });
+  const child = spawn(
+    'cloudflared',
+    ['--edge-ip-version', '4', 'tunnel', 'run', NAMED_TUNNEL_ID],
+    {
+      detached: true,
+      stdio: ['ignore', outFd, outFd],
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        TUNNEL_TRANSPORT_PROTOCOL: 'http2',
+        TUNNEL_EDGE_IP_VERSION: '4',
+      },
+    },
+  );
   child.unref();
   writeNamedTunnelState({ pid: child.pid ?? null });
 
   // Proses hidup ≠ koneksi edge terdaftar; tunggu signature di log.
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     if (!isPidAlive(child.pid ?? -1, 'cloudflared')) break; // gagal cepat (mis. kredensial hilang) → langsung warn.
     const log = existsSync(NAMED_TUNNEL_LOG) ? readFileSync(NAMED_TUNNEL_LOG, 'utf8') : '';
@@ -487,7 +518,7 @@ async function ensureNamedTunnel(): Promise<void> {
     }
     await sleep(500);
   }
-  console.warn(`[dev-services] Tunnel conductor.my.id belum connect setelah 30s — cek ${NAMED_TUNNEL_LOG}`);
+  console.warn(`[dev-services] Tunnel conductor.my.id belum connect setelah 45s — cek ${NAMED_TUNNEL_LOG}`);
 }
 
 interface NamedTunnelState {

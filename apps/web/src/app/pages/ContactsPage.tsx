@@ -37,6 +37,7 @@ import {
   IconArrowUpRight,
   IconDotsHorizontal,
   IconPlus,
+  IconRefreshCw,
   IconSearch,
   IconTrash,
   IconUsers,
@@ -362,14 +363,12 @@ export function ContactsPage() {
       >
         {/* Menu reload — sama seperti Bookings/Calls. */}
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
-        <button
-          type="button"
+        <Button
+          label={t('contacts.add')}
+          variant="primary"
+          icon={<IconPlus className="size-4" />}
           onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-        >
-          <IconPlus className="size-4" />
-          {t('contacts.add')}
-        </button>
+        />
       </PageHeader>
 
       <div className="flex flex-1 flex-col space-y-4">
@@ -472,11 +471,17 @@ export function ContactsPage() {
               description={
                 hasFilters ? t('contacts.emptySearchDesc') : t('contacts.emptyDesc')
               }
+              variant="transparent"
               className="flex-1 min-h-[500px]"
               action={
                 hasFilters
-                  ? { label: t('contacts.resetFilter'), onClick: resetFilters }
-                  : { label: t('contacts.add'), onClick: openAdd }
+                  ? {
+                      label: t('contacts.resetFilter'),
+                      onClick: resetFilters,
+                      variant: 'secondary',
+                      icon: <IconRefreshCw className="size-4" />,
+                    }
+                  : { label: t('contacts.createFirst'), onClick: openAdd }
               }
             />
           ) : (

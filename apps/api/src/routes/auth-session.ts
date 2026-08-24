@@ -5,6 +5,7 @@ import { zValidator } from '@hono/zod-validator';
 
 import { env } from '../lib/env.ts';
 import { SESSION_COOKIE } from '../lib/auth-cookie.ts';
+import { verifyTurnstileToken } from '../lib/turnstile.ts';
 import { requireAuth } from '../middleware/auth.ts';
 
 /** Masa hidup cookie sesi (7 hari) — token JWT-nya sendiri tetap short-lived. */
@@ -17,6 +18,10 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
  * handler — bukan dari field body ini.
  */
 const sessionBootstrapSchema = z.object({});
+
+const verifyTurnstileSchema = z.object({
+  token: z.string().min(1, 'Token Turnstile wajib diisi'),
+});
 
 function cookieOptions(): Parameters<typeof setCookie>[3] {
   return {
@@ -41,6 +46,17 @@ function cookieOptions(): Parameters<typeof setCookie>[3] {
  * sebagai sumber utama; cookie hanya fallback.
  */
 export const authSessionRoutes = new Hono()
+  .post('/turnstile/verify', zValidator('json', verifyTurnstileSchema), async (c) => {
+    const { token } = c.req.valid('json');
+    const clientIp =
+      c.req.header('cf-connecting-ip') ||
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    const result = await verifyTurnstileToken(token, clientIp);
+    if (!result.success) {
+      return c.json({ error: result.error || 'Verifikasi Turnstile gagal' }, 400);
+    }
+    return c.json({ ok: true, success: true });
+  })
   .post('/session', requireAuth, zValidator('json', sessionBootstrapSchema), (c) => {
     // Cookie di-set dari Bearer token yang SUDAH diverifikasi requireAuth —
     // bukan dari body (yang tidak diverifikasi dan bisa berbeda). Klien yang

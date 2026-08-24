@@ -1,5 +1,7 @@
+import { zValidator } from '@hono/zod-validator';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { calleCalls, subscriptions } from '@oriole/database';
 
 import { db } from '../db/index.ts';
@@ -38,9 +40,19 @@ function paddleErrorDetail(err: unknown): string | null {
   return err instanceof Error ? err.message : null;
 }
 
+const topupSchema = z.object({
+  amount: z
+    .number({ message: 'Jumlah top-up harus berupa angka' })
+    .int('Jumlah top-up harus bilangan bulat')
+    .min(5, 'Minimal top-up kredit adalah $5')
+    .refine((val) => val % 5 === 0, {
+      message: 'Jumlah kredit harus kelipatan $5 (misal: $5, $10, $15, $20, ...)',
+    }),
+});
+
 /**
  * Billing — status langganan & kuota (GET), serta aksi Paddle
- * (POST /checkout → URL checkout paket Pro, POST /portal → portal billing).
+ * (POST /checkout → URL checkout paket Pro, POST /topup → URL checkout top-up kredit, POST /portal → portal billing).
  */
 export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
@@ -81,6 +93,7 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       plan,
       planInfo: PLANS[plan],
       plans: PLAN_ORDER.map((id) => PLANS[id]),
+      topupOptions: [5, 10, 15, 20, 25, 50],
       usage,
       subscription: latestSubscription
         ? {
@@ -99,7 +112,7 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'Paddle belum dikonfigurasi', configured: false }, 503);
     }
 
-    // Single subscription plan ('pro' - $19/month).
+    // Single subscription plan ('pro' - $15/month).
     const priceId = priceIdForPlan('pro');
     if (!priceId) {
       return c.json(
@@ -129,6 +142,52 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       // sebenarnya (mis. harga di bawah batas minimum charge Paddle).
       return c.json(
         { error: 'Gagal membuat checkout di Paddle', detail: detail ?? undefined },
+        502,
+      );
+    }
+  })
+
+  .post('/topup', requireAuth, zValidator('json', topupSchema), async (c) => {
+    if (!paddleConfigured) {
+      return c.json({ error: 'Paddle belum dikonfigurasi', configured: false }, 503);
+    }
+
+    const { amount } = c.req.valid('json');
+
+    try {
+      const transaction = await paddle.transactions.create({
+        items: [
+          {
+            quantity: 1,
+            price: {
+              description: `Oriole AI Voice Credits - $${amount}`,
+              unitPrice: {
+                amount: String(amount * 100),
+                currencyCode: 'USD',
+              },
+              product: {
+                name: `Oriole Call Credits ($${amount})`,
+                taxCategory: 'standard',
+              },
+            },
+          },
+        ],
+        customData: {
+          user_id: c.get('userId'),
+          type: 'credit_topup',
+          amount_usd: amount,
+        },
+      });
+
+      if (!transaction.checkout?.url) {
+        return c.json({ error: 'Paddle tidak mengembalikan URL checkout' }, 502);
+      }
+      return c.json({ url: transaction.checkout.url, amount });
+    } catch (err) {
+      const detail = paddleErrorDetail(err);
+      console.error('[billing] topup checkout gagal:', detail ?? err);
+      return c.json(
+        { error: 'Gagal membuat checkout top-up di Paddle', detail: detail ?? undefined },
         502,
       );
     }

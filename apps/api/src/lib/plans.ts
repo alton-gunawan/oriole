@@ -33,32 +33,35 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     creditCardRequired: false,
     usagePricing: '',
     cancelAnytime: false,
-    features: ['Belum ada langganan aktif'],
+    features: [
+      'Calendar & bookings',
+      'Services + staff',
+      'Contacts',
+      '1 channel reminder (email)',
+      'Tanpa voice AI volume',
+    ],
   },
   pro: {
     id: 'pro',
     name: 'Pro',
-    pricePerMonth: 19,
+    pricePerMonth: 15,
     trialDays: 7,
     trialCreditUsd: 5,
     creditCardRequired: true,
     usagePricing: '+ pay only for the voice calls you use',
     cancelAnytime: true,
     features: [
-      'Book appointments',
-      'Confirm appointments',
-      'Handle rescheduling',
-      'Handle cancellations',
-      'Manage staff & services',
-      'Keep your existing phone number',
-      'Unlimited bookings',
-      'No setup fee',
+      'WhatsApp / multi-channel inbox',
+      'Auto reminders',
+      'Voice AI inbound/outbound (PAYG)',
+      'Test call + call history',
+      'Gratis $5 credit untuk call',
     ],
   },
 };
 
 /** Urutan tampilan paket di UI. */
-export const PLAN_ORDER: PlanId[] = ['pro'];
+export const PLAN_ORDER: PlanId[] = ['free', 'pro'];
 
 /** Status langganan yang dianggap sebagai paket berbayar aktif. */
 export const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing']);

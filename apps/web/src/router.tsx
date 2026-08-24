@@ -39,6 +39,12 @@ const ForgotPasswordPage = lazy(() =>
 const CallbackPage = lazy(() =>
   import('./app/auth/CallbackPage').then((m) => ({ default: m.CallbackPage })),
 );
+const UserAgreementPage = lazy(() =>
+  import('./app/pages/UserAgreementPage').then((m) => ({ default: m.UserAgreementPage })),
+);
+const PrivacyPolicyPage = lazy(() =>
+  import('./app/pages/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })),
+);
 
 function withSuspense(Component: ComponentType) {
   return (
@@ -140,6 +146,22 @@ export const router = createBrowserRouter([
       {
         path: '/auth/callback',
         element: withSuspense(CallbackPage),
+      },
+      {
+        path: '/user-agreement',
+        element: withSuspense(UserAgreementPage),
+      },
+      {
+        path: '/terms',
+        element: <Navigate to="/user-agreement" replace />,
+      },
+      {
+        path: '/privacy-policy',
+        element: withSuspense(PrivacyPolicyPage),
+      },
+      {
+        path: '/privacy',
+        element: <Navigate to="/privacy-policy" replace />,
       },
     ],
   },

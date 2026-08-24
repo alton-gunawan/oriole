@@ -41,10 +41,19 @@ export function getAuthClient(): NonNullable<typeof authClient> {
 export async function getNeonJwt(): Promise<string | null> {
   if (!neon) return null;
   try {
-    return await neon.getJWTToken();
+    const token = await neon.getJWTToken();
+    if (token) return token;
   } catch {
-    return null;
+    // abaikan dan coba fallback getSession
   }
+  try {
+    const session = await authClient?.getSession();
+    const token = session?.data?.session?.token;
+    if (typeof token === 'string' && token.length > 0) return token;
+  } catch {
+    // abaikan
+  }
+  return null;
 }
 
 /**

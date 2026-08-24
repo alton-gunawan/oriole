@@ -59,7 +59,7 @@ export type QuotaCheck =
 
 /**
  * Periksa hak panggilan user terhadap paketnya:
- * - Membutuhkan langganan aktif / masa trial aktif ($19/bulan).
+ * - Membutuhkan langganan aktif / masa trial aktif ($15/bulan).
  * - Selama masa trial 7 hari: pengguna mendapatkan gratis $5 kredit panggilan suara (~2000 detik / ~33 menit).
  * - Setelah masa aktif berbayar: panggilan suara tanpa batas kuota dengan model bayar sesuai pemakaian (pay as you use).
  */
@@ -76,7 +76,7 @@ export async function checkCallQuota(userId: string): Promise<QuotaCheck> {
     return {
       ok: false,
       status: 402,
-      message: 'Langganan aktif ($19/bulan) diperlukan untuk melakukan panggilan AI. Silakan mulai trial 7 hari gratis (termasuk gratis $5 kredit suara) untuk melanjutkan.',
+      message: 'Langganan aktif ($15/bulan) diperlukan untuk melakukan panggilan AI. Silakan mulai trial 7 hari gratis (termasuk gratis $5 kredit suara) untuk melanjutkan.',
     };
   }
 

@@ -63,6 +63,13 @@ const footerColumns: { titleKey: TranslationKey; links: FooterLink[] }[] = [
       { labelKey: 'landing.footerSignIn', href: '/auth/sign-in' },
     ],
   },
+  {
+    titleKey: 'landing.footerLegal',
+    links: [
+      { labelKey: 'landing.footerUserAgreement', href: '/user-agreement' },
+      { labelKey: 'landing.footerPrivacyPolicy', href: '/privacy-policy' },
+    ],
+  },
 ];
 
 /**

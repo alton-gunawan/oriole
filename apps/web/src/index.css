@@ -104,7 +104,7 @@
 }
 
 .bookings-calendar-header {
-  border-bottom: 1px solid #f0f0f2;
+  border-bottom: none;
   background: linear-gradient(180deg, #ffffff 0%, #fcfcfb 100%);
   padding: 0.75rem 1rem 0.625rem;
 }
@@ -219,22 +219,22 @@
   border-color: #f0f0f2;
 }
 
-.bookings-calendar {
-  border-top: 1px solid #e4e4e7 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
+.bookings-calendar,
+.ilamy-calendar-scope {
+  border: none !important;
+  border-width: 0 !important;
 }
 
-.bookings-calendar > * {
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
+.bookings-calendar > *,
+.ilamy-calendar-scope > * {
+  border: none !important;
+  border-width: 0 !important;
 }
 
 .bookings-calendar .bookings-calendar-view-header,
 .bookings-calendar .bookings-calendar-native-header {
-  border-bottom: 1px solid #e4e4e7 !important;
+  border-bottom: none !important;
+  border-bottom-width: 0 !important;
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
@@ -271,7 +271,12 @@
 .bookings-calendar [data-testid="all-day-row"],
 .bookings-calendar [data-testid="all-day-row"] *,
 .bookings-calendar [data-testid="vertical-grid-all-day"],
-.bookings-calendar [data-testid="vertical-grid-all-day"] * {
+.bookings-calendar [data-testid="vertical-grid-all-day"] *,
+.bookings-calendar table,
+.bookings-calendar [role="grid"],
+.bookings-calendar [role="row"]:last-child,
+.bookings-calendar tr:last-child td,
+.bookings-calendar [data-testid*="row"]:last-child {
   border-bottom: none !important;
   border-bottom-width: 0 !important;
   border-bottom-color: transparent !important;
@@ -714,7 +719,7 @@ html[data-theme='dark'] .bookings-calendar-button-group button + button {
 }
 
 html[data-theme='dark'] .bookings-calendar-header {
-  border-bottom-color: #2a2a2e;
+  border-bottom: none;
   background: linear-gradient(180deg, #1c1c1f 0%, #17171a 100%);
 }
 
@@ -748,23 +753,45 @@ html[data-theme='dark'] .bookings-calendar .bookings-calendar-native-header {
   border-color: #2a2a2e;
 }
 
-html[data-theme='dark'] .bookings-calendar {
-  border-top: 1px solid #3f3f46 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
+html[data-theme='dark'] .bookings-calendar,
+html[data-theme='dark'] .ilamy-calendar-scope {
+  border: none !important;
+  border-width: 0 !important;
 }
 
-html[data-theme='dark'] .bookings-calendar > * {
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
+html[data-theme='dark'] .bookings-calendar > *,
+html[data-theme='dark'] .ilamy-calendar-scope > * {
+  border: none !important;
+  border-width: 0 !important;
+}
+
+html[data-theme='dark'] .bookings-calendar .border-border,
+html[data-theme='dark'] .bookings-calendar .divide-border > :not([hidden]),
+html[data-theme='dark'] .bookings-calendar :where(
+  .border,
+  .border-x,
+  .border-y,
+  .border-t,
+  .border-r,
+  .border-b,
+  .border-l,
+  [class~="border"],
+  [class~="border-x"],
+  [class~="border-y"],
+  [class~="border-t"],
+  [class~="border-r"],
+  [class~="border-b"],
+  [class~="border-l"],
+  [class*="border-b"]
+) {
+  border-color: #27272a;
 }
 
 html[data-theme='dark'] .bookings-calendar .bookings-calendar-view-header,
 html[data-theme='dark'] .bookings-calendar .bookings-calendar-native-header {
   background: #17171a;
-  border-bottom: 1px solid #2a2a2e !important;
+  border-bottom: none !important;
+  border-bottom-width: 0 !important;
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
@@ -801,7 +828,12 @@ html[data-theme='dark'] .bookings-calendar [data-testid*="all-day"] *,
 html[data-theme='dark'] .bookings-calendar [data-testid="all-day-row"],
 html[data-theme='dark'] .bookings-calendar [data-testid="all-day-row"] *,
 html[data-theme='dark'] .bookings-calendar [data-testid="vertical-grid-all-day"],
-html[data-theme='dark'] .bookings-calendar [data-testid="vertical-grid-all-day"] * {
+html[data-theme='dark'] .bookings-calendar [data-testid="vertical-grid-all-day"] *,
+html[data-theme='dark'] .bookings-calendar table,
+html[data-theme='dark'] .bookings-calendar [role="grid"],
+html[data-theme='dark'] .bookings-calendar [role="row"]:last-child,
+html[data-theme='dark'] .bookings-calendar tr:last-child td,
+html[data-theme='dark'] .bookings-calendar [data-testid*="row"]:last-child {
   border-bottom: none !important;
   border-bottom-width: 0 !important;
   border-bottom-color: transparent !important;

@@ -70,7 +70,11 @@ export async function signInWithEmail(input: { email: string; password: string }
       'errors.wrongCredentials',
     );
   }
-  const token = await getNeonJwt();
+  let token: string | null = null;
+  for (let i = 0; i < 6 && !token; i += 1) {
+    token = await getNeonJwt();
+    if (!token && i < 5) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+  }
   if (!token) throw new AuthActionError('Session invalid. Try again.', undefined, 'errors.sessionInvalid');
   setAccessToken(token);
   await hydrateWorkspaces(token);
@@ -96,7 +100,11 @@ export async function signUpWithEmail(input: { name: string; email: string; pass
       'errors.createAccount',
     );
   }
-  const token = await getNeonJwt();
+  let token: string | null = null;
+  for (let i = 0; i < 6 && !token; i += 1) {
+    token = await getNeonJwt();
+    if (!token && i < 5) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+  }
   if (!token) throw new AuthActionError('Session invalid. Try again.', undefined, 'errors.sessionInvalid');
   setAccessToken(token);
   await hydrateWorkspaces(token);

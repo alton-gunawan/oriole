@@ -5,6 +5,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import {
   Badge,
   Button,
+  Collapsible,
   Dialog,
   DialogHeader,
   DropdownMenu,
@@ -53,10 +54,10 @@ import {
   IconDotsHorizontal,
   IconEdit,
   IconPlus,
+  IconRefreshCw,
   IconSearch,
   IconStaff,
   IconTrash,
-  IconUsers,
   IconX,
 } from '../shell/icons';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
@@ -311,7 +312,8 @@ export function StaffPage() {
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['staff', activeWorkspaceId],
     queryFn: () => apiFetch<{ staff: StaffRecord[] }>('/staff'),
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
   });
 
   const staffList = data?.staff ?? [];
@@ -400,7 +402,6 @@ export function StaffPage() {
   const [addEmail, setAddEmail] = useState('');
   const [addPhone, setAddPhone] = useState('');
   const [addTimezone, setAddTimezone] = useState('Asia/Jakarta');
-  const [addColor, setAddColor] = useState(STAFF_COLORS[0]);
   const [addBuffer, setAddBuffer] = useState(0);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -413,7 +414,6 @@ export function StaffPage() {
     setAddEmail('');
     setAddPhone('');
     setAddTimezone('Asia/Jakarta');
-    setAddColor(STAFF_COLORS[0]);
     setAddBuffer(0);
     setAddError(null);
     setIsAddOpen(true);
@@ -441,7 +441,7 @@ export function StaffPage() {
       email: addEmail.trim() || undefined,
       phone: addPhone.trim() || undefined,
       timezone: addTimezone,
-      color: addColor,
+      color: STAFF_COLORS[0],
       bufferMinutes: addBuffer,
     });
   };
@@ -702,12 +702,14 @@ export function StaffPage() {
         const displayEmail = staff.email ?? (staff.phone?.includes('@') ? staff.phone : null);
         return (
           <span className="flex min-w-0 items-center gap-3">
-            <span
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
-              style={{ backgroundColor: staff.color }}
-            >
-              {staff.name.slice(0, 2).toUpperCase()}
-            </span>
+            <div className="size-9 shrink-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800">
+              <img
+                src={`https://api.dicebear.com/10.x/critters/svg?seed=${encodeURIComponent(staff.name || staff.id)}`}
+                alt={staff.name}
+                className="size-full object-cover"
+                loading="lazy"
+              />
+            </div>
             <span className="min-w-0">
               <span className="flex items-center gap-2">
                 <span className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{staff.name}</span>
@@ -794,14 +796,12 @@ export function StaffPage() {
     <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
       <PageHeader title={t('staff.title')} description={t('staff.description')} icon={IconStaff}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
-        <button
-          type="button"
+        <Button
+          label={t('staff.add')}
+          variant="primary"
+          icon={<IconPlus className="size-4" />}
           onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-        >
-          <IconPlus className="size-4" />
-          {t('staff.add')}
-        </button>
+        />
       </PageHeader>
 
       <div className="flex flex-1 flex-col space-y-4">
@@ -926,19 +926,26 @@ export function StaffPage() {
         <div className="flex flex-1 flex-col">
           {staffList.length === 0 ? (
             <EmptyState
-              icon={IconUsers}
+              icon={IconStaff}
               title={t('staff.emptyTitle')}
               description={t('staff.emptyDesc')}
+              variant="transparent"
               className="flex-1 min-h-[500px]"
-              action={{ label: t('staff.add'), onClick: openAdd }}
+              action={{ label: t('staff.createFirst'), onClick: openAdd }}
             />
           ) : filteredList.length === 0 ? (
             <EmptyState
-              icon={IconUsers}
+              icon={IconStaff}
               title={t('staff.emptyFilteredTitle')}
               description={t('staff.emptyFilteredDesc')}
+              variant="transparent"
               className="flex-1 min-h-[500px]"
-              action={{ label: t('staff.resetFilter'), onClick: resetFilters }}
+              action={{
+                label: t('staff.resetFilter'),
+                onClick: resetFilters,
+                variant: 'secondary',
+                icon: <IconRefreshCw className="size-4" />,
+              }}
             />
           ) : (
             <>
@@ -1092,6 +1099,12 @@ export function StaffPage() {
                   onChange={setAddName}
                   isRequired
                 />
+                <PhoneInput
+                  label={t('common.phone')}
+                  value={addPhone}
+                  onChange={setAddPhone}
+                  isOptional
+                />
                 <TextInput
                   label={t('common.email')}
                   type="email"
@@ -1100,52 +1113,34 @@ export function StaffPage() {
                   onChange={setAddEmail}
                   isOptional
                 />
-                <PhoneInput
-                  label={t('common.phone')}
-                  value={addPhone}
-                  onChange={setAddPhone}
-                  isOptional
-                />
-                <div>
-                  <Selector
-                    label={t('staff.timezone')}
-                    options={COMMON_TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
-                    value={addTimezone}
-                    onChange={(value) => setAddTimezone(value ?? 'UTC')}
-                    hasSearch
-                    searchPlaceholder={t('staff.searchTimezone')}
-                    width="100%"
-                  />
-                  <TimezoneClock timezone={addTimezone} />
-                </div>
-                {/* Buffer & warna — tiap field di barisnya sendiri agar form
-                    tidak sempit; warna memakai kolom penuh seperti field lain. */}
-                <NumberInput
-                  label={t('staff.buffer')}
-                  description={t('staff.bufferDesc')}
-                  value={addBuffer}
-                  onChange={(value) => setAddBuffer(value ?? 0)}
-                  min={0}
-                  max={120}
-                  width="100%"
-                />
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('staff.color')}</p>
-                  <div className="flex items-center gap-1.5">
-                    {STAFF_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        aria-label={color}
-                        onClick={() => setAddColor(color)}
-                        className={`size-6 rounded-full transition ${
-                          addColor === color ? 'ring-2 ring-zinc-900 ring-offset-2' : 'hover:scale-110'
-                        }`}
-                        style={{ backgroundColor: color }}
+                <Collapsible
+                  trigger={<span className="text-base font-medium">{t('common.advanced')}</span>}
+                  defaultIsOpen={false}
+                >
+                  <div className="space-y-4 pt-3">
+                    <div>
+                      <Selector
+                        label={t('staff.timezone')}
+                        options={COMMON_TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
+                        value={addTimezone}
+                        onChange={(value) => setAddTimezone(value ?? 'UTC')}
+                        hasSearch
+                        searchPlaceholder={t('staff.searchTimezone')}
+                        width="100%"
                       />
-                    ))}
+                      <TimezoneClock timezone={addTimezone} />
+                    </div>
+                    <NumberInput
+                      label={t('staff.buffer')}
+                      description={t('staff.bufferDesc')}
+                      value={addBuffer}
+                      onChange={(value) => setAddBuffer(value ?? 0)}
+                      min={0}
+                      max={120}
+                      width="100%"
+                    />
                   </div>
-                </div>
+                </Collapsible>
               </form>
             </LayoutContent>
           }
@@ -1189,6 +1184,12 @@ export function StaffPage() {
                   onChange={setEditName}
                   isRequired
                 />
+                <PhoneInput
+                  label={t('common.phone')}
+                  value={editPhone}
+                  onChange={setEditPhone}
+                  isOptional
+                />
                 <TextInput
                   label={t('common.email')}
                   type="email"
@@ -1197,23 +1198,23 @@ export function StaffPage() {
                   onChange={setEditEmail}
                   isOptional
                 />
-                <PhoneInput
-                  label={t('common.phone')}
-                  value={editPhone}
-                  onChange={setEditPhone}
-                  isOptional
-                />
-                <Selector
-                  label={t('staff.timezone')}
-                  options={COMMON_TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
-                  value={editTimezone}
-                  onChange={(value) => setEditTimezone(value ?? 'UTC')}
-                  hasSearch
-                  searchPlaceholder={t('staff.searchTimezone')}
-                  width="100%"
-                />
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
-                  <div className="min-w-0 flex-1">
+                <Collapsible
+                  trigger={<span className="text-base font-medium">{t('common.advanced')}</span>}
+                  defaultIsOpen={false}
+                >
+                  <div className="space-y-4 pt-3">
+                    <div>
+                      <Selector
+                        label={t('staff.timezone')}
+                        options={COMMON_TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
+                        value={editTimezone}
+                        onChange={(value) => setEditTimezone(value ?? 'UTC')}
+                        hasSearch
+                        searchPlaceholder={t('staff.searchTimezone')}
+                        width="100%"
+                      />
+                      <TimezoneClock timezone={editTimezone} />
+                    </div>
                     <NumberInput
                       label={t('staff.buffer')}
                       description={t('staff.bufferDesc')}
@@ -1224,24 +1225,7 @@ export function StaffPage() {
                       width="100%"
                     />
                   </div>
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('staff.color')}</p>
-                    <div className="flex items-center gap-1.5">
-                      {STAFF_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          aria-label={color}
-                          onClick={() => setEditColor(color)}
-                          className={`size-6 rounded-full transition ${
-                            editColor === color ? 'ring-2 ring-zinc-900 ring-offset-2' : 'hover:scale-110'
-                          }`}
-                          style={{ backgroundColor: color }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                </Collapsible>
                 <Switch
                   label={t('staff.active')}
                   description={t('staff.activeDesc')}

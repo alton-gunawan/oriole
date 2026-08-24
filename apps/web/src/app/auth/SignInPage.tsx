@@ -1,17 +1,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { Button } from '@astryxdesign/core';
+import type { TurnstileInstance } from '@marsidev/react-turnstile';
 
 import { AuthField, AuthLayout, GitHubIcon, GoogleIcon } from './AuthLayout';
 import { isAuthConfigured } from '../../lib/auth';
+import { env } from '../../config/env';
 import { trackEvent } from '../../lib/analytics';
 import { signInWithEmail, signInWithGithub, signInWithGoogle, type SocialProvider } from '../../lib/auth-actions';
+import { verifyTurnstileToken } from '../../lib/turnstile';
 import { errorMessage } from '../../lib/errors';
 import { useSessionStore } from '../../stores/session';
 import { signInSchema, type SignInInput } from '../../lib/validations';
+import { TurnstileWidget } from '../components/TurnstileWidget';
 
 export function SignInPage() {
   const navigate = useNavigate();
@@ -21,6 +25,8 @@ export function SignInPage() {
   const user = useSessionStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
   const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   const schema = useMemo(() => signInSchema(t), [t]);
   const {
@@ -29,7 +35,7 @@ export function SignInPage() {
     formState: { errors, isSubmitting },
   } = useForm<SignInInput>({
     resolver: zodResolver(schema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', agreeTerms: false },
   });
 
   // Catatan: form TIDAK diblokir saat status 'loading' (pengecekan sesi
@@ -61,6 +67,20 @@ export function SignInPage() {
 
   const onSubmit = async (values: SignInInput) => {
     setError(null);
+    if (env.TURNSTILE_SITE_KEY) {
+      if (!turnstileToken) {
+        setError(t('auth.turnstileRequired'));
+        return;
+      }
+      try {
+        await verifyTurnstileToken(turnstileToken);
+      } catch (err) {
+        turnstileRef.current?.reset();
+        setTurnstileToken(null);
+        setError(errorMessage(err, t, 'auth.turnstileError'));
+        return;
+      }
+    }
     void trackEvent('signin_started', { method: 'email' });
     try {
       await signInWithEmail(values);
@@ -72,6 +92,8 @@ export function SignInPage() {
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from ?? '/app/dashboard', { replace: true });
     } catch (err) {
+      turnstileRef.current?.reset();
+      setTurnstileToken(null);
       setError(errorMessage(err, t, 'errors.generic'));
     }
   };
@@ -141,6 +163,59 @@ export function SignInPage() {
           </Link>
         </p>
 
+        <div className="pt-1">
+          <label className="flex items-center gap-2.5 text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="size-4 shrink-0 rounded border-zinc-300 dark:border-zinc-700 text-amber-600 focus:ring-amber-500/20"
+              {...register('agreeTerms')}
+            />
+            <span>
+              <Trans
+                i18nKey="auth.agreeTermsCheckbox"
+                components={{
+                  agreement: (
+                    <Link
+                      to="/user-agreement"
+                      target="_blank"
+                      className="font-medium text-amber-600 dark:text-amber-500 hover:underline"
+                    />
+                  ),
+                  privacy: (
+                    <Link
+                      to="/privacy-policy"
+                      target="_blank"
+                      className="font-medium text-amber-600 dark:text-amber-500 hover:underline"
+                    />
+                  ),
+                }}
+              />
+            </span>
+          </label>
+          {errors.agreeTerms && (
+            <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">
+              {errors.agreeTerms.message}
+            </p>
+          )}
+        </div>
+
+        {env.TURNSTILE_SITE_KEY && (
+          <TurnstileWidget
+            ref={turnstileRef}
+            onSuccess={(token) => {
+              setTurnstileToken(token);
+              setError(null);
+            }}
+            onError={() => {
+              setTurnstileToken(null);
+              setError(t('auth.turnstileError'));
+            }}
+            onExpire={() => {
+              setTurnstileToken(null);
+            }}
+          />
+        )}
+
         {error && (
           <div
             role="alert"
@@ -154,7 +229,7 @@ export function SignInPage() {
           label={t('auth.signInCta')}
           variant="primary"
           isLoading={isSubmitting}
-          isDisabled={isSubmitting}
+          isDisabled={isSubmitting || (Boolean(env.TURNSTILE_SITE_KEY) && !turnstileToken)}
           type="submit"
           width="100%"
         />

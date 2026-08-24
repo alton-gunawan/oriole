@@ -25,6 +25,9 @@ export const signInSchema = (t: TFunction) =>
   z.object({
     email: z.email(t('validation.emailInvalid')),
     password: z.string().min(8, t('validation.passwordMin')),
+    agreeTerms: z.boolean().refine((v) => v === true, {
+      message: t('validation.agreeTermsRequired'),
+    }),
   });
 export type SignInInput = z.infer<ReturnType<typeof signInSchema>>;
 
@@ -55,6 +58,9 @@ export const signUpSchema = (t: TFunction) =>
       email: z.email(t('validation.emailInvalid')),
       password: z.string().min(8, t('validation.passwordMin')),
       confirmPassword: z.string(),
+      agreeTerms: z.boolean().refine((v) => v === true, {
+        message: t('validation.agreeTermsRequired'),
+      }),
     })
     .refine((v) => v.password === v.confirmPassword, {
       message: t('validation.confirmMismatch'),

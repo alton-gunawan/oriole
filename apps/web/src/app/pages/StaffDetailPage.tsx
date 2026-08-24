@@ -94,12 +94,14 @@ export function StaffDetailPage() {
       </Link>
 
       <div className="flex items-center gap-3">
-        <span
-          className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-          style={{ backgroundColor: staff.color }}
-        >
-          {staff.name.slice(0, 2).toUpperCase()}
-        </span>
+        <div className="size-11 shrink-0 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800 shadow-sm">
+          <img
+            src={`https://api.dicebear.com/10.x/critters/svg?seed=${encodeURIComponent(staff.name || staff.id)}`}
+            alt={staff.name}
+            className="size-full object-cover"
+            loading="lazy"
+          />
+        </div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
           {staff.name}
         </h1>

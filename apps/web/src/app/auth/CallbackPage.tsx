@@ -10,7 +10,7 @@ import type { Workspace } from '../../lib/workspace';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { useSessionStore } from '../../stores/session';
 
-const ATTEMPTS = 16; // ~8 detik polling getSession/getJWTToken
+const ATTEMPTS = 40; // ~20 detik polling getSession/getJWTToken (memberi waktu cold-start Neon)
 const INTERVAL_MS = 500;
 
 /**
@@ -25,6 +25,7 @@ export function CallbackPage() {
   const status = useSessionStore((s) => s.status);
   const user = useSessionStore((s) => s.user);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const attempt = useRef(0);
 
   useEffect(() => {
@@ -43,7 +44,76 @@ export function CallbackPage() {
     // Tujuan asli (di-set saat OAuth dimulai via ?from=) — default dashboard.
     const from = params.get('from') ?? '/app/dashboard';
 
+    attempt.current = 0;
     let cancelled = false;
+
+    const finishAuth = async (token?: string | null) => {
+      if (token) setAccessToken(token);
+
+      let authUser: { id: string; email?: string; name?: string } | undefined;
+      try {
+        const session = await authClient?.getSession();
+        authUser = session?.data?.user ?? undefined;
+      } catch {
+        // abaikan — identitas tetap bisa dihydrasi via /api/me
+      }
+
+      const store = useSessionStore.getState();
+      store.setStatus('authenticated');
+      store.setUser(authUser?.id ? { id: authUser.id, email: authUser.email, name: authUser.name } : null);
+
+      let me: {
+        userId?: string;
+        workspaces: Workspace[];
+        name?: string | null;
+        language?: string | null;
+        timezone?: string | null;
+        onboardingCompleted?: boolean;
+        onboardingStep?: number;
+      } | null = null;
+
+      for (let att = 0; att < 4 && !me; att += 1) {
+        if (att > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * att));
+        }
+        try {
+          me = await apiFetch<{
+            userId?: string;
+            workspaces: Workspace[];
+            name?: string | null;
+            language?: string | null;
+            timezone?: string | null;
+            onboardingCompleted?: boolean;
+            onboardingStep?: number;
+          }>('/me');
+        } catch {
+          me = null;
+        }
+      }
+
+      if (me) {
+        useWorkspaceStore.getState().setWorkspaces(me.workspaces);
+        store.setUser({
+          id: authUser?.id ?? me.userId ?? store.user?.id ?? '',
+          email: authUser?.email ?? store.user?.email,
+          name: me.name ?? authUser?.name ?? store.user?.name,
+          language: me.language ?? null,
+          timezone: me.timezone ?? null,
+          onboardingCompleted: Boolean(me.onboardingCompleted || me.workspaces.length > 0),
+          onboardingStep: me.onboardingStep ?? 1,
+        });
+      }
+
+      if (token) {
+        await handoffSessionCookie();
+      }
+
+      const latestUser = useSessionStore.getState().user;
+      const onboardingCompleted = latestUser?.onboardingCompleted ?? false;
+      const dest = !onboardingCompleted ? '/app/onboarding' : from;
+      navigate(dest, { replace: true });
+    };
+
     const timer = window.setInterval(async () => {
       attempt.current += 1;
       const token = await getNeonJwt();
@@ -52,71 +122,23 @@ export function CallbackPage() {
 
       if (token) {
         window.clearInterval(timer);
-        setAccessToken(token);
-
-        let user: { id: string; email?: string; name?: string } | undefined;
-        try {
-          const session = await authClient?.getSession();
-          user = session?.data?.user ?? undefined;
-        } catch {
-          // abaikan — identitas tetap bisa dihydrasi via /api/me
-        }
-
-        const store = useSessionStore.getState();
-        store.setStatus('authenticated');
-        store.setUser(user?.id ? { id: user.id, email: user.email, name: user.name } : null);
-        // Retry singkat: /me yang gagal sesaat (cold-start, jaringan) tidak
-        // boleh membuat workspace terlihat kosong → user malah disuruh bikin
-        // bisnis lagi. Bila SEMUA percobaan gagal, store sengaja dibiarkan
-        // BELUM terinisialisasi: RequireAuth tidak akan me-redirect ke
-        // onboarding (mencegah pembuatan bisnis duplikat), shell menampilkan
-        // state kosong, dan reload berikutnya memulihkan daftar bisnis.
-        let me: {
-          workspaces: Workspace[];
-          name?: string | null;
-          language?: string | null;
-          timezone?: string | null;
-          onboardingCompleted?: boolean;
-          onboardingStep?: number;
-        } | null = null;
-        for (let attempt = 0; attempt < 3 && !me; attempt += 1) {
-          if (attempt > 0) {
-            await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
-          }
-          try {
-            me = await apiFetch<{
-              workspaces: Workspace[];
-              name?: string | null;
-              language?: string | null;
-              timezone?: string | null;
-              onboardingCompleted?: boolean;
-              onboardingStep?: number;
-            }>('/me');
-          } catch {
-            me = null;
-          }
-        }
-        if (me) {
-          useWorkspaceStore.getState().setWorkspaces(me.workspaces);
-          store.setUser({
-            id: user?.id ?? store.user?.id ?? '',
-            email: user?.email ?? store.user?.email,
-            name: me.name ?? user?.name ?? store.user?.name,
-            language: me.language ?? null,
-            timezone: me.timezone ?? null,
-            onboardingCompleted: Boolean(me.onboardingCompleted || me.workspaces.length > 0),
-            onboardingStep: me.onboardingStep ?? 1,
-          });
-        }
-        // Hardening: hand-off JWT ke cookie HttpOnly (best-effort —
-        // gagal berarti Bearer token tetap dipakai).
-        await handoffSessionCookie();
-        // New users (belum onboarding) → wajib ke onboarding, bukan dashboard.
-        const latestUser = useSessionStore.getState().user;
-        const onboardingCompleted = latestUser?.onboardingCompleted ?? false;
-        const dest = !onboardingCompleted ? '/app/onboarding' : from;
-        navigate(dest, { replace: true });
+        await finishAuth(token);
         return;
+      }
+
+      // Fallback: setelah beberapa percobaan, coba cek apakah cookie sesi HttpOnly
+      // sudah aktif di /api/me meskipun token JWT belum siap di local storage.
+      if (attempt.current >= 4 && attempt.current % 4 === 0) {
+        try {
+          const me = await apiFetch<{ userId?: string; workspaces: Workspace[] }>('/me');
+          if (me && (me.userId || me.workspaces)) {
+            window.clearInterval(timer);
+            await finishAuth(null);
+            return;
+          }
+        } catch {
+          // sesi belum siap, lanjut polling
+        }
       }
 
       if (attempt.current >= ATTEMPTS) {
@@ -131,7 +153,7 @@ export function CallbackPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [navigate, t]);
+  }, [navigate, retryKey, t]);
 
   if (status === 'authenticated') {
     const dest = user?.onboardingCompleted ? '/app/dashboard' : '/app/onboarding';
@@ -145,12 +167,24 @@ export function CallbackPage() {
           <>
             <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('auth.signInFailedTitle')}</p>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">{error}</p>
-            <Link
-              to="/auth/sign-in"
-              className="mt-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
-            >
-              {t('auth.backToSignIn')}
-            </Link>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setRetryKey((k) => k + 1);
+                }}
+                className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                {t('common.retry')}
+              </button>
+              <Link
+                to="/auth/sign-in"
+                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+              >
+                {t('auth.backToSignIn')}
+              </Link>
+            </div>
           </>
         ) : (
           <>

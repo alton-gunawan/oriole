@@ -21,34 +21,36 @@ beforeAll(async () => {
 });
 
 describe('PLANS', () => {
-  it('Free: $0, tanpa subscription aktif', () => {
+  it('Free: $0, calendar & bookings, services + staff, contacts, 1 channel reminder (email), tanpa voice AI volume', () => {
     const free = PLANS['free'];
     expect(free.pricePerMonth).toBe(0);
     expect(free.trialDays).toBe(0);
     expect(free.trialCreditUsd).toBe(0);
     expect(free.creditCardRequired).toBe(false);
+    expect(free.features).toContain('Calendar & bookings');
+    expect(free.features).toContain('Services + staff');
+    expect(free.features).toContain('Contacts');
+    expect(free.features).toContain('1 channel reminder (email)');
+    expect(free.features).toContain('Tanpa voice AI volume');
   });
 
-  it('Pro (Subscription): $19/bulan, 7-day free trial, $5 voice credit, credit card required, unlimited bookings', () => {
+  it('Pro: $15/bulan, 7-day free trial, $5 voice credit, whatsapp inbox, auto reminders, voice AI, test call', () => {
     const pro = PLANS['pro'];
-    expect(pro.pricePerMonth).toBe(19);
+    expect(pro.pricePerMonth).toBe(15);
     expect(pro.trialDays).toBe(7);
     expect(pro.trialCreditUsd).toBe(5);
     expect(pro.creditCardRequired).toBe(true);
     expect(pro.cancelAnytime).toBe(true);
     expect(pro.usagePricing).toBe('+ pay only for the voice calls you use');
-    expect(pro.features).toContain('Book appointments');
-    expect(pro.features).toContain('Confirm appointments');
-    expect(pro.features).toContain('Handle rescheduling');
-    expect(pro.features).toContain('Handle cancellations');
-    expect(pro.features).toContain('Manage staff & services');
-    expect(pro.features).toContain('Keep your existing phone number');
-    expect(pro.features).toContain('Unlimited bookings');
-    expect(pro.features).toContain('No setup fee');
+    expect(pro.features).toContain('WhatsApp / multi-channel inbox');
+    expect(pro.features).toContain('Auto reminders');
+    expect(pro.features).toContain('Voice AI inbound/outbound (PAYG)');
+    expect(pro.features).toContain('Test call + call history');
+    expect(pro.features).toContain('Gratis $5 credit untuk call');
   });
 
-  it('urutan tampilan: pro', () => {
-    expect(PLAN_ORDER).toEqual(['pro']);
+  it('urutan tampilan: free, pro', () => {
+    expect(PLAN_ORDER).toEqual(['free', 'pro']);
   });
 });
 

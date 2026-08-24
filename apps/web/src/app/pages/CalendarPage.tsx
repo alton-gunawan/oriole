@@ -443,7 +443,7 @@ export function CalendarPage() {
       </div>
 
       <div
-        className="ilamy-calendar-scope bookings-calendar relative min-h-0 flex-1 overflow-hidden border-t border-zinc-200 dark:border-zinc-700 border-l-0 border-r-0 border-b-0"
+        className="ilamy-calendar-scope bookings-calendar relative min-h-0 flex-1 overflow-hidden border-0"
         aria-busy={calendarQuery.isFetching}
       >
           <IlamyCalendar

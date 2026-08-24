@@ -252,6 +252,7 @@ function BookingsLiveStatus({
 
 export function BookingsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const toast = useToast();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const queryClient = useQueryClient();
@@ -760,13 +761,12 @@ export function BookingsPage() {
             void refetch();
           }}
         />
-        <Link
-          to="/app/bookings/new"
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-        >
-          <IconPlus className="size-4" />
-          {t('bookings.new')}
-        </Link>
+        <Button
+          label={t('bookings.new')}
+          variant="primary"
+          icon={<IconPlus className="size-4" />}
+          onClick={() => navigate('/app/bookings/new')}
+        />
       </PageHeader>
 
       <div className="flex flex-1 flex-col space-y-4">
@@ -916,16 +916,16 @@ export function BookingsPage() {
                   description={
                     hasFilters ? t('bookings.emptyFilteredDesc') : t('bookings.emptyDesc')
                   }
+                  variant="transparent"
                   className="flex-1 min-h-[500px]"
                   actions={
                     hasFilters ? undefined : (
-                      <Link
-                        to="/app/bookings/new"
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-                      >
-                        <IconPlus className="size-4" />
-                        {t('bookings.createFirst')}
-                      </Link>
+                      <Button
+                        label={t('bookings.createFirst')}
+                        variant="primary"
+                        icon={<IconPlus className="size-4" />}
+                        onClick={() => navigate('/app/bookings/new')}
+                      />
                     )
                   }
                 />

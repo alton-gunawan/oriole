@@ -47,6 +47,7 @@ import {
   type UpdateServicePayload,
   formatServiceDuration,
   formatServicePrice,
+  getTemplateServicesForIndustry,
   SERVICE_CURRENCIES,
 } from '../../lib/services';
 import { useWorkspaceStore } from '../../stores/workspace';
@@ -55,10 +56,11 @@ import {
   IconDotsHorizontal,
   IconEdit,
   IconPlus,
+  IconRefreshCw,
   IconSearch,
   IconServices,
+  IconSparkles,
   IconTrash,
-  IconUsers,
   IconX,
 } from '../shell/icons';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
@@ -190,19 +192,65 @@ export function ServicesPage() {
   const { t } = useTranslation();
   const toast = useToast();
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null,
+  );
   const queryClient = useQueryClient();
+
+  const [isPopulating, setIsPopulating] = useState(false);
+
+  const handlePopulateFromIndustry = async () => {
+    const templates = getTemplateServicesForIndustry(
+      activeWorkspace?.industry,
+      activeWorkspace?.templateCategory,
+    );
+    if (!templates.length) return;
+
+    setIsPopulating(true);
+    try {
+      for (const tpl of templates) {
+        await apiFetch<{ service: ServiceRecord }>('/services', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: tpl.name,
+            durationMinutes: tpl.duration,
+            priceMinor: tpl.price ? Math.round(tpl.price * 100) : null,
+            currency: 'USD',
+          }),
+        });
+      }
+      toast({
+        body: t('services.populateSuccess'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 4000,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['services', activeWorkspaceId] });
+    } catch (err) {
+      toast({
+        body: errorMessage(err, t, 'errors.generic'),
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
+    } finally {
+      setIsPopulating(false);
+    }
+  };
 
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['services', activeWorkspaceId],
     queryFn: () => apiFetch<{ services: ServiceRecord[] }>('/services'),
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
   });
 
   // Staf (untuk chip nama di kolom staf + opsi MultiSelector) — di-fetch paralel.
   const { data: staffData } = useQuery({
     queryKey: ['staff', activeWorkspaceId],
     queryFn: () => apiFetch<{ staff: StaffRecord[] }>('/staff'),
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
   });
 
   const servicesList = data?.services ?? [];
@@ -668,16 +716,14 @@ export function ServicesPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col space-y-6">
-      <PageHeader title={t('services.title')} description={t('services.description')} icon={IconUsers}>
+      <PageHeader title={t('services.title')} description={t('services.description')} icon={IconServices}>
         <ReloadMenuButton isFetching={isFetching} onReload={() => void refetch()} />
-        <button
-          type="button"
+        <Button
+          label={t('services.add')}
+          variant="primary"
+          icon={<IconPlus className="size-4" />}
           onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-        >
-          <IconPlus className="size-4" />
-          {t('services.add')}
-        </button>
+        />
       </PageHeader>
 
       <div className="flex flex-1 flex-col space-y-4">
@@ -808,19 +854,44 @@ export function ServicesPage() {
         <div className="flex flex-1 flex-col">
           {servicesList.length === 0 ? (
             <EmptyState
-              icon={IconUsers}
+              icon={IconServices}
               title={t('services.emptyTitle')}
               description={t('services.emptyDesc')}
+              variant="transparent"
               className="flex-1 min-h-[500px]"
-              action={{ label: t('services.add'), onClick: openAdd }}
+              actions={
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <Button
+                    label={isPopulating ? t('services.populatingTemplate') : t('services.populateTemplate')}
+                    variant="secondary"
+                    icon={<IconSparkles className="size-4 text-amber-500" />}
+                    isLoading={isPopulating}
+                    isDisabled={isPopulating}
+                    onClick={() => void handlePopulateFromIndustry()}
+                  />
+                  <Button
+                    label={t('services.createFirst')}
+                    variant="primary"
+                    icon={<IconPlus className="size-4" />}
+                    isDisabled={isPopulating}
+                    onClick={openAdd}
+                  />
+                </div>
+              }
             />
           ) : filteredList.length === 0 ? (
             <EmptyState
-              icon={IconUsers}
+              icon={IconServices}
               title={t('services.emptyFilteredTitle')}
               description={t('services.emptyFilteredDesc')}
+              variant="transparent"
               className="flex-1 min-h-[500px]"
-              action={{ label: t('services.resetFilter'), onClick: resetFilters }}
+              action={{
+                label: t('services.resetFilter'),
+                onClick: resetFilters,
+                variant: 'secondary',
+                icon: <IconRefreshCw className="size-4" />,
+              }}
             />
           ) : (
             <>

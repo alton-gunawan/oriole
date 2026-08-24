@@ -30,9 +30,30 @@ function extractErrorMessage(body: string, fallback: string): string {
   try {
     // `detail` (alasan asli, mis. dari Paddle) lebih informatif daripada
     // pesan generik `error` — diprioritaskan bila keduanya ada.
-    const parsed = JSON.parse(body) as { error?: unknown; detail?: unknown };
+    const parsed = JSON.parse(body) as { error?: unknown; detail?: unknown; message?: unknown };
     if (typeof parsed.detail === 'string' && parsed.detail.trim()) return parsed.detail;
     if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error;
+    if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message;
+    if (parsed.error && typeof parsed.error === 'object') {
+      const errObj = parsed.error as {
+        name?: string;
+        message?: string;
+        issues?: Array<{ message?: string }>;
+      };
+      if (Array.isArray(errObj.issues) && errObj.issues.length > 0 && errObj.issues[0]?.message) {
+        return errObj.issues[0].message;
+      }
+      if (typeof errObj.message === 'string' && errObj.message.trim()) {
+        try {
+          const inner = JSON.parse(errObj.message) as Array<{ message?: string }>;
+          if (Array.isArray(inner) && inner[0]?.message) {
+            return inner[0].message;
+          }
+        } catch {
+          return errObj.message;
+        }
+      }
+    }
   } catch {
     // Bukan JSON — pakai body mentah (mis. error proxy/HTML).
   }

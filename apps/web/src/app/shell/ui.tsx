@@ -15,7 +15,7 @@ import {
 } from '@astryxdesign/core';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { IconArrowRight, IconDotsVertical, IconRefreshCw, type IconProps } from './icons';
+import { IconDotsVertical, IconPlus, IconRefreshCw, type IconProps } from './icons';
 
 /* ── Reload menu (⋯) ─────────────────────────────────────────
  * Tombol tiga titik yang membuka menu aksi — saat ini berisi Reload.
@@ -323,16 +323,27 @@ export function EmptyState({
   action,
   actions,
   className = '',
+  variant = 'default',
 }: {
   icon: ComponentType<IconProps> | ReactNode;
   title: string;
   description: string;
-  action?: { label: string; onClick?: () => void; disabled?: boolean };
+  action?: {
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    icon?: ReactNode;
+    variant?: ButtonVariant;
+  };
   actions?: ReactNode;
   className?: string;
+  variant?: CardVariant;
 }) {
   return (
-    <Card className={`flex flex-1 min-h-[460px] flex-col items-center justify-center px-6 py-16 text-center ${className}`}>
+    <Card
+      variant={variant}
+      className={`flex flex-1 min-h-[460px] flex-col items-center justify-center px-6 py-16 text-center ${className}`}
+    >
       <span className="flex size-16 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
         {typeof Icon === 'function' ? <Icon className="size-8" /> : Icon}
       </span>
@@ -342,8 +353,8 @@ export function EmptyState({
         <Button
           className="mt-6"
           label={action.label}
-          variant="primary"
-          icon={<IconArrowRight className="size-4" />}
+          variant={action.variant ?? 'primary'}
+          icon={action.icon ?? <IconPlus className="size-4" />}
           isDisabled={action.disabled}
           onClick={action.onClick}
         />

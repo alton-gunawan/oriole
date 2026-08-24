@@ -82,7 +82,8 @@ export function CallsPage() {
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['calls', activeWorkspaceId],
     queryFn: () => apiFetch<CallsResponse>('/calls'),
-    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+    enabled: Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 3,
   });
 
   // 401 = sesi habis — apiFetch sudah mereset sesi dan RequireAuth akan

@@ -36,7 +36,7 @@ export function AppBrand({
   return (
     <div className={`inline-flex items-center gap-3.5 ${className}`}>
       <span
-        className={`flex ${iconSize} shrink-0 items-center justify-center overflow-hidden rounded-xl bg-amber-500 shadow-md shadow-amber-500/20 ring-1 ring-white/10`}
+        className={`flex ${iconSize} shrink-0 items-center justify-center overflow-hidden rounded-md bg-amber-500 shadow-md shadow-amber-500/20 ring-1 ring-white/10`}
       >
         <AppLogo />
       </span>

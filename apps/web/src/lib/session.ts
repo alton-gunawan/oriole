@@ -116,8 +116,10 @@ export async function signOut(): Promise<void> {
 }
 
 export async function deleteUserAccount(): Promise<void> {
-  // Panggil API penghapusan akun di backend
-  await apiFetch<{ ok: boolean }>('/me', { method: 'DELETE' });
+  // Panggil API penghapusan akun di backend. Timeout diperbesar: hapus
+  // workspace me-trigger cascade besar (bookings, contacts, conversations,
+  // dll) yang bisa melampaui batas default apiFetch.
+  await apiFetch<{ ok: boolean }>('/me', { method: 'DELETE', timeoutMs: 60_000 });
 
   // Panggil deleteUser pada SDK Better Auth / Neon Auth jika tersedia
   try {

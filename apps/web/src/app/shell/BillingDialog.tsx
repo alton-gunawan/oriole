@@ -21,7 +21,7 @@ import { Card, SessionExpiredCard } from './ui';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { activeLocale, formatDate, formatNumber } from '../../i18n/format';
 import type { TranslationKey } from '../../i18n';
-import { IconAlertTriangle, IconCheck, IconCreditCard, IconRefreshCw } from './icons';
+import { IconAlertTriangle, IconCalendarCheck, IconCheck, IconCreditCard, IconPlus, IconRefreshCw, IconX } from './icons';
 
 /* ── Types (mirror dari GET /api/billing) ──────────────────── */
 
@@ -42,6 +42,7 @@ interface BillingResponse {
   plan: PlanId;
   planInfo: PlanInfo;
   plans: PlanInfo[];
+  topupOptions?: number[];
   usage: { totalCalls: number; monthCalls: number; totalSeconds: number };
   subscription: {
     status: string;
@@ -92,8 +93,12 @@ export function BillingDialog({
 }) {
   const { t } = useTranslation();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const [actionBusy, setActionBusy] = useState<'checkout' | 'portal' | null>(null);
+  const [actionBusy, setActionBusy] = useState<'checkout' | 'portal' | 'topup' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [selectedTopup, setSelectedTopup] = useState<number>(5);
+  const [customTopup, setCustomTopup] = useState<string>('');
+  const [topupError, setTopupError] = useState<string | null>(null);
 
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['billing', activeWorkspaceId],
@@ -126,6 +131,26 @@ export function BillingDialog({
     }
   };
 
+  /** Checkout top-up kredit suara (kelipatan $5). */
+  const runTopup = async (amount: number) => {
+    if (amount < 5 || amount % 5 !== 0) {
+      setTopupError(t('billing.multipleOf5Hint'));
+      return;
+    }
+    setActionError(null);
+    setTopupError(null);
+    setActionBusy('topup');
+    try {
+      const { url } = await apiFetch<{ url: string }>('/billing/topup', {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
+      });
+      window.location.assign(url);
+    } catch (err) {
+      failAction(err);
+    }
+  };
+
   /** Portal billing Paddle (kelola langganan / pembayaran). */
   const runPortal = async () => {
     setActionError(null);
@@ -138,21 +163,12 @@ export function BillingDialog({
     }
   };
 
+  const effectiveTopupAmount = customTopup ? Number(customTopup) : selectedTopup;
+
   const plan = data?.planInfo;
   const usage = data?.usage;
   const sub = data?.subscription;
   const isSubscribed = data?.plan === 'pro' && !!sub && (sub.status === 'active' || sub.status === 'trialing');
-
-  const subscriptionFeatures = [
-    'Book appointments',
-    'Confirm appointments',
-    'Handle rescheduling',
-    'Handle cancellations',
-    'Manage staff & services',
-    'Keep your existing phone number',
-    'Unlimited bookings',
-    'No setup fee',
-  ];
 
   return (
     <Dialog
@@ -234,64 +250,263 @@ export function BillingDialog({
               {/* Content */}
               {!isPending && !isError && data && plan && usage && (
                 <div className="space-y-6">
-                  {/* Single Subscription Plan Card */}
-                  <Card className="relative overflow-hidden p-6 sm:p-7 border border-amber-500/30 bg-gradient-to-br from-amber-500/[0.04] to-transparent">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  {/* Free & Pro Plan Comparison Cards */}
+                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                    {/* Free Plan Card */}
+                    <Card className={`relative overflow-hidden p-6 flex flex-col justify-between border ${!isSubscribed ? 'border-zinc-300 dark:border-zinc-700 bg-zinc-50/70 dark:bg-zinc-900/60 ring-1 ring-zinc-400/30' : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/30'}`}>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
-                            <IconCreditCard className="size-4" />
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                              <IconCalendarCheck className="size-4" />
+                            </span>
+                            <div>
+                              <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{t('billing.freePlanTitle')}</h4>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('billing.freePlanSubtitle')}</p>
+                            </div>
+                          </div>
+                          {!isSubscribed && (
+                            <Badge variant="neutral" label={t('billing.currentPlan')} />
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex items-baseline gap-1.5">
+                          <span className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                            $0
                           </span>
-                          <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                            {t('billing.subscriptionCardTitle')}
+                          <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                            {t('common.perMonth')}
                           </span>
+                        </div>
+
+                        {/* Features list */}
+                        <div className="mt-5 space-y-2.5 border-t border-zinc-200/70 dark:border-zinc-800 pt-4">
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                            <span>{t('billing.freeFeature1')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                            <span>{t('billing.freeFeature2')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                            <span>{t('billing.freeFeature3')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                            <span>{t('billing.freeFeature4')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            <IconX className="mt-0.5 size-3.5 shrink-0 text-zinc-400" />
+                            <span>{t('billing.freeFeature5')}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-zinc-200/50 dark:border-zinc-800/60">
+                        {!isSubscribed ? (
+                          <span className="inline-flex w-full items-center justify-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                            ✓ {t('billing.freePlanCurrent')}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400 text-center block">
+                            {t('billing.freePlanSubtitle')}
+                          </span>
+                        )}
+                      </div>
+                    </Card>
+
+                    {/* Pro Plan Card */}
+                    <Card className="relative overflow-hidden p-6 flex flex-col justify-between border-2 border-amber-500/50 dark:border-amber-500/40 bg-gradient-to-br from-amber-500/[0.08] to-transparent shadow-md shadow-amber-500/5">
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-8 items-center justify-center rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                              <IconCreditCard className="size-4" />
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{t('billing.proPlanTitle')}</h4>
+                                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                  {t('billing.popularBadge')}
+                                </span>
+                              </div>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('billing.proPlanSubtitle')}</p>
+                            </div>
+                          </div>
                           {isSubscribed && sub && (
                             <Badge variant={badgeFor(sub.status, t).variant} label={badgeFor(sub.status, t).label} />
                           )}
                         </div>
 
-                        <div className="mt-3 flex items-baseline gap-2">
-                          <span className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-                            {formatPrice(19)}
+                        <div className="mt-4 flex items-baseline gap-1.5">
+                          <span className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                            $15
                           </span>
-                          <span className="text-base font-medium text-zinc-500 dark:text-zinc-400">
+                          <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                             {t('common.perMonth')}
                           </span>
                         </div>
 
-                        <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-300">
-                          {t('billing.payAsYouUse')}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800 dark:text-emerald-300">
+                            ✓ {t('billing.trialBadgeWithCredit')}
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300">
+                            {t('billing.cancelAnytime')}
+                          </span>
+                        </div>
+
+                        {/* Features list */}
+                        <div className="mt-5 space-y-2.5 border-t border-amber-500/20 dark:border-zinc-800 pt-4">
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-medium">{t('billing.proFeature1')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-medium">{t('billing.proFeature2')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-medium">{t('billing.proFeature3')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-medium">{t('billing.proFeature4')}</span>
+                          </div>
+                          <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+                            <IconCheck className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t('billing.proFeature5')}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-amber-500/20 dark:border-zinc-800/60">
+                        {isSubscribed ? (
+                          <Button
+                            label={actionBusy === 'portal' ? t('billing.openingPortal') : t('billing.manageBilling')}
+                            variant="secondary"
+                            isLoading={actionBusy === 'portal'}
+                            isDisabled={!data.paddleConfigured || !data.subscription || actionBusy !== null}
+                            onClick={() => void runPortal()}
+                            width="100%"
+                          />
+                        ) : (
+                          <Button
+                            label={
+                              actionBusy === 'checkout'
+                                ? t('billing.preparing')
+                                : t('billing.startTrialWithCredit')
+                            }
+                            variant="primary"
+                            isLoading={actionBusy === 'checkout'}
+                            isDisabled={!data.paddleConfigured || actionBusy !== null}
+                            onClick={() => void runCheckout()}
+                            width="100%"
+                          />
+                        )}
+                      </div>
+                    </Card>
+                  </div>
+
+                  {/* Add Voice Credits (Top-Up) Section */}
+                  <Card className="p-6">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                          <span className="flex size-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            <IconPlus className="size-3.5" />
+                          </span>
+                          {t('billing.topupCardTitle')}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                          {t('billing.topupCardDesc')}
                         </p>
                       </div>
-
-                      <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end">
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800 dark:text-emerald-300">
-                          {t('billing.trialBadgeWithCredit')}
-                        </span>
-                        <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:border-amber-800 dark:text-amber-300">
-                          {t('billing.creditCardRequiredBadge')}
-                        </span>
-                        <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300">
-                          {t('billing.cancelAnytime')}
-                        </span>
-                      </div>
                     </div>
 
-                    {/* Features list */}
-                    <div className="mt-6 border-t border-zinc-100 dark:border-zinc-800/80 pt-5">
-                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                        {subscriptionFeatures.map((feature) => (
-                          <div key={feature} className="flex items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
-                            <IconCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />
-                            <span>{feature}</span>
-                          </div>
-                        ))}
+                    <div className="mt-4 space-y-4 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                      <div>
+                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2 block">
+                          {t('billing.topupAmountLabel')}
+                        </label>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          {[5, 10, 15, 20, 25, 50].map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => {
+                                setSelectedTopup(amt);
+                                setCustomTopup('');
+                                setTopupError(null);
+                              }}
+                              className={`flex flex-col items-center justify-center rounded-xl py-2 px-2.5 border transition-all text-xs font-semibold ${
+                                selectedTopup === amt && !customTopup
+                                  ? 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500'
+                                  : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                              }`}
+                            >
+                              <span className="text-sm font-bold">${amt}</span>
+                              <span className="text-[10px] font-normal text-zinc-400">~{Math.round(amt / 0.15)} min</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex-1">
+                          <input
+                            type="number"
+                            step="5"
+                            min="5"
+                            placeholder={t('billing.topupCustom')}
+                            value={customTopup}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomTopup(val);
+                              const num = Number(val);
+                              if (num > 0) {
+                                setSelectedTopup(num);
+                                if (num % 5 !== 0) {
+                                  setTopupError(t('billing.multipleOf5Hint'));
+                                } else {
+                                  setTopupError(null);
+                                }
+                              }
+                            }}
+                            className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                          />
+                          {topupError && (
+                            <p className="mt-1 text-[11px] text-red-500">{topupError}</p>
+                          )}
+                        </div>
+                        <Button
+                          label={
+                            actionBusy === 'topup'
+                              ? t('billing.topupOpening')
+                              : t('billing.topupButton', { amount: effectiveTopupAmount || 5 })
+                          }
+                          variant="primary"
+                          isLoading={actionBusy === 'topup'}
+                          isDisabled={
+                            !data?.paddleConfigured ||
+                            actionBusy !== null ||
+                            effectiveTopupAmount < 5 ||
+                            effectiveTopupAmount % 5 !== 0
+                          }
+                          onClick={() => void runTopup(effectiveTopupAmount || 5)}
+                        />
                       </div>
                     </div>
+                  </Card>
 
-                    {/* Active Subscription / Trial Details */}
-                    {sub && (
-                      <div className="mt-6 space-y-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/80 p-4 text-xs text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-800">
+                  {/* Active Subscription / Trial Details */}
+                  {sub && (
+                    <Card className="p-6">
+                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">{t('billing.subscriptionCardTitle')}</h4>
+                      <div className="space-y-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/80 p-4 text-xs text-zinc-600 dark:text-zinc-400 border border-zinc-100 dark:border-zinc-800">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium">{t('billing.status')}</span>
                           <Badge variant={badgeFor(sub.status, t).variant} label={badgeFor(sub.status, t).label} />
@@ -333,8 +548,8 @@ export function BillingDialog({
                           </p>
                         )}
                       </div>
-                    )}
-                  </Card>
+                    </Card>
+                  )}
 
                   {/* Usage Summary */}
                   <Card className="p-6">

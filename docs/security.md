@@ -56,6 +56,10 @@ berbayar), pencurian sesi via XSS, dan kebocoran data via error/side-channel.
   - Masa hidup: cookie 7 hari, tetapi JWT di dalamnya short-lived
     (~15 menit) — sesi efektif sama seperti sebelum migrasi (perlu refresh
     JWT via Neon Auth / re-login).
+- **Cloudflare Turnstile (Anti-Bot & Brute-force Protection)**:
+  - Frontend: Widget terintegrasi di [SignInPage](file:///Users/altongunawanpurwanto/Documents/Github/oriole/apps/web/src/app/auth/SignInPage.tsx) dan [SignUpPage](file:///Users/altongunawanpurwanto/Documents/Github/oriole/apps/web/src/app/auth/SignUpPage.tsx) via [TurnstileWidget](file:///Users/altongunawanpurwanto/Documents/Github/oriole/apps/web/src/app/components/TurnstileWidget.tsx) (`VITE_TURNSTILE_SITE_KEY`).
+  - Backend: Endpoint verifikasi token `POST /api/auth/turnstile/verify` memverifikasi token ke API Cloudflare Siteverify (`https://challenges.cloudflare.com/turnstile/v0/siteverify`) dengan `TURNSTILE_SECRET_KEY`.
+  - Fallback aman: jika env Turnstile belum disetel (local dev), sistem tetap berjalan normal tanpa memblokir proses development.
 
 ### 2.2 Otorisasi & validasi input
 - **BOLA (API1)**: `requireWorkspace` memverifikasi kepemilikan

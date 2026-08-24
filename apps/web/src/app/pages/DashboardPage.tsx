@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { Badge, EmptyState, Skeleton, type BadgeVariant } from '@astryxdesign/core';
+import { Badge, Button, EmptyState, Skeleton, type BadgeVariant } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
@@ -47,6 +47,7 @@ interface AnalyticsOverview {
 
 export function DashboardPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const user = useSessionStore((s) => s.user);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const firstName = (user?.name ?? user?.email ?? t('dashboard.fallbackName')).split(' ')[0];
@@ -163,13 +164,12 @@ export function DashboardPage() {
               title={t('dashboard.noBookingsTitle')}
               description={t('dashboard.noBookingsDesc')}
               actions={
-                <Link
-                  to="/app/bookings/new"
-                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 h-8 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 active:scale-[0.98]"
-                >
-                  <IconPlus className="size-4" />
-                  {t('dashboard.createBooking')}
-                </Link>
+                <Button
+                  label={t('dashboard.createBooking')}
+                  variant="primary"
+                  icon={<IconPlus className="size-4" />}
+                  onClick={() => navigate('/app/bookings/new')}
+                />
               }
             />
           )}

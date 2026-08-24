@@ -11,6 +11,7 @@ import {
   NumberInput,
   Switch,
   TextInput,
+  useToast,
   type DropdownMenuOption,
 } from '@astryxdesign/core';
 import { Trans, useTranslation } from 'react-i18next';
@@ -284,6 +285,7 @@ export function SettingsDialog({
   onOpenChange: (isOpen: boolean) => unknown;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const user = useSessionStore((s) => s.user);
   const setUser = useSessionStore((s) => s.setUser);
   const [name, setName] = useState(user?.name ?? '');
@@ -320,9 +322,9 @@ export function SettingsDialog({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // ── Hapus akun pengguna (permanen) ──
+  // Error ditampilkan via toast (astryx Toast), bukan inline di dialog.
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
-  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
 
   // Segarkan form setiap dialog dibuka (nama bisa berubah dari luar),
   // bersihkan error lama, dan kembalikan ke bagian Profil.
@@ -331,7 +333,6 @@ export function SettingsDialog({
       setName(user?.name ?? '');
       setError(null);
       setDeleteError(null);
-      setDeleteUserError(null);
       setConfirmDeleteUserOpen(false);
       setConfirmDeleteId(null);
       setActiveSection('profile');
@@ -353,14 +354,28 @@ export function SettingsDialog({
   };
 
   const handleDeleteUser = async () => {
-    setDeleteUserError(null);
     setIsDeletingUser(true);
     try {
       await deleteUserAccount();
       setConfirmDeleteUserOpen(false);
       onOpenChange(false);
+      // Toast sukses — viewport self-mounting dari useToast tetap tampil
+      // meski sesi sudah dibersihkan dan app berpindah ke halaman auth.
+      toast({
+        body: t('settings.deleteAccountSuccess'),
+        type: 'info',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } catch (err) {
-      setDeleteUserError(errorMessage(err, t, 'errors.deleteAccount'));
+      const msg = errorMessage(err, t, 'errors.deleteAccount');
+      setConfirmDeleteUserOpen(false);
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     } finally {
       setIsDeletingUser(false);
     }
@@ -542,7 +557,6 @@ export function SettingsDialog({
                             size="sm"
                             icon={<IconTrash className="size-3.5" />}
                             onClick={() => {
-                              setDeleteUserError(null);
                               setConfirmDeleteUserOpen(true);
                             }}
                           />
@@ -881,24 +895,16 @@ export function SettingsDialog({
         onOpenChange={(open) => {
           if (!open) {
             setConfirmDeleteUserOpen(false);
-            setDeleteUserError(null);
           }
         }}
         title={t('settings.deleteAccountConfirmTitle')}
         description={
-          <div>
-            <p>
-              <Trans
-                i18nKey="settings.deleteAccountConfirmQuestion"
-                components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
-              />
-            </p>
-            {deleteUserError && (
-              <p role="alert" className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
-                {deleteUserError}
-              </p>
-            )}
-          </div>
+          <p>
+            <Trans
+              i18nKey="settings.deleteAccountConfirmQuestion"
+              components={{ strong: <strong className="font-bold text-black dark:text-zinc-100" /> }}
+            />
+          </p>
         }
         cancelLabel={t('common.cancel')}
         actionLabel={t('settings.deleteAccountConfirmAction')}

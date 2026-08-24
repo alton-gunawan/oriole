@@ -16,6 +16,7 @@
     "@astryxdesign/theme-neutral": "^0.2.0",
     "@hookform/resolvers": "^5.7.1",
     "@ilamy/calendar": "^2.0.3",
+    "@marsidev/react-turnstile": "^1.6.0",
     "@neondatabase/auth": "0.4.2-beta",
     "@oriole/call-goals": "workspace:*",
     "@posthog/react": "^1.10.3",
