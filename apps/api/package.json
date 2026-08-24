@@ -31,7 +31,7 @@
     "@oriole/config": "workspace:*",
     "@oriole/database": "workspace:*",
     "@oriole/messaging": "workspace:*",
-    "@paddle/paddle-node-sdk": "^3.8.0",
+    "@paddle/paddle-node-sdk": "^3.10.0",
     "@vapi-ai/server-sdk": "^1.2.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.34",
