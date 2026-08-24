@@ -7,7 +7,7 @@ import { calleCalls, subscriptions } from '@oriole/database';
 import { db } from '../db/index.ts';
 import { extractCallSeconds } from '../lib/calls.ts';
 import { env } from '../lib/env.ts';
-import { PLAN_ORDER, PLANS, priceIdForPlan, type PlanId } from '../lib/plans.ts';
+import { PLANS, priceIdForPlan, type PlanId } from '../lib/plans.ts';
 import { planFromSubscription } from '../lib/quota.ts';
 import { requireAuth, type AuthVariables } from '../middleware/auth.ts';
 import { paddle } from '../services/paddle.ts';
@@ -82,26 +82,49 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const usage = {
-      totalCalls: calls.length,
-      monthCalls: calls.filter((call) => call.createdAt >= monthStart).length,
-      totalSeconds: calls.reduce((acc, call) => acc + extractCallSeconds(call.result), 0),
-    };
+    const totalSeconds = calls.reduce((acc, call) => acc + extractCallSeconds(call.result), 0);
+    const monthCalls = calls.filter((call) => call.createdAt >= monthStart);
+    const monthSeconds = monthCalls.reduce((acc, call) => acc + extractCallSeconds(call.result), 0);
+
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    const monthMinutes = Math.ceil(monthSeconds / 60);
+
+    const trialCreditTotalUsd = 5.0;
+    // Standar estimasi voice cost: $0.15/menit
+    const voiceUsageCostUsd = Number(((monthSeconds / 60) * 0.15).toFixed(2));
+    const trialCreditUsedUsd = Number(Math.min(trialCreditTotalUsd, (monthSeconds / 60) * 0.15).toFixed(2));
+    const trialCreditRemainingUsd = Number(Math.max(0, trialCreditTotalUsd - trialCreditUsedUsd).toFixed(2));
+
+    const daysRemaining = latestSubscription?.currentPeriodEnd
+      ? Math.max(0, Math.ceil((new Date(latestSubscription.currentPeriodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : 14;
 
     return c.json({
       paddleConfigured,
+      currency: 'USD',
       plan,
-      planInfo: PLANS[plan],
-      plans: PLAN_ORDER.map((id) => PLANS[id]),
-      topupOptions: [5, 10, 15, 20, 25, 50],
-      usage,
+      planInfo: PLANS[plan] ?? PLANS.pro,
+      usage: {
+        totalCalls: calls.length,
+        monthCalls: monthCalls.length,
+        totalSeconds,
+        totalMinutes,
+        monthSeconds,
+        monthMinutes,
+        voiceUsageCostUsd,
+        trialCreditTotalUsd,
+        trialCreditUsedUsd,
+        trialCreditRemainingUsd,
+      },
       subscription: latestSubscription
         ? {
             status: latestSubscription.status,
             paddleSubscriptionId: latestSubscription.paddleSubscriptionId,
+            paddleCustomerId: latestSubscription.paddleCustomerId,
             priceId: latestSubscription.priceId,
             currentPeriodEnd: latestSubscription.currentPeriodEnd,
             cancelAtPeriodEnd: latestSubscription.cancelAtPeriodEnd,
+            daysRemaining,
           }
         : null,
     });
@@ -137,11 +160,10 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ url: transaction.checkout.url });
     } catch (err) {
       const detail = paddleErrorDetail(err);
-      console.error('[billing] checkout gagal:', detail ?? err);
-      // Sertakan detail asli (jika ada) agar user & log bisa melihat penyebab
-      // sebenarnya (mis. harga di bawah batas minimum charge Paddle).
+      console.error('[billing] checkout error from Paddle:', detail ?? err);
+      // Sanitized user error message (technical details tetap masuk di server log)
       return c.json(
-        { error: 'Gagal membuat checkout di Paddle', detail: detail ?? undefined },
+        { error: "We couldn't start your subscription. Please try again or use another payment method." },
         502,
       );
     }
@@ -187,7 +209,7 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       const detail = paddleErrorDetail(err);
       console.error('[billing] topup checkout gagal:', detail ?? err);
       return c.json(
-        { error: 'Gagal membuat checkout top-up di Paddle', detail: detail ?? undefined },
+        { error: "We couldn't process the top-up. Please try again or use another payment method." },
         502,
       );
     }
@@ -217,9 +239,10 @@ export const billingRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ url: session.urls.general.overview });
     } catch (err) {
       const detail = paddleErrorDetail(err);
-      console.error('[billing] portal gagal:', detail ?? err);
+      console.error('[billing] customer portal error from Paddle:', detail ?? err);
+      // Sanitized user error message
       return c.json(
-        { error: 'Gagal membuka portal billing', detail: detail ?? undefined },
+        { error: "We couldn't open your customer billing portal. Please try again later." },
         502,
       );
     }
