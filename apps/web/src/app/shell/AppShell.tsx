@@ -14,7 +14,7 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
 import { LanguageSubMenu } from './LocaleSwitcher';
 import { BillingDialog } from './BillingDialog';
-import { SettingsDialog } from './SettingsDialog';
+import { SettingsDialog, type SettingsSectionId } from './SettingsDialog';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { AppLogo } from '../components/AppLogo';
 import {
@@ -149,6 +149,7 @@ export function AppShell() {
   const [businessMenuOpen, setBusinessMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profile');
   const [isBillingOpen, setIsBillingOpen] = useState(false);
   // Sidebar desktop bisa diciutkan jadi rail ikon (toggle di footer sidebar).
   // Preferensi disimpan per-perangkat (localStorage) — pola sama seperti
@@ -472,7 +473,7 @@ export function AppShell() {
               <IconSparkles className="size-4" />
             </button>
           ) : (
-            <div className="rounded border border-zinc-200/90 bg-white p-3.5 shadow-sm dark:border-zinc-800/90 dark:bg-[#161922]">
+            <div className="rounded-md border border-zinc-200/90 bg-white p-3.5 shadow-sm dark:border-zinc-800/90 dark:bg-[#161922]">
               <p className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
                 {trialDaysLeft > 1
                   ? t('nav.trialEndsInDays', { days: trialDaysLeft })
@@ -493,7 +494,7 @@ export function AppShell() {
                   }
                   setIsBillingOpen(true);
                 }}
-                className="mt-3 flex w-full items-center justify-center rounded bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-amber-400 active:scale-[0.99] cursor-pointer"
+                className="mt-3 flex w-full items-center justify-center rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-amber-400 active:scale-[0.99] cursor-pointer"
               >
                 <span>{t('nav.upgrade')}</span>
               </button>
@@ -548,10 +549,11 @@ export function AppShell() {
                 document.activeElement.blur();
               }
               setUserMenuOpen(false);
+              setSettingsSection('profile');
               setIsSettingsOpen(true);
             }}
           />
-          {/* Billing — dialog langganan & kuota (dipindah dari halaman /app/billing) */}
+          {/* Billing — dialog langganan & kuota */}
           <DropdownMenuItem
             label={t('nav.billing')}
             icon={<IconCreditCard className="size-4" />}
@@ -560,7 +562,8 @@ export function AppShell() {
                 document.activeElement.blur();
               }
               setUserMenuOpen(false);
-              setIsBillingOpen(true);
+              setSettingsSection('billing');
+              setIsSettingsOpen(true);
             }}
           />
           {/* Pemilihan bahasa — submenu flyout berisi pilihan EN/ID. */}
@@ -746,6 +749,7 @@ export function AppShell() {
           & drawer mobile sama-sama memakai state isSettingsOpen). */}
       <SettingsDialog
         isOpen={isSettingsOpen}
+        initialSection={settingsSection}
         onOpenChange={(open) => {
           setIsSettingsOpen(open);
           if (!open) {

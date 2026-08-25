@@ -1582,13 +1582,16 @@ export function LandingPage() {
             <p className="text-sm leading-6 text-zinc-500">
               {t('landing.footerCopyright', { year: new Date().getFullYear() })}
             </p>
-            <div
-              className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-800/60 bg-emerald-950/40 px-3 py-1.5 font-mono text-xs font-medium text-emerald-400"
+            <a
+              href="https://status.conductor.my.id"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-800/60 bg-emerald-950/40 px-3 py-1.5 font-mono text-xs font-medium text-emerald-400 transition hover:border-emerald-700 hover:bg-emerald-950/70 hover:text-emerald-300"
               role="status"
             >
               <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]" aria-hidden="true" />
               <span>{t('landing.footerStatus')}</span>
-            </div>
+            </a>
           </div>
         </div>
       </footer>

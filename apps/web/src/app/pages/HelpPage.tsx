@@ -3,7 +3,7 @@ import { Collapsible } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 import { Trans } from 'react-i18next';
 
-import { IconChevronDown, IconHelp, IconMail } from '../shell/icons';
+import { IconChevronDown, IconExternalLink, IconHelp, IconMail } from '../shell/icons';
 import { Card, PageHeader } from '../shell/ui';
 
 const FAQS = [
@@ -74,9 +74,20 @@ export function HelpPage() {
           </Card>
 
           <Card className="bg-zinc-950 p-6">
-            <p className="text-xs font-semibold uppercase tracking-widest text-amber-400">
-              {t('help.systemStatus')}
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-widest text-amber-400">
+                {t('help.systemStatus')}
+              </p>
+              <a
+                href="https://status.conductor.my.id"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-zinc-400 transition hover:text-white"
+              >
+                <span>status.conductor.my.id</span>
+                <IconExternalLink className="size-3" />
+              </a>
+            </div>
             <ul className="mt-3 space-y-2 text-xs text-zinc-400">
               <li className="flex items-center justify-between">
                 <span>{t('help.database')}</span>

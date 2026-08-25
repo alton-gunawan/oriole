@@ -30,6 +30,7 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import type { TranslationKey } from '../../i18n';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
 import { LANGUAGE_OPTIONS } from './LocaleSwitcher';
+import { BillingPanel } from './BillingPanel';
 import { InboundNumberPanel } from './phone/InboundNumberPanel';
 import { PhoneNumberPanel } from './phone/PhoneNumberPanel';
 import { ConfirmDialog } from './ui';
@@ -38,6 +39,7 @@ import {
   IconBuildings,
   IconCheck,
   IconChevronDown,
+  IconCreditCard,
   IconGlobe,
   IconPhone,
   IconSettings,
@@ -47,14 +49,24 @@ import {
   type IconProps,
 } from './icons';
 
+export type SettingsSectionId =
+  | 'profile'
+  | 'preferences'
+  | 'billing'
+  | 'voice'
+  | 'notifications'
+  | 'businesses'
+  | 'privacy';
+
 /** Bagian dalam dialog Settings — ditampilkan di sidebar kiri dialog. */
 const SECTIONS: {
-  id: 'profile' | 'preferences' | 'voice' | 'notifications' | 'businesses' | 'privacy';
+  id: SettingsSectionId;
   labelKey: TranslationKey;
   icon: ComponentType<IconProps>;
 }[] = [
   { id: 'profile', labelKey: 'settings.profile', icon: IconUser },
   { id: 'preferences', labelKey: 'settings.preferences', icon: IconGlobe },
+  { id: 'billing', labelKey: 'settings.billing', icon: IconCreditCard },
   { id: 'voice', labelKey: 'settings.voice', icon: IconPhone },
   { id: 'notifications', labelKey: 'settings.notifications', icon: IconBell },
   { id: 'privacy', labelKey: 'consent.privacy', icon: IconShield },
@@ -280,9 +292,11 @@ function TimezoneDropdown({
 export function SettingsDialog({
   isOpen,
   onOpenChange,
+  initialSection = 'profile',
 }: {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => unknown;
+  initialSection?: SettingsSectionId;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -291,8 +305,8 @@ export function SettingsDialog({
   const [name, setName] = useState(user?.name ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Bagian aktif dialog — kembali ke Profil setiap dibuka.
-  const [activeSection, setActiveSection] = useState<(typeof SECTIONS)[number]['id']>('profile');
+  // Bagian aktif dialog.
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection);
   // Preferensi — bahasa (ikut i18n aktif) + zona waktu (default browser).
   const [prefLanguage, setPrefLanguage] = useState<SupportedLocale>(() =>
     (i18n.resolvedLanguage as SupportedLocale) ?? 'en',
@@ -327,7 +341,7 @@ export function SettingsDialog({
   const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   // Segarkan form setiap dialog dibuka (nama bisa berubah dari luar),
-  // bersihkan error lama, dan kembalikan ke bagian Profil.
+  // bersihkan error lama, dan set bagian aktif.
   useEffect(() => {
     if (isOpen) {
       setName(user?.name ?? '');
@@ -335,7 +349,7 @@ export function SettingsDialog({
       setDeleteError(null);
       setConfirmDeleteUserOpen(false);
       setConfirmDeleteId(null);
-      setActiveSection('profile');
+      setActiveSection(initialSection);
       setPrefLanguage((i18n.resolvedLanguage as SupportedLocale) ?? 'en');
       setPrefTimezone(user?.timezone ?? null);
       // Voice AI — isi dari workspace aktif + status koneksi.
@@ -611,6 +625,8 @@ export function SettingsDialog({
                     </div>
                   </div>
                 )}
+
+                {activeSection === 'billing' && <BillingPanel />}
 
                 {activeSection === 'voice' && (
                   <div className="space-y-5">

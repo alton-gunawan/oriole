@@ -4,8 +4,21 @@ import { useNavigate, useSearchParams } from 'react-router';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Popover, Selector, SelectorOption, StatusDot, TextInput, type StatusDotVariant } from '@astryxdesign/core';
-import { IlamyCalendar, useIlamyCalendarContext } from '@ilamy/calendar';
+import {
+  Button,
+  Dialog,
+  DialogHeader,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  Popover,
+  Selector,
+  SelectorOption,
+  StatusDot,
+  TextInput,
+  type StatusDotVariant,
+} from '@astryxdesign/core';
+import { IlamyCalendar, useIlamyCalendarContext, type CalendarEvent, type Dayjs } from '@ilamy/calendar';
 
 import { ApiError, apiFetch } from '../../lib/api';
 import { toCalendarEvents, type CalendarDateRange } from '../../lib/bookings-calendar';
@@ -256,20 +269,27 @@ export function CalendarPage() {
 
   // ── Kalender @ilamy/calendar ──────────────────────────────
   const navigate = useNavigate();
+  const [moreEventsDialog, setMoreEventsDialog] = useState<{
+    day: Dayjs;
+    events: CalendarEvent[];
+  } | null>(null);
   const calendarTranslations = useCalendarTranslations();
   const calendarEvents = useMemo(
     () => toCalendarEvents(filteredBookings, staffNameById),
     [filteredBookings, staffNameById],
   );
   const handleCalendarEventClick = useCallback(
-    (event: import('@ilamy/calendar').CalendarEvent) => {
+    (event: CalendarEvent) => {
       const bookingId = (event.data as Record<string, unknown>)?.bookingId;
       if (bookingId) navigate(`/app/bookings/${bookingId}`);
     },
     [navigate],
   );
+  const handleMoreEventsClick = useCallback((day: Dayjs, events: CalendarEvent[]) => {
+    setMoreEventsDialog({ day, events });
+  }, []);
   const renderBookingEvent = useCallback(
-    (event: import('@ilamy/calendar').CalendarEvent) => (
+    (event: CalendarEvent) => (
       <CalendarEventBar event={event} />
     ),
     [],
@@ -479,6 +499,7 @@ export function CalendarPage() {
               );
             }}
             onEventClick={handleCalendarEventClick}
+            onMoreEventsClick={handleMoreEventsClick}
             dayMaxEvents={3}
             eventHeight={36}
             eventSpacing={3}
@@ -503,6 +524,113 @@ export function CalendarPage() {
             </div>
           )}
       </div>
+
+      {/* Dialog daftar booking per hari (menggunakan Astryx Dialog) */}
+      <Dialog
+        isOpen={moreEventsDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setMoreEventsDialog(null);
+        }}
+        purpose="info"
+        width={480}
+        maxHeight="min(85vh, 580px)"
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title={
+                moreEventsDialog?.day
+                  ? moreEventsDialog.day.format('dddd, D MMMM YYYY')
+                  : t('calendar.events')
+              }
+              subtitle={t('calendar.moreDialogSubtitle', {
+                count: moreEventsDialog?.events.length ?? 0,
+              })}
+              startContent={<IconCalendar className="size-5 shrink-0 text-amber-600" />}
+              onOpenChange={(open) => {
+                if (!open) setMoreEventsDialog(null);
+              }}
+              hasDivider
+            />
+          }
+          content={
+            <LayoutContent>
+              <div className="space-y-2 py-2">
+                {moreEventsDialog?.events.map((event) => {
+                  const d = (event.data ?? {}) as Record<string, unknown>;
+                  const bookingId = d.bookingId as string | undefined;
+                  const staffName = d.staffName as string | null | undefined;
+                  const customerName = d.customerName as string | null | undefined;
+                  const startStr = event.start.format('HH:mm');
+                  const endStr = event.end.format('HH:mm');
+                  const status = (d.status as BookingRecord['status']) || 'pending';
+
+                  return (
+                    <div
+                      key={event.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (bookingId) {
+                          setMoreEventsDialog(null);
+                          navigate(`/app/bookings/${bookingId}`);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (bookingId) {
+                            setMoreEventsDialog(null);
+                            navigate(`/app/bookings/${bookingId}`);
+                          }
+                        }
+                      }}
+                      className="group flex cursor-pointer items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white p-3 shadow-xs transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700/80 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/50"
+                      style={{
+                        borderLeftWidth: '4px',
+                        borderLeftColor: event.color || '#f59e0b',
+                      }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                            {event.title}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                          {startStr} – {endStr}
+                          {customerName && ` · ${customerName}`}
+                          {staffName && ` · ${staffName}`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <StatusDot
+                          variant={STATUS_DOT[status] ?? 'neutral'}
+                          label={statusLabel(status, t)}
+                        />
+                        <span className={`text-xs font-medium ${STATUS_TEXT[status] ?? 'text-zinc-500'}`}>
+                          {statusLabel(status, t)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter hasDivider>
+              <div className="flex w-full justify-end">
+                <Button
+                  label={t('common.close')}
+                  variant="secondary"
+                  onClick={() => setMoreEventsDialog(null)}
+                />
+              </div>
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
     </div>
   );
 }

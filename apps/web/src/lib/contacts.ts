@@ -29,6 +29,14 @@ export interface CreateContactPayload {
   notes?: string;
 }
 
+/** Payload PATCH /api/contacts/:id. */
+export interface UpdateContactPayload {
+  name?: string;
+  phone?: string;
+  email?: string | null;
+  notes?: string | null;
+}
+
 export interface ContactFormDraft {
   name: string;
   phone: string;

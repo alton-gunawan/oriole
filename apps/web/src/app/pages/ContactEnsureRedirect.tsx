@@ -32,7 +32,7 @@ export function ContactEnsureRedirect() {
         );
         if (cancelled) return;
         if (body.contactId) {
-          navigate(`/app/contacts/${body.contactId}`, { replace: true });
+          navigate(`/app/contacts?contactId=${encodeURIComponent(body.contactId)}`, { replace: true });
         } else {
           navigate('/app/contacts', { replace: true });
         }
