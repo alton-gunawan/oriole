@@ -491,7 +491,7 @@ export function SettingsDialog({
               {/* Sidebar kiri dialog — berpindah antar bagian Settings. */}
               <nav
                 aria-label={t('settings.title')}
-                className="w-44 shrink-0 space-y-1 self-start"
+                className="sticky top-0 w-44 shrink-0 space-y-1 self-start"
               >
                 {SECTIONS.map((section) => {
                   const active = section.id === activeSection;
@@ -742,16 +742,16 @@ export function SettingsDialog({
 
                     <div className="space-y-2">
                       {workspaces.length === 0 ? (
-                        <p className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-600 px-4 py-8 text-center text-sm text-zinc-400">
+                        <p className="rounded-md border border-dashed border-zinc-300 dark:border-zinc-600 px-4 py-8 text-center text-sm text-zinc-400">
                           {t('settings.businessesEmpty')}
                         </p>
                       ) : (
                         workspaces.map((workspace) => (
                           <div
                             key={workspace.id}
-                            className="flex items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 transition hover:border-zinc-300 dark:hover:border-zinc-600"
+                            className="flex items-center gap-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 transition hover:border-zinc-300 dark:hover:border-zinc-600"
                           >
-                            <WorkspaceAvatar workspace={workspace} size={36} radiusClass="rounded-lg" />
+                            <WorkspaceAvatar workspace={workspace} size={36} radiusClass="rounded-md" />
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</p>
                               {workspace.id === activeWorkspaceId && (

@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router';
-import { Button } from '@astryxdesign/core';
+import { Button, useToast } from '@astryxdesign/core';
 import type { TurnstileInstance } from '@marsidev/react-turnstile';
 
 import { AuthField, AuthLayout, GitHubIcon, GoogleIcon } from './AuthLayout';
@@ -21,17 +21,19 @@ export function SignInPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  const toast = useToast();
   const status = useSessionStore((s) => s.status);
   const user = useSessionStore((s) => s.user);
-  const [error, setError] = useState<string | null>(null);
   const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance>(null);
+  const isManualSubmitRef = useRef(false);
 
   const schema = useMemo(() => signInSchema(t), [t]);
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<SignInInput>({
     resolver: zodResolver(schema),
@@ -66,10 +68,14 @@ export function SignInPage() {
   }
 
   const onSubmit = async (values: SignInInput) => {
-    setError(null);
     if (env.TURNSTILE_SITE_KEY) {
       if (!turnstileToken) {
-        setError(t('auth.turnstileRequired'));
+        toast({
+          body: t('auth.turnstileRequired'),
+          type: 'error',
+          isAutoHide: true,
+          autoHideDuration: 5000,
+        });
         return;
       }
       try {
@@ -77,7 +83,12 @@ export function SignInPage() {
       } catch (err) {
         turnstileRef.current?.reset();
         setTurnstileToken(null);
-        setError(errorMessage(err, t, 'auth.turnstileError'));
+        toast({
+          body: errorMessage(err, t, 'auth.turnstileError'),
+          type: 'error',
+          isAutoHide: true,
+          autoHideDuration: 5000,
+        });
         return;
       }
     }
@@ -94,12 +105,16 @@ export function SignInPage() {
     } catch (err) {
       turnstileRef.current?.reset();
       setTurnstileToken(null);
-      setError(errorMessage(err, t, 'errors.generic'));
+      toast({
+        body: errorMessage(err, t, 'errors.generic'),
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     }
   };
 
   const onSocial = async (provider: SocialProvider) => {
-    setError(null);
     void trackEvent('signin_started', { method: provider });
     setSocialBusy(provider);
     try {
@@ -108,13 +123,51 @@ export function SignInPage() {
       else await signInWithGoogle(from);
     } catch (err) {
       setSocialBusy(null);
-      setError(errorMessage(err, t, 'errors.signInStart'));
+      toast({
+        body: errorMessage(err, t, 'errors.signInStart'),
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     }
+  };
+
+  const onFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    // Mencegah auto-submit dari browser autofill (misal Keychain / Touch ID)
+    // bila checkbox belum dicentang dan bukan berasal dari klik/Enter manual pengguna.
+    const agree = getValues('agreeTerms');
+    if (!isManualSubmitRef.current && !agree) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    isManualSubmitRef.current = false;
+    handleSubmit(onSubmit, (formErrors) => {
+      const firstKey = Object.keys(formErrors)[0] as keyof SignInInput | undefined;
+      const msg = firstKey ? formErrors[firstKey]?.message : t('errors.generic');
+      if (msg) {
+        toast({
+          body: msg,
+          type: 'error',
+          isAutoHide: true,
+          autoHideDuration: 5000,
+        });
+      }
+    })(e);
   };
 
   return (
     <AuthLayout>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      <form
+        onSubmit={onFormSubmit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            isManualSubmitRef.current = true;
+          }
+        }}
+        className="space-y-4"
+        noValidate
+      >
         <Button
           label={socialBusy === 'google' ? t('auth.openingGoogle') : t('auth.continueGoogle')}
           variant="secondary"
@@ -192,11 +245,6 @@ export function SignInPage() {
               />
             </span>
           </label>
-          {errors.agreeTerms && (
-            <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">
-              {errors.agreeTerms.message}
-            </p>
-          )}
         </div>
 
         {env.TURNSTILE_SITE_KEY && (
@@ -204,25 +252,20 @@ export function SignInPage() {
             ref={turnstileRef}
             onSuccess={(token) => {
               setTurnstileToken(token);
-              setError(null);
             }}
             onError={() => {
               setTurnstileToken(null);
-              setError(t('auth.turnstileError'));
+              toast({
+                body: t('auth.turnstileError'),
+                type: 'error',
+                isAutoHide: true,
+                autoHideDuration: 5000,
+              });
             }}
             onExpire={() => {
               setTurnstileToken(null);
             }}
           />
-        )}
-
-        {error && (
-          <div
-            role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
-          >
-            {error}
-          </div>
         )}
 
         <Button
@@ -231,6 +274,9 @@ export function SignInPage() {
           isLoading={isSubmitting}
           isDisabled={isSubmitting || (Boolean(env.TURNSTILE_SITE_KEY) && !turnstileToken)}
           type="submit"
+          onClick={() => {
+            isManualSubmitRef.current = true;
+          }}
           width="100%"
         />
 

@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import {
-  Badge,
   Button,
   Dialog,
   DialogHeader,
+  DropdownMenu,
+  DropdownMenuItem,
   Layout,
   LayoutContent,
   LayoutFooter,
@@ -31,7 +32,7 @@ import {
 } from '../components/BusinessInfoForm';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
-import { IconBuildings, IconEdit, IconPlus, IconTrash } from '../shell/icons';
+import { IconBuildings, IconDotsHorizontal, IconEdit, IconPlus, IconTrash } from '../shell/icons';
 import { Card, ConfirmDialog, PageHeader } from '../shell/ui';
 
 const EDITABLE_INDUSTRIES = [
@@ -62,6 +63,45 @@ const INDUSTRY_TO_CATEGORY: Record<string, string> = {
   dental: 'healthcare-clinics',
   other: 'professional-services',
 };
+
+function WorkspaceActionMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu
+      placement="below"
+      menuWidth={160}
+      isMenuOpen={open}
+      onOpenChange={setOpen}
+      button={{
+        label: t('common.moreActions'),
+        isIconOnly: true,
+        icon: <IconDotsHorizontal className="size-4" />,
+        variant: 'ghost',
+        size: 'sm',
+        style: { padding: 0 },
+      }}
+    >
+      <DropdownMenuItem
+        icon={<IconEdit className="size-4" />}
+        label={t('common.edit')}
+        onClick={onEdit}
+      />
+      <DropdownMenuItem
+        icon={<IconTrash className="size-4 text-red-500" />}
+        label={<span className="font-medium text-red-600">{t('common.delete')}</span>}
+        onClick={onDelete}
+      />
+    </DropdownMenu>
+  );
+}
 
 export function WorkspaceSettingsPage() {
   const { t } = useTranslation();
@@ -427,7 +467,7 @@ export function WorkspaceSettingsPage() {
         />
       </Dialog>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {orderedWorkspaces.map((workspace) => (
           <Card
             key={workspace.id}
@@ -440,43 +480,20 @@ export function WorkspaceSettingsPage() {
             }`}
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <WorkspaceAvatar workspace={workspace} size={44} radiusClass="rounded-xl" />
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</h2>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{categoryLabel(workspace.templateCategory)}</p>
-                  <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {industryEmoji(workspace.industry)} {t(industryKey(workspace.industry))}</p>
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1.5">
-                {workspace.id === activeWorkspaceId && (
-                  <Badge variant="warning" label={t('ws.current')} />
-                )}
-                <Badge variant="success" label={t('ws.ready')} />
-              </div>
-            </div>
-
-            <p className="mt-5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-              {t('ws.separateNote')}
-            </p>
-            <div className="mt-4 flex justify-end gap-1">
-              <Button
-                label={t('common.edit')}
-                variant="ghost"
-                size="sm"
-                icon={<IconEdit className="size-3.5" />}
-                onClick={() => startEdit(workspace)}
-              />
-              <Button
-                label={t('common.delete')}
-                variant="ghost"
-                size="sm"
-                icon={<IconTrash className="size-3.5" />}
-                onClick={() => {
+              <WorkspaceAvatar workspace={workspace} size={44} radiusClass="rounded-md" />
+              <WorkspaceActionMenu
+                onEdit={() => startEdit(workspace)}
+                onDelete={() => {
                   setConfirmDeleteId(workspace.id);
                   setDeleteError(null);
                 }}
               />
+            </div>
+
+            <div className="mt-4 min-w-0">
+              <h2 className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{workspace.name}</h2>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{categoryLabel(workspace.templateCategory)}</p>
+              <p className="mt-0.5 text-xs text-zinc-400">{t('ws.industry')} · {industryEmoji(workspace.industry)} {t(industryKey(workspace.industry))}</p>
             </div>
           </Card>
         ))}

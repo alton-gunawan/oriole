@@ -275,13 +275,13 @@ function Preview({ value, name, size }: { value: string | null; name: string; si
         alt=""
         width={size}
         height={size}
-        className="aspect-square shrink-0 rounded-xl object-cover ring-1 ring-zinc-200"
+        className="aspect-square shrink-0 rounded-md object-cover ring-1 ring-zinc-200"
       />
     );
   }
   return (
-    <span className="flex shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200" style={{ width: size, height: size }}>
-      <PlanetIcon name={name} size={Math.round(size * 0.62)} radiusClass="rounded-lg" />
+    <span className="flex shrink-0 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200" style={{ width: size, height: size }}>
+      <PlanetIcon name={name} size={Math.round(size * 0.62)} radiusClass="rounded-md" />
     </span>
   );
 }

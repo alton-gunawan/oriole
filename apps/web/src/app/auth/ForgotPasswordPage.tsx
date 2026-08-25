@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, Navigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@astryxdesign/core';
+import { Button, useToast } from '@astryxdesign/core';
 
 import { AuthField, AuthLayout } from './AuthLayout';
 import { isAuthConfigured } from '../../lib/auth';
@@ -26,9 +26,9 @@ type Stage = 'email' | 'otp' | 'done';
  */
 export function ForgotPasswordPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const status = useSessionStore((s) => s.status);
   const [stage, setStage] = useState<Stage>('email');
-  const [error, setError] = useState<string | null>(null);
 
   const emailSchema = useMemo(() => forgotPasswordEmailSchema(t), [t]);
   const resetSchema = useMemo(() => resetPasswordSchema(t), [t]);
@@ -63,7 +63,6 @@ export function ForgotPasswordPage() {
   }
 
   const onSendCode = async (values: ForgotPasswordEmailInput) => {
-    setError(null);
     try {
       await requestPasswordReset(values.email);
       resetForm.setValue('email', values.email);
@@ -72,12 +71,17 @@ export function ForgotPasswordPage() {
       resetForm.resetField('confirmPassword');
       setStage('otp');
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.resetSendFailed'));
+      const msg = errorMessage(err, t, 'errors.resetSendFailed');
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     }
   };
 
   const onResetPassword = async (values: ResetPasswordInput) => {
-    setError(null);
     try {
       await resetPasswordWithOtp({
         email: values.email,
@@ -86,14 +90,46 @@ export function ForgotPasswordPage() {
       });
       setStage('done');
     } catch (err) {
-      setError(errorMessage(err, t, 'errors.resetFailed'));
+      const msg = errorMessage(err, t, 'errors.resetFailed');
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
+    }
+  };
+
+  const onEmailInvalid = (formErrors: typeof emailForm.formState.errors) => {
+    const firstKey = Object.keys(formErrors)[0] as keyof ForgotPasswordEmailInput | undefined;
+    const msg = firstKey ? formErrors[firstKey]?.message : t('errors.generic');
+    if (msg) {
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
+    }
+  };
+
+  const onResetInvalid = (formErrors: typeof resetForm.formState.errors) => {
+    const firstKey = Object.keys(formErrors)[0] as keyof ResetPasswordInput | undefined;
+    const msg = firstKey ? formErrors[firstKey]?.message : t('errors.generic');
+    if (msg) {
+      toast({
+        body: msg,
+        type: 'error',
+        isAutoHide: true,
+        autoHideDuration: 5000,
+      });
     }
   };
 
   return (
     <AuthLayout>
       {stage === 'email' && (
-        <form onSubmit={emailForm.handleSubmit(onSendCode)} className="space-y-4" noValidate>
+        <form onSubmit={emailForm.handleSubmit(onSendCode, onEmailInvalid)} className="space-y-4" noValidate>
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('auth.forgotTitle')}</h2>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('auth.forgotDesc')}</p>
@@ -107,15 +143,6 @@ export function ForgotPasswordPage() {
             error={emailForm.formState.errors.email?.message}
             {...emailForm.register('email')}
           />
-
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
-            >
-              {error}
-            </div>
-          )}
 
           <Button
             label={t('auth.sendResetCode')}
@@ -136,7 +163,7 @@ export function ForgotPasswordPage() {
       )}
 
       {stage === 'otp' && (
-        <form onSubmit={resetForm.handleSubmit(onResetPassword)} className="space-y-4" noValidate>
+        <form onSubmit={resetForm.handleSubmit(onResetPassword, onResetInvalid)} className="space-y-4" noValidate>
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('auth.resetTitle')}</h2>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('auth.resetDesc')}</p>
@@ -167,15 +194,6 @@ export function ForgotPasswordPage() {
             error={resetForm.formState.errors.confirmPassword?.message}
             {...resetForm.register('confirmPassword')}
           />
-
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
-            >
-              {error}
-            </div>
-          )}
 
           <Button
             label={t('auth.resetCta')}
