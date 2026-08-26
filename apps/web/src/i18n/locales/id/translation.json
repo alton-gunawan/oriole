@@ -1739,6 +1739,29 @@
     "copyPhone": "Salin telepon",
     "copyEmail": "Salin email"
   },
+  "serviceDetail": {
+    "title": "Layanan",
+    "description": "Detail layanan",
+    "notFound": "Layanan ini sudah tidak ada. Mungkin telah dihapus.",
+    "createdAt": "Ditambahkan {{date}}",
+    "info": "Detail layanan",
+    "bookingHistory": "Riwayat booking",
+    "noBookings": "Belum ada riwayat booking untuk layanan ini.",
+    "openDetail": "Lihat detail layanan"
+  },
+  "staffDetail": {
+    "title": "Staf",
+    "description": "Detail staf",
+    "notFound": "Anggota staf ini tidak ditemukan atau mungkin telah dihapus.",
+    "createdAt": "Ditambahkan {{date}}",
+    "info": "Informasi staf",
+    "bookingHistory": "Riwayat booking",
+    "noBookings": "Belum ada riwayat booking untuk staf ini.",
+    "openDetail": "Lihat detail staf",
+    "assignedServices": "Layanan yang ditugaskan",
+    "noServicesAssigned": "Semua layanan umum",
+    "schedule": "Jadwal kerja"
+  },
   "tally": {
     "name": "Tally",
     "desc": "Submission form baru langsung menjadi pelanggan — Tally memanggil Oriole begitu ada yang mengisi.",

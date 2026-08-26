@@ -1739,6 +1739,29 @@
     "copyPhone": "Copy phone",
     "copyEmail": "Copy email"
   },
+  "serviceDetail": {
+    "title": "Service",
+    "description": "Service details",
+    "notFound": "This service no longer exists. It may have been deleted.",
+    "createdAt": "Added {{date}}",
+    "info": "Service details",
+    "bookingHistory": "Booking history",
+    "noBookings": "No bookings found for this service.",
+    "openDetail": "View service details"
+  },
+  "staffDetail": {
+    "title": "Staff",
+    "description": "Staff details",
+    "notFound": "This staff member no longer exists. They may have been deleted.",
+    "createdAt": "Added {{date}}",
+    "info": "Staff info",
+    "bookingHistory": "Bookings",
+    "noBookings": "No bookings found for this staff member.",
+    "openDetail": "View staff details",
+    "assignedServices": "Assigned services",
+    "noServicesAssigned": "All general services",
+    "schedule": "Working schedule"
+  },
   "tally": {
     "name": "Tally",
     "desc": "New form submissions become customers instantly — Tally calls Oriole the moment someone submits.",

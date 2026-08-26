@@ -47,8 +47,10 @@ import {
 } from '../../lib/staff';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { PhoneInput } from '../components/PhoneInput';
+import { StaffDetailDialog } from '../components/StaffDetailDialog';
 import {
   IconAlertTriangle,
+  IconArrowUpRight,
   IconCalendar,
   IconClock,
   IconDotsHorizontal,
@@ -146,11 +148,13 @@ const STAFF_COLORS = ['#f59e0b', '#0ea5e9', '#10b981', '#8b5cf6', '#ef4444', '#e
  *  dengan kolom aksi di BookingsPage. */
 function StaffActionsMenu({
   staff,
+  onView,
   onSchedule,
   onEdit,
   onDelete,
 }: {
   staff: StaffRecord;
+  onView: () => void;
   onSchedule: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -173,6 +177,11 @@ function StaffActionsMenu({
         style: { padding: 0 },
       }}
     >
+      <DropdownMenuItem
+        icon={<IconArrowUpRight className="size-4" />}
+        label={t('common.view')}
+        onClick={onView}
+      />
       <DropdownMenuItem
         icon={<IconCalendar className="size-4" />}
         label={t('staff.editSchedule')}
@@ -395,6 +404,45 @@ export function StaffPage() {
       return true;
     });
   }, [staffList, debouncedSearch, debouncedStatus, debouncedTz]);
+
+  // ── Dialog detail staf (side drawer) ──────────────────────
+  const staffIdParam = searchParams.get('staffId');
+  const [viewingStaff, setViewingStaff] = useState<StaffRecord | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  useEffect(() => {
+    if (staffIdParam) {
+      const match = (data?.staff ?? []).find((s) => s.id === staffIdParam);
+      if (match) {
+        setViewingStaff(match);
+        setDetailOpen(true);
+      } else {
+        setDetailOpen(true);
+      }
+    }
+  }, [staffIdParam, data?.staff]);
+
+  const openDetail = (staff: StaffRecord) => {
+    setViewingStaff(staff);
+    setDetailOpen(true);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('staffId', staff.id);
+      return next;
+    });
+  };
+
+  const closeDetail = (open: boolean) => {
+    setDetailOpen(open);
+    if (!open) {
+      setViewingStaff(null);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('staffId');
+        return next;
+      });
+    }
+  };
 
   // ── Dialog tambah staf ─────────────────────────────────────
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -712,7 +760,13 @@ export function StaffPage() {
             </div>
             <span className="min-w-0">
               <span className="flex items-center gap-2">
-                <span className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{staff.name}</span>
+                <button
+                  type="button"
+                  onClick={() => openDetail(staff)}
+                  className="truncate text-left text-base font-semibold text-zinc-900 transition hover:text-amber-600 dark:text-zinc-100 dark:hover:text-amber-400 cursor-pointer"
+                >
+                  {staff.name}
+                </button>
                 {!staff.isActive && <Badge variant="neutral" label={t('staff.inactive')} />}
               </span>
               <span className="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -782,6 +836,7 @@ export function StaffPage() {
         <span className="flex items-center justify-end">
           <StaffActionsMenu
             staff={staff}
+            onView={() => openDetail(staff)}
             onSchedule={() => openSchedule(staff)}
             onEdit={() => openEdit(staff)}
             onDelete={() => setDeleteTarget(staff)}
@@ -1406,6 +1461,16 @@ export function StaffPage() {
           if (bulkDeleteIds) bulkDeleteMutation.mutate(bulkDeleteIds);
         }}
         width={420}
+      />
+
+      {/* Drawer detail staf */}
+      <StaffDetailDialog
+        staffId={staffIdParam}
+        initialStaff={viewingStaff}
+        isOpen={detailOpen}
+        onOpenChange={closeDetail}
+        onEdit={(st) => openEdit(st)}
+        onSchedule={(st) => openSchedule(st)}
       />
     </div>
   );

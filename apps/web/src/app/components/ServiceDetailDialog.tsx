@@ -11,6 +11,8 @@ import {
   Layout,
   LayoutContent,
   LayoutFooter,
+  MetadataList,
+  MetadataListItem,
   Pagination,
   Selector,
   SelectorOption,
@@ -24,21 +26,29 @@ import {
 } from '@astryxdesign/core';
 
 import { ApiError, apiFetch } from '../../lib/api';
-import type { ContactDetailResponse, ContactRecord } from '../../lib/contacts';
+import { tintedBadgeVariant } from '../../lib/badge-variant';
 import type { BookingRecord, BookingsListResponse } from '../../lib/bookings';
+import {
+  formatServiceDuration,
+  formatServicePrice,
+  type ServiceRecord,
+  type ServiceResponse,
+} from '../../lib/services';
+import type { StaffRecord } from '../../lib/staff';
 import { useWorkspaceStore } from '../../stores/workspace';
 import { formatDate, formatDateTime } from '../../i18n/format';
 import { bookingStatusKey } from '../../i18n/enums';
 import {
   IconAlertTriangle,
+  IconBookmark,
   IconCalendar,
-  IconCheck,
-  IconCopy,
+  IconClock,
+  IconCreditCard,
   IconEdit,
   IconExternalLink,
-  IconMail,
-  IconPhone,
   IconSearch,
+  IconServices,
+  IconUsers,
 } from '../shell/icons';
 import { Card } from '../shell/ui';
 
@@ -68,58 +78,96 @@ function statusLabel(status: string | null, t: TFunction): string {
   return k ? t(k) : (status ?? '—');
 }
 
-export interface CustomerDetailDialogProps {
-  contactId?: string | null;
-  initialContact?: ContactRecord | null;
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  onEdit?: (contact: ContactRecord) => void;
+/**
+ * Teks array legacy JSON/PG: string -> list of items.
+ */
+function expandCategories(categories: string[] | null | undefined): string[] {
+  if (!categories || categories.length === 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const cat of categories) {
+    const clean = cat.trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
 }
 
-export function CustomerDetailDialog({
-  contactId,
-  initialContact,
+export interface ServiceDetailDialogProps {
+  serviceId?: string | null;
+  initialService?: ServiceRecord | null;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onEdit?: (service: ServiceRecord) => void;
+  staffData?: StaffRecord[];
+}
+
+export function ServiceDetailDialog({
+  serviceId,
+  initialService,
   isOpen,
   onOpenChange,
   onEdit,
-}: CustomerDetailDialogProps) {
+  staffData,
+}: ServiceDetailDialogProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const [copiedField, setCopiedField] = useState<'phone' | 'email' | null>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'bookings'>('info');
 
   // Filter untuk riwayat booking di drawer
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('');
 
-  const effectiveId = contactId || initialContact?.id;
+  const effectiveId = serviceId || initialService?.id;
 
-  const contactQuery = useQuery({
-    queryKey: ['contact', activeWorkspaceId, effectiveId],
-    queryFn: () => apiFetch<ContactDetailResponse>(`/contacts/${effectiveId}`),
+  const serviceQuery = useQuery({
+    queryKey: ['service', activeWorkspaceId, effectiveId],
+    queryFn: () => apiFetch<ServiceResponse>(`/services/${effectiveId}`),
     enabled: isOpen && Boolean(effectiveId),
-    initialData: initialContact ? { contact: initialContact } : undefined,
+    initialData: initialService ? { service: initialService } : undefined,
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
 
-  const contact = contactQuery.data?.contact ?? initialContact;
+  const service = serviceQuery.data?.service ?? initialService;
 
-  // Cari riwayat booking untuk customer ini (berdasarkan nomor telepon customer)
+  // Staf query jika belum dipass
+  const staffQuery = useQuery({
+    queryKey: ['staff', activeWorkspaceId],
+    queryFn: () => apiFetch<{ staff: StaffRecord[] }>('/staff'),
+    enabled: isOpen && !staffData && Boolean(activeWorkspaceId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
+  });
+
+  const staffList = staffData ?? staffQuery.data?.staff ?? [];
+  const staffNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const staff of staffList) map.set(staff.id, staff.name);
+    return map;
+  }, [staffList]);
+
+  // Cari riwayat booking untuk layanan ini
   const bookingsQuery = useQuery({
-    queryKey: ['contact-bookings', activeWorkspaceId, contact?.phone],
+    queryKey: ['service-bookings', activeWorkspaceId, service?.id, service?.name],
     queryFn: async () => {
-      if (!contact?.phone) return { bookings: [], total: 0 };
+      if (!service?.id && !service?.name) return { bookings: [], total: 0 };
       const params = new URLSearchParams();
-      params.set('phone', contact.phone);
-      params.set('pageSize', '50');
+      params.set('pageSize', '100');
       return apiFetch<BookingsListResponse>(`/bookings?${params.toString()}`);
     },
-    enabled: isOpen && Boolean(contact?.phone),
+    enabled: isOpen && Boolean(service?.id || service?.name),
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 1,
   });
 
-  const allBookings = bookingsQuery.data?.bookings ?? [];
+  const allBookings = useMemo(() => {
+    if (!service) return [];
+    return (bookingsQuery.data?.bookings ?? []).filter(
+      (b) => b.serviceId === service.id || b.serviceName === service.name || b.title === service.name,
+    );
+  }, [bookingsQuery.data?.bookings, service]);
 
   const filteredBookings = useMemo(() => {
     return allBookings.filter((b) => {
@@ -128,9 +176,10 @@ export function CustomerDetailDialog({
       }
       if (bookingSearch.trim()) {
         const q = bookingSearch.toLowerCase().trim();
+        const matchCustomer = b.customerName?.toLowerCase().includes(q);
+        const matchPhone = b.phone?.toLowerCase().includes(q);
         const matchTitle = b.title?.toLowerCase().includes(q);
-        const matchService = b.serviceName?.toLowerCase().includes(q);
-        if (!matchTitle && !matchService) return false;
+        if (!matchCustomer && !matchPhone && !matchTitle) return false;
       }
       return true;
     });
@@ -139,10 +188,10 @@ export function CustomerDetailDialog({
   const BOOKINGS_PAGE_SIZE = 5;
   const [bookingPage, setBookingPage] = useState(1);
 
-  // Reset page saat filter/search berubah atau modal dibuka
+  // Reset page saat filter/search berubah atau dialog dibuka
   useEffect(() => {
     setBookingPage(1);
-  }, [bookingSearch, bookingStatusFilter, isOpen, contact?.phone]);
+  }, [bookingSearch, bookingStatusFilter, isOpen, service?.id]);
 
   const lastBookingPage = filteredBookings.length
     ? Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PAGE_SIZE))
@@ -158,16 +207,14 @@ export function CustomerDetailDialog({
     return paginateData(filteredBookings, bookingPage, BOOKINGS_PAGE_SIZE);
   }, [filteredBookings, bookingPage]);
 
-  const copyToClipboard = (text: string, field: 'phone' | 'email') => {
-    void navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const handleBookingClick = (bookingId: string) => {
     onOpenChange(false);
     navigate(`/app/bookings/${bookingId}`);
   };
+
+  const categories = expandCategories(service?.category);
+  const formattedPrice = service ? formatServicePrice(service.priceMinor, service.currency) : null;
+  const formattedDuration = service ? formatServiceDuration(service.durationMinutes) : null;
 
   return (
     <Dialog
@@ -195,20 +242,18 @@ export function CustomerDetailDialog({
         header={
           <div className="flex flex-col">
             <DialogHeader
-              title={contact?.name ?? t('contactDetail.title')}
+              title={service?.name ?? t('serviceDetail.title', { defaultValue: 'Service' })}
               subtitle={
-                contact?.createdAt
-                  ? t('contactDetail.createdAt', { date: formatDate(contact.createdAt) })
-                  : t('contactDetail.description')
+                service?.createdAt
+                  ? t('serviceDetail.createdAt', {
+                      date: formatDate(service.createdAt),
+                      defaultValue: `Added ${formatDate(service.createdAt)}`,
+                    })
+                  : t('serviceDetail.description', { defaultValue: 'Service details' })
               }
               startContent={
-                <div className="size-8 shrink-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800">
-                  <img
-                    src={`https://api.dicebear.com/10.x/critters/svg?seed=${encodeURIComponent((contact?.name || contact?.id) ?? 'customer')}`}
-                    alt={contact?.name ?? 'Customer'}
-                    className="size-full object-cover"
-                    loading="lazy"
-                  />
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800 text-amber-600 dark:text-amber-400">
+                  <IconServices className="size-4" />
                 </div>
               }
               onOpenChange={onOpenChange}
@@ -223,19 +268,16 @@ export function CustomerDetailDialog({
               >
                 <Tab
                   value="info"
-                  label={t('contactDetail.info', { defaultValue: 'Contact Information' })}
-                  icon={<IconPhone className="size-4" />}
+                  label={t('serviceDetail.info', { defaultValue: 'Service details' })}
+                  icon={<IconServices className="size-4" />}
                 />
                 <Tab
                   value="bookings"
-                  label={t('contactDetail.bookingHistory', { defaultValue: 'Booking History' })}
+                  label={t('serviceDetail.bookingHistory', { defaultValue: 'Bookings' })}
                   icon={<IconCalendar className="size-4" />}
                   endContent={
                     allBookings.length > 0 ? (
-                      <Badge
-                        variant="neutral"
-                        label={String(allBookings.length)}
-                      />
+                      <Badge variant="neutral" label={String(allBookings.length)} />
                     ) : null
                   }
                 />
@@ -246,124 +288,123 @@ export function CustomerDetailDialog({
         content={
           <LayoutContent>
             <div className="py-2">
-              {contactQuery.isPending && !contact && (
+              {serviceQuery.isPending && !service && (
                 <div className="space-y-3">
                   <Skeleton width="100%" height={80} />
                   <Skeleton width="100%" height={140} />
                 </div>
               )}
 
-              {contactQuery.isError && !contact && (
+              {serviceQuery.isError && !service && (
                 <Card className="flex flex-col items-center gap-3 p-6 text-center">
                   <IconAlertTriangle className="size-6 text-red-500" />
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    {t('contactDetail.notFound')}
+                    {t('serviceDetail.notFound', {
+                      defaultValue: 'This service no longer exists. It may have been deleted.',
+                    })}
                   </p>
                 </Card>
               )}
 
-              {contact && activeTab === 'info' && (
-                <div className="space-y-4">
-                  {/* Informasi Kontak */}
-                  <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-xs dark:border-zinc-700/80 dark:bg-zinc-900 space-y-3.5">
-                    {/* Telepon */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <IconPhone className="size-4 shrink-0 text-zinc-400" />
-                        <div className="min-w-0">
-                          <span className="block text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-                            {t('common.phone')}
-                          </span>
-                          {contact.phone ? (
-                            <a
-                              href={`tel:${contact.phone}`}
-                              className="truncate text-sm font-semibold text-zinc-900 transition hover:text-amber-600 dark:text-zinc-100 dark:hover:text-amber-400"
-                            >
-                              {contact.phone}
-                            </a>
-                          ) : (
-                            <span className="text-sm text-zinc-400">—</span>
-                          )}
-                        </div>
-                      </div>
-                      {contact.phone && (
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(contact.phone, 'phone')}
-                          title={t('contactDetail.copyPhone', { defaultValue: 'Copy phone' })}
-                          className="flex size-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+              {service && activeTab === 'info' && (
+                <div className="py-1">
+                  <MetadataList
+                    columns="single"
+                    label={{ position: 'start', width: 140 }}
+                  >
+                    <MetadataListItem label={t('common.status')}>
+                      <div className="flex items-center gap-1.5">
+                        <StatusDot
+                          variant={service.isActive ? 'success' : 'neutral'}
+                          label={service.isActive ? t('services.active') : t('services.inactive')}
+                        />
+                        <span
+                          className={`text-sm font-semibold ${
+                            service.isActive
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-zinc-500 dark:text-zinc-400'
+                          }`}
                         >
-                          {copiedField === 'phone' ? (
-                            <IconCheck className="size-3.5 text-emerald-600" />
-                          ) : (
-                            <IconCopy className="size-3.5" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Email */}
-                    <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800 flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <IconMail className="size-4 shrink-0 text-zinc-400" />
-                        <div className="min-w-0">
-                          <span className="block text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-                            {t('common.email')}
-                          </span>
-                          {contact.email ? (
-                            <a
-                              href={`mailto:${contact.email}`}
-                              className="truncate text-sm font-semibold text-zinc-900 transition hover:text-amber-600 dark:text-zinc-100 dark:hover:text-amber-400"
-                            >
-                              {contact.email}
-                            </a>
-                          ) : (
-                            <span className="text-sm text-zinc-400">—</span>
-                          )}
-                        </div>
-                      </div>
-                      {contact.email && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (contact.email) copyToClipboard(contact.email, 'email');
-                          }}
-                          title={t('contactDetail.copyEmail', { defaultValue: 'Copy email' })}
-                          className="flex size-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
-                        >
-                          {copiedField === 'email' ? (
-                            <IconCheck className="size-3.5 text-emerald-600" />
-                          ) : (
-                            <IconCopy className="size-3.5" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Catatan */}
-                    {contact.notes && (
-                      <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                        <span className="block text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
-                          {t('common.notes')}
+                          {service.isActive ? t('services.active') : t('services.inactive')}
                         </span>
-                        <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
-                          {contact.notes}
-                        </p>
                       </div>
+                    </MetadataListItem>
+
+                    <MetadataListItem
+                      label={t('services.colDuration')}
+                      icon={<IconClock className="size-4 text-zinc-400" />}
+                    >
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {formattedDuration}
+                      </span>
+                    </MetadataListItem>
+
+                    <MetadataListItem
+                      label={t('services.colPrice')}
+                      icon={<IconCreditCard className="size-4 text-zinc-400" />}
+                    >
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {formattedPrice ?? <span className="text-zinc-400 font-normal">—</span>}
+                      </span>
+                    </MetadataListItem>
+
+                    <MetadataListItem
+                      label={t('services.colCategory')}
+                      icon={<IconBookmark className="size-4 text-zinc-400" />}
+                    >
+                      {categories.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {categories.map((cat) => (
+                            <Badge key={cat} variant={tintedBadgeVariant(cat)} label={cat} />
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-zinc-400">—</span>
+                      )}
+                    </MetadataListItem>
+
+                    <MetadataListItem
+                      label={t('services.colStaff')}
+                      icon={<IconUsers className="size-4 text-zinc-400" />}
+                    >
+                      {service.staffIds.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {service.staffIds.map((staffId) => {
+                            const name = staffNameById.get(staffId) ?? '?';
+                            return (
+                              <Badge key={staffId} variant={tintedBadgeVariant(name)} label={name} />
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                          {t('services.noStaffHint', { defaultValue: 'All staff' })}
+                        </span>
+                      )}
+                    </MetadataListItem>
+
+                    {service.description && (
+                      <MetadataListItem label={t('services.descriptionLabel')}>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+                          {service.description}
+                        </p>
+                      </MetadataListItem>
                     )}
-                  </div>
+                  </MetadataList>
                 </div>
               )}
 
-              {contact && activeTab === 'bookings' && (
+              {service && activeTab === 'bookings' && (
                 <div className="space-y-2.5">
                   {/* Filter & Search Bar */}
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <TextInput
-                        label={t('bookings.colService')}
+                        label={t('common.name')}
                         isLabelHidden
-                        placeholder={t('bookings.servicePlaceholder')}
+                        placeholder={t('contacts.filterNamePlaceholder', {
+                          defaultValue: 'Search customer…',
+                        })}
                         value={bookingSearch}
                         onChange={setBookingSearch}
                         startIcon={<IconSearch className="size-3.5 text-zinc-400" />}
@@ -384,7 +425,12 @@ export function CustomerDetailDialog({
                           ...VALID_BOOKING_STATUSES.map((status) => ({
                             value: status,
                             label: statusLabel(status, t),
-                            icon: <StatusDot variant={STATUS_DOT[status]} label={statusLabel(status, t)} />,
+                            icon: (
+                              <StatusDot
+                                variant={STATUS_DOT[status]}
+                                label={statusLabel(status, t)}
+                              />
+                            ),
                           })),
                         ]}
                         value={bookingStatusFilter}
@@ -394,7 +440,11 @@ export function CustomerDetailDialog({
                           <SelectorOption
                             icon={option.icon}
                             label={
-                              <span className={STATUS_TEXT[option.value] ?? 'text-zinc-500 dark:text-zinc-400'}>
+                              <span
+                                className={
+                                  STATUS_TEXT[option.value] ?? 'text-zinc-500 dark:text-zinc-400'
+                                }
+                              >
                                 {option.label}
                               </span>
                             }
@@ -416,11 +466,13 @@ export function CustomerDetailDialog({
                     <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-400 dark:border-zinc-800">
                       {bookingSearch || bookingStatusFilter
                         ? t('bookings.emptyTitle')
-                        : t('contactDetail.noBookings', { defaultValue: 'No bookings found for this customer.' })}
+                        : t('serviceDetail.noBookings', {
+                            defaultValue: 'No bookings found for this service.',
+                          })}
                     </div>
                   )}
 
-                  {/* List Booking Item (gap rapat/ringkas) */}
+                  {/* List Booking Item */}
                   <div className="space-y-1.5">
                     {pagedBookings.map((booking) => {
                       const key = bookingStatusKey(booking.status);
@@ -441,7 +493,7 @@ export function CustomerDetailDialog({
                         >
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-semibold text-zinc-900 group-hover:text-amber-600 dark:text-zinc-100 dark:group-hover:text-amber-400">
-                              {booking.serviceName || booking.title}
+                              {booking.customerName || booking.phone || booking.title}
                             </p>
                             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                               {formatDateTime(booking.scheduledAt)}
@@ -452,7 +504,9 @@ export function CustomerDetailDialog({
                               variant={STATUS_DOT[booking.status] ?? 'neutral'}
                               label={statusLabelText}
                             />
-                            <span className={`text-xs font-medium ${STATUS_TEXT[booking.status] ?? 'text-zinc-500'}`}>
+                            <span
+                              className={`text-xs font-medium ${STATUS_TEXT[booking.status] ?? 'text-zinc-500'}`}
+                            >
                               {statusLabelText}
                             </span>
                             <IconExternalLink className="size-3.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -489,7 +543,7 @@ export function CustomerDetailDialog({
         footer={
           <LayoutFooter hasDivider>
             <div className="flex w-full items-center justify-end gap-2">
-              {onEdit && contact && (
+              {onEdit && service && (
                 <Button
                   label={t('common.edit')}
                   variant="secondary"
@@ -497,7 +551,7 @@ export function CustomerDetailDialog({
                   icon={<IconEdit className="size-3.5" />}
                   onClick={() => {
                     onOpenChange(false);
-                    onEdit(contact);
+                    onEdit(service);
                   }}
                 />
               )}

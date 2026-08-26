@@ -53,6 +53,7 @@ import {
 import { useWorkspaceStore } from '../../stores/workspace';
 import {
   IconAlertTriangle,
+  IconArrowUpRight,
   IconDotsHorizontal,
   IconEdit,
   IconPlus,
@@ -63,13 +64,16 @@ import {
   IconTrash,
   IconX,
 } from '../shell/icons';
+import { ServiceDetailDialog } from '../components/ServiceDetailDialog';
 import { Card, ConfirmDialog, EmptyState, PageHeader, ReloadMenuButton } from '../shell/ui';
 
-/** Dropdown aksi per baris layanan — tombol ⋯ membuka menu (edit, hapus). */
+/** Dropdown aksi per baris layanan — tombol ⋯ membuka menu (lihat detail, edit, hapus). */
 function ServiceActionsMenu({
+  onView,
   onEdit,
   onDelete,
 }: {
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -79,7 +83,7 @@ function ServiceActionsMenu({
   return (
     <DropdownMenu
       placement="below"
-      menuWidth={180}
+      menuWidth={140}
       isMenuOpen={open}
       onOpenChange={setOpen}
       button={{
@@ -91,6 +95,11 @@ function ServiceActionsMenu({
         style: { padding: 0 },
       }}
     >
+      <DropdownMenuItem
+        icon={<IconArrowUpRight className="size-4" />}
+        label={t('common.view')}
+        onClick={onView}
+      />
       <DropdownMenuItem
         icon={<IconEdit className="size-4" />}
         label={t('common.edit')}
@@ -266,6 +275,8 @@ export function ServicesPage() {
 
   // ── Filter layanan — dipersist di URL agar bisa dibagikan ──
   const [searchParams, setSearchParams] = useSearchParams();
+  const serviceIdParam = searchParams.get('serviceId');
+  const [viewService, setViewService] = useState<ServiceRecord | null>(null);
 
   const searchFilter = searchParams.get('q') ?? '';
   const rawStatus = searchParams.get('status') ?? '';
@@ -623,9 +634,26 @@ export function ServicesPage() {
       header: t('services.colService'),
       width: proportional(3),
       renderCell: (service) => (
-        <span className="block min-w-0 truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          {service.name}
-        </span>
+        <button
+          type="button"
+          onClick={() => setViewService(service)}
+          title={t('serviceDetail.openDetail', { defaultValue: 'View service details' })}
+          className="group flex min-w-0 items-center gap-3 text-left cursor-pointer"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition">
+            <IconServices className="size-4" />
+          </div>
+          <span className="min-w-0">
+            <span className="block truncate text-base font-semibold text-zinc-900 dark:text-zinc-100 transition group-hover:text-amber-600 dark:group-hover:text-amber-400">
+              {service.name}
+            </span>
+            {service.description && (
+              <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {service.description}
+              </span>
+            )}
+          </span>
+        </button>
       ),
     },
     {
@@ -705,6 +733,7 @@ export function ServicesPage() {
       renderCell: (service) => (
         <span className="flex items-center justify-end">
           <ServiceActionsMenu
+            onView={() => setViewService(service)}
             onEdit={() => openEdit(service)}
             onDelete={() => setDeleteTarget(service)}
           />
@@ -1287,6 +1316,29 @@ export function ServicesPage() {
         }}
       />
 
+      {/* Dialog detail layanan (menggunakan Astryx Dialog, pola Customers) */}
+      <ServiceDetailDialog
+        isOpen={viewService !== null || Boolean(serviceIdParam)}
+        serviceId={serviceIdParam || viewService?.id}
+        initialService={viewService}
+        staffData={staffData?.staff}
+        onEdit={(service) => openEdit(service)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewService(null);
+            if (serviceIdParam) {
+              setSearchParams(
+                (prev) => {
+                  const n = new URLSearchParams(prev);
+                  n.delete('serviceId');
+                  return n;
+                },
+                { replace: true },
+              );
+            }
+          }
+        }}
+      />
     </div>
   );
 }
