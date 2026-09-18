@@ -2,7 +2,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import LoadingBar from 'react-top-loading-bar';
-import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton, Spinner } from '@astryxdesign/core';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSubMenu, IconButton } from '@astryxdesign/core';
 import { useTranslation } from 'react-i18next';
 
 import { ApiError, apiFetch } from '../../lib/api';
@@ -16,7 +16,7 @@ import { LanguageSubMenu } from './LocaleSwitcher';
 import { BillingDialog } from './BillingDialog';
 import { SettingsDialog, type SettingsSectionId } from './SettingsDialog';
 import { WorkspaceAvatar } from '../components/WorkspaceAvatar';
-import { AppLogo } from '../components/AppLogo';
+import { AppBrand, AppLogo } from '../components/AppLogo';
 import {
   IconBuildings,
   IconCalendar,
@@ -704,17 +704,19 @@ export function AppShell() {
         </div>
       )}
 
-      {/* Loader saat pindah bisnis — menutupi layar sampai data workspace
-          baru selesai dimuat (isSwitching di-reset oleh store). */}
+      {/* Loader saat pindah bisnis — menutupi layar dengan splash brand Oriole sampai data workspace baru selesai dimuat */}
       {isSwitching && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-surface/70 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100] flex min-h-screen flex-col items-center justify-center bg-zinc-950 px-4 text-zinc-100 selection:bg-amber-500 selection:text-white"
         >
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-8 py-6 shadow-lg">
-            <Spinner size="xl" />
-            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t('nav.switchingBusiness')}</p>
+          <div className="flex flex-col items-center gap-6">
+            <AppBrand />
+            <span
+              aria-hidden
+              className="inline-block size-6 animate-spin rounded-full border-2 border-zinc-800 border-t-amber-500"
+            />
           </div>
         </div>
       )}
